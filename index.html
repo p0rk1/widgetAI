@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BudMax Sp. z o.o.</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --amber: #f59e0b; --amber-dark: #b45309;
+    --stone-50: #fafaf9; --stone-100: #f5f5f4; --stone-200: #e7e5e4; --stone-300: #d6d3d1;
+    --stone-400: #a8a29e; --stone-500: #78716c; --stone-600: #57534e;
+    --neutral-800: #262626; --neutral-900: #171717;
+    --orange-50: #fff7ed; --orange-100: #ffedd5; --orange-200: #fed7aa; --orange-800: #9a3412; --orange-900: #7c2d12;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: 'IBM Plex Sans', sans-serif; color: var(--neutral-900); }
+  .font-display { font-family: 'Oswald', sans-serif; text-transform: uppercase; letter-spacing: 0.03em; }
+  .font-mono { font-family: 'IBM Plex Mono', monospace; }
+
+  header { border-bottom: 1px solid var(--stone-200); padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; }
+  header .logo { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+  header nav { display: flex; gap: 24px; font-size: 12px; color: var(--stone-500); }
+  @media (max-width: 640px) { header nav { display: none; } }
+
+  .hero { background: var(--neutral-900); color: white; padding: 56px 24px; }
+  .hero h1 { font-size: 32px; max-width: 520px; margin: 0 0 12px; }
+  .hero p { color: var(--stone-400); max-width: 420px; font-size: 14px; margin: 0 0 20px; }
+  .hero button { background: var(--amber); color: var(--neutral-900); border: none; padding: 10px 18px; font-size: 12px; border-radius: 4px; cursor: pointer; }
+
+  .grid { padding: 40px 24px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .grid.four { grid-template-columns: repeat(4, 1fr); padding-top: 0; }
+  @media (max-width: 640px) { .grid, .grid.four { grid-template-columns: repeat(2, 1fr); } }
+  .placeholder { height: 96px; background: var(--stone-100); border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 11px; color: var(--stone-400); }
+
+  .widget-wrap { padding: 0 24px; }
+  .widget { max-width: 640px; margin: 0 auto; border: 1px solid var(--stone-200); border-radius: 8px; background: var(--stone-50); overflow: hidden; }
+  .widget-toggle { width: 100%; display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; background: none; border: none; cursor: pointer; text-align: left; }
+  .widget-toggle .title { font-size: 13px; font-weight: 600; }
+  .widget-toggle .subtitle { font-size: 11px; color: var(--stone-500); margin-top: 2px; }
+  .chevron { transition: transform 0.2s; color: var(--stone-400); }
+  .chevron.open { transform: rotate(180deg); }
+
+  .messages { padding: 0 16px; max-height: 260px; overflow-y: auto; }
+  .msg-row { display: flex; margin-bottom: 10px; }
+  .msg-row.user { justify-content: flex-end; }
+  .bubble { max-width: 85%; padding: 8px 12px; border-radius: 8px; font-size: 13px; line-height: 1.5; }
+  .bubble.user { background: var(--neutral-800); color: var(--stone-100); }
+  .bubble.bot { background: white; border: 1px solid var(--stone-200); }
+  .bubble.gap { background: var(--orange-50); border: 1px solid var(--orange-200); color: var(--orange-900); }
+  .badge { display: inline-flex; align-items: center; gap: 4px; margin-top: 4px; padding: 2px 8px; border-radius: 999px; font-size: 10px; }
+  .badge.source { background: #fef3c7; border: 1px solid #fcd34d; color: #92400e; }
+  .badge.gap-badge { background: var(--orange-100); border: 1px solid var(--orange-200); color: var(--orange-800); }
+  .loading { color: var(--stone-400); font-size: 12px; padding: 4px 0 10px; }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 16px 0; }
+  .chip { font-size: 11px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--stone-300); background: none; color: var(--stone-600); cursor: pointer; }
+  .chip:hover { border-color: var(--neutral-800); color: var(--neutral-900); }
+
+  .input-row { display: flex; gap: 8px; padding: 10px 16px 14px; }
+  .input-row input { flex: 1; padding: 8px 12px; font-size: 13px; border: 1px solid var(--stone-300); border-radius: 6px; font-family: inherit; }
+  .input-row button { padding: 8px 14px; background: var(--neutral-900); color: white; border: none; border-radius: 6px; cursor: pointer; }
+  .input-row button:disabled { opacity: 0.4; cursor: default; }
+
+  .reset-btn { font-size: 10px; color: var(--stone-400); background: none; border: none; cursor: pointer; padding: 0 16px 6px; }
+  .footer-note { display: flex; align-items: center; gap: 6px; padding: 8px 16px; border-top: 1px solid var(--stone-200); background: var(--stone-100); font-size: 10px; color: var(--stone-400); }
+
+  footer { margin-top: 32px; padding: 20px 24px; border-top: 1px solid var(--stone-200); font-size: 11px; color: var(--stone-400); display: flex; justify-content: space-between; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo font-display">BudMax</div>
+  <nav><span>O firmie</span><span>Usługi</span><span>Realizacje</span><span>Kontakt</span></nav>
+</header>
+
+<div class="hero">
+  <h1 class="font-display">Budujemy solidnie od 2009 roku</h1>
+  <p>Domy jednorodzinne, remonty i nadzór budowlany na Pomorzu Zachodnim.</p>
+  <button class="font-display">Bezpłatna wycena</button>
+</div>
+
+<div class="grid">
+  <div class="placeholder">Budowa domów</div>
+  <div class="placeholder">Remonty</div>
+  <div class="placeholder">Nadzór budowlany</div>
+</div>
+<div class="grid four">
+  <div class="placeholder">realizacja 01</div>
+  <div class="placeholder">realizacja 02</div>
+  <div class="placeholder">realizacja 03</div>
+  <div class="placeholder">realizacja 04</div>
+</div>
+
+<div class="widget-wrap">
+  <div class="widget">
+    <button class="widget-toggle" id="toggleBtn">
+      <div>
+        <div class="title font-display" style="text-transform:none; letter-spacing:normal;">Masz pytanie? Zapytaj asystenta</div>
+        <div class="subtitle">Odpowiada wyłącznie na podstawie naszej dokumentacji — bez zgadywania.</div>
+      </div>
+      <svg class="chevron" id="chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+    </button>
+
+    <div id="panel" style="display:none;">
+      <button class="reset-btn" id="resetBtn" style="display:none;">↺ wyczyść rozmowę</button>
+      <div class="messages" id="messages"></div>
+    </div>
+
+    <div class="chips" id="chips"></div>
+
+    <form class="input-row" id="askForm">
+      <input type="text" id="questionInput" placeholder="Napisz pytanie..." autocomplete="off">
+      <button type="submit" id="sendBtn">Wyślij</button>
+    </form>
+
+    <div class="footer-note">
+      <span>🔒</span>
+      <span>Odpowiedzi generowane wyłącznie na podstawie dokumentacji firmy.</span>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <span>© 2026 BudMax Sp. z o.o.</span>
+  <span>NIP 000-000-00-00 · woj. zachodniopomorskie</span>
+</footer>
+
+<script>
+// ============================================================
+// USTAW TO PO WDROŻENIU WORKERA (patrz worker.js):
+const WORKER_URL = "https://knowbase-budmax.rezi7608.workers.dev";
+// ============================================================
+
+const CHIPS = [
+  "Godziny otwarcia biura?",
+  "Ile kosztuje wycena?",
+  "Jak zgłosić reklamację?",
+  "Czy budujecie też poza Polską?",
+];
+
+const chipsEl = document.getElementById("chips");
+CHIPS.forEach((c) => {
+  const btn = document.createElement("button");
+  btn.className = "chip";
+  btn.textContent = c;
+  btn.onclick = () => ask(c);
+  chipsEl.appendChild(btn);
+});
+
+const panel = document.getElementById("panel");
+const chevron = document.getElementById("chevron");
+const messagesEl = document.getElementById("messages");
+const resetBtn = document.getElementById("resetBtn");
+const form = document.getElementById("askForm");
+const input = document.getElementById("questionInput");
+const sendBtn = document.getElementById("sendBtn");
+
+let open = false;
+let history = [];
+
+document.getElementById("toggleBtn").onclick = () => setOpen(!open);
+input.addEventListener("focus", () => setOpen(true));
+resetBtn.onclick = () => { history = []; render(); };
+form.onsubmit = (e) => { e.preventDefault(); ask(input.value); };
+
+function setOpen(v) {
+  open = v;
+  panel.style.display = open ? "block" : "none";
+  chevron.classList.toggle("open", open);
+  chipsEl.style.display = open ? "none" : "flex";
+}
+
+function render() {
+  messagesEl.innerHTML = "";
+  resetBtn.style.display = history.length ? "block" : "none";
+  history.forEach((m) => {
+    const row = document.createElement("div");
+    row.className = "msg-row" + (m.role === "user" ? " user" : "");
+    const bubble = document.createElement("div");
+    bubble.className = "bubble " + (m.role === "user" ? "user" : m.gap ? "gap" : "bot");
+    bubble.textContent = m.content;
+    row.appendChild(bubble);
+    messagesEl.appendChild(row);
+    if (m.source) {
+      const badge = document.createElement("div");
+      badge.className = "badge source font-mono";
+      badge.textContent = "📄 " + m.source;
+      messagesEl.appendChild(badge);
+    }
+    if (m.gap) {
+      const badge = document.createElement("div");
+      badge.className = "badge gap-badge font-mono";
+      badge.textContent = "⚠ brak w dokumentacji";
+      messagesEl.appendChild(badge);
+    }
+  });
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+async function ask(question) {
+  if (!question.trim() || sendBtn.disabled) return;
+  setOpen(true);
+  input.value = "";
+  history.push({ role: "user", content: question });
+  render();
+  sendBtn.disabled = true;
+  const loadingEl = document.createElement("div");
+  loadingEl.className = "loading";
+  loadingEl.textContent = "odpowiada...";
+  messagesEl.appendChild(loadingEl);
+
+  try {
+    const res = await fetch(WORKER_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question }),
+    });
+    const data = await res.json();
+    history.push({ role: "bot", content: data.answer, source: data.source, gap: data.gap });
+  } catch (e) {
+    history.push({ role: "bot", content: "Nie udało się połączyć. Spróbuj ponownie.", source: null, gap: false });
+  } finally {
+    sendBtn.disabled = false;
+    render();
+  }
+}
+</script>
+</body>
+</html>

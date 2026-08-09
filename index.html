@@ -39,7 +39,6 @@
   .placeholder { height: 96px; background: var(--stone-100); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 11px; color: var(--stone-400); transition: background 0.2s; }
   .placeholder:hover { background: var(--stone-200); }
 
-  /* ---- Widget ---- */
   .widget-wrap { padding: 0 24px; position: relative; }
   .widget-wrap::before {
     content: ""; position: absolute; inset: -30px 24px; z-index: 0;
@@ -85,7 +84,7 @@
   @keyframes slideIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
   .msg-row.user { justify-content: flex-end; }
   .msg-avatar { width: 24px; height: 24px; border-radius: 50%; flex-shrink: 0; margin-top: 2px; background: radial-gradient(circle at 35% 30%, #fbbf24, var(--amber-dark)); }
-  .bubble { max-width: 82%; padding: 9px 13px; border-radius: 14px; font-size: 13px; line-height: 1.55; }
+  .bubble { max-width: 82%; padding: 9px 13px; border-radius: 14px; font-size: 13px; line-height: 1.55; white-space: pre-wrap; }
   .bubble.user { background: var(--neutral-800); color: var(--stone-100); border-bottom-right-radius: 4px; }
   .bubble.bot { background: white; border: 1px solid var(--stone-200); border-bottom-left-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.03); }
   .bubble.gap { background: var(--orange-50); border: 1px solid var(--orange-200); color: var(--orange-900); border-bottom-left-radius: 4px; }
@@ -188,6 +187,7 @@
 
 <script>
 const WORKER_URL = "https://knowbase-budmax.rezi7608.workers.dev";
+const MAX_HISTORY = 6; // ile ostatnich wiadomości (user+assistant) wysyłać jako pamięć rozmowy
 
 const CHIPS = [
   "Czy montujecie fotowoltaikę?",
@@ -195,8 +195,6 @@ const CHIPS = [
   "Ile trzeba wpłacić na start?",
   "Robicie ogrody?",
 ];
-
-const AVATAR_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:12px;height:12px"><path d="M12 2L14 9L21 12L14 15L12 22L10 15L3 12L10 9L12 2Z"/></svg>';
 
 const chipsEl = document.getElementById("chips");
 CHIPS.forEach((c) => {
@@ -216,11 +214,15 @@ const input = document.getElementById("questionInput");
 const sendBtn = document.getElementById("sendBtn");
 
 let open = false;
-let hasMessages = false;
+let conversationHistory = []; // [{role:"user"|"assistant", content:"..."}]
 
 document.getElementById("toggleBtn").onclick = () => setOpen(!open);
 input.addEventListener("focus", () => setOpen(true));
-resetBtn.onclick = () => { messagesEl.innerHTML = ""; hasMessages = false; resetBtn.style.display = "none"; };
+resetBtn.onclick = () => {
+  messagesEl.innerHTML = "";
+  conversationHistory = [];
+  resetBtn.style.display = "none";
+};
 form.onsubmit = (e) => { e.preventDefault(); ask(input.value); };
 
 function setOpen(v) {
@@ -242,51 +244,29 @@ function addUserBubble(text) {
 function addTypingIndicator() {
   const el = document.createElement("div");
   el.className = "typing-dots";
-  el.id = "typingIndicator";
   el.innerHTML = "<span></span><span></span><span></span>";
   messagesEl.appendChild(el);
   messagesEl.scrollTop = messagesEl.scrollHeight;
   return el;
 }
 
-function streamText(el, text, onDone, speed = 14) {
-  el.classList.add("streaming");
-  let i = 0;
-  const interval = setInterval(() => {
-    el.textContent = text.slice(0, i + 1);
-    i++;
-    messagesEl.scrollTop = messagesEl.scrollHeight;
-    if (i >= text.length) {
-      clearInterval(interval);
-      el.classList.remove("streaming");
-      onDone();
-    }
-  }, speed);
-}
-
-function addBotResponse(parsed) {
+function createBotRow() {
   const row = document.createElement("div");
   row.className = "msg-row";
-  const bubbleClass = parsed.gap ? "bubble gap" : "bubble bot";
-  row.innerHTML = `<div class="msg-avatar"></div><div class="${bubbleClass}"></div>`;
-  messagesEl.appendChild(row);
-  const bubble = row.querySelector(".bubble");
+  row.innerHTML = `<div class="msg-avatar"></div><div class="bubble bot streaming"></div>`;
+  return { row, bubble: row.querySelector(".bubble") };
+}
 
-  streamText(bubble, parsed.answer, () => {
-    if (parsed.source) {
-      const badgeRow = document.createElement("div");
-      badgeRow.className = "badge-row";
-      badgeRow.innerHTML = `<div class="badge source font-mono">📄 ${parsed.source}</div>`;
-      messagesEl.appendChild(badgeRow);
-    }
-    if (parsed.gap) {
-      const badgeRow = document.createElement("div");
-      badgeRow.className = "badge-row";
-      badgeRow.innerHTML = `<div class="badge gap-badge font-mono">⚠ brak w dokumentacji</div>`;
-      messagesEl.appendChild(badgeRow);
-    }
-    messagesEl.scrollTop = messagesEl.scrollHeight;
-  });
+function addBadge(kind, text) {
+  const badgeRow = document.createElement("div");
+  badgeRow.className = "badge-row";
+  if (kind === "source") {
+    badgeRow.innerHTML = `<div class="badge source font-mono">📄 ${text}</div>`;
+  } else {
+    badgeRow.innerHTML = `<div class="badge gap-badge font-mono">⚠ brak w dokumentacji</div>`;
+  }
+  messagesEl.appendChild(badgeRow);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
 }
 
 async function ask(question) {
@@ -294,24 +274,94 @@ async function ask(question) {
   setOpen(true);
   input.value = "";
   addUserBubble(question);
-  hasMessages = true;
   resetBtn.style.display = "block";
   sendBtn.disabled = true;
 
   const typing = addTypingIndicator();
+  const historyToSend = conversationHistory.slice(-MAX_HISTORY);
+
+  let botRow = null;
+  let accumulated = "";
+  let firstToken = true;
 
   try {
     const res = await fetch(WORKER_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question }),
+      body: JSON.stringify({ question, history: historyToSend }),
     });
-    const data = await res.json();
-    typing.remove();
-    addBotResponse(data);
+
+    const contentType = res.headers.get("content-type") || "";
+
+    if (!res.ok || contentType.includes("application/json")) {
+      const data = await res.json().catch(() => ({}));
+      typing.remove();
+      const { row, bubble } = createBotRow();
+      bubble.classList.remove("streaming");
+      bubble.classList.add("gap");
+      bubble.textContent = data.error || "Wystąpił błąd. Spróbuj ponownie.";
+      messagesEl.appendChild(row);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+      return;
+    }
+
+    if (!res.body) throw new Error("Brak strumienia w odpowiedzi");
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const parts = buffer.split("\n\n");
+      buffer = parts.pop();
+
+      for (const part of parts) {
+        if (part.startsWith("event: verify")) {
+          const dataLine = part.split("\n").find((l) => l.startsWith("data:"));
+          if (!dataLine) continue;
+          const verify = JSON.parse(dataLine.slice(5).trim());
+          if (botRow) botRow.bubble.classList.remove("streaming");
+          if (!verify.ok) {
+            // Bezpiecznik zadziałał: podmieniamy pokazany tekst na uczciwy fallback.
+            if (!botRow) { botRow = createBotRow(); messagesEl.appendChild(botRow.row); }
+            botRow.bubble.classList.remove("bot");
+            botRow.bubble.classList.add("gap");
+            botRow.bubble.textContent = verify.fallback;
+            addBadge("gap");
+          } else if (verify.source) {
+            addBadge("source", verify.source);
+          }
+          continue;
+        }
+        if (!part.startsWith("data:")) continue;
+        const payload = part.slice(5).trim();
+        if (payload === "[DONE]") continue;
+        let obj;
+        try { obj = JSON.parse(payload); } catch { continue; }
+        if (obj.response) {
+          if (firstToken) {
+            typing.remove();
+            botRow = createBotRow();
+            messagesEl.appendChild(botRow.row);
+            firstToken = false;
+          }
+          accumulated += obj.response;
+          botRow.bubble.textContent = accumulated;
+          messagesEl.scrollTop = messagesEl.scrollHeight;
+        }
+      }
+    }
+
+    conversationHistory.push({ role: "user", content: question });
+    conversationHistory.push({ role: "assistant", content: accumulated });
   } catch (e) {
     typing.remove();
-    addBotResponse({ answer: "Nie udało się połączyć. Spróbuj ponownie.", source: null, gap: false });
+    if (!botRow) { botRow = createBotRow(); messagesEl.appendChild(botRow.row); }
+    botRow.bubble.classList.remove("streaming");
+    botRow.bubble.textContent = "Nie udało się połączyć. Spróbuj ponownie.";
   } finally {
     sendBtn.disabled = false;
   }

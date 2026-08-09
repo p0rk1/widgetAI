@@ -269,6 +269,23 @@ function addBadge(kind, text) {
   messagesEl.scrollTop = messagesEl.scrollHeight;
 }
 
+function typewriterReveal(el, text, speed = 12) {
+  return new Promise((resolve) => {
+    let i = 0;
+    el.textContent = "";
+    const interval = setInterval(() => {
+      el.textContent += text[i];
+      i++;
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+      if (i >= text.length) {
+        clearInterval(interval);
+        el.classList.remove("streaming");
+        resolve();
+      }
+    }, speed);
+  });
+}
+
 async function ask(question) {
   if (!question.trim() || sendBtn.disabled) return;
   setOpen(true);
@@ -280,88 +297,34 @@ async function ask(question) {
   const typing = addTypingIndicator();
   const historyToSend = conversationHistory.slice(-MAX_HISTORY);
 
-  let botRow = null;
-  let accumulated = "";
-  let firstToken = true;
-
   try {
     const res = await fetch(WORKER_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ question, history: historyToSend }),
     });
+    const data = await res.json();
+    typing.remove();
 
-    const contentType = res.headers.get("content-type") || "";
+    const { row, bubble } = createBotRow();
+    if (data.gap) bubble.classList.add("gap");
+    messagesEl.appendChild(row);
 
-    if (!res.ok || contentType.includes("application/json")) {
-      const data = await res.json().catch(() => ({}));
-      typing.remove();
-      const { row, bubble } = createBotRow();
-      bubble.classList.remove("streaming");
-      bubble.classList.add("gap");
-      bubble.textContent = data.error || "Wystąpił błąd. Spróbuj ponownie.";
-      messagesEl.appendChild(row);
-      messagesEl.scrollTop = messagesEl.scrollHeight;
-      return;
+    await typewriterReveal(bubble, data.answer || "Wystąpił błąd. Spróbuj ponownie.");
+
+    if (data.source) addBadge("source", data.source);
+    if (data.gap) addBadge("gap");
+
+    if (res.ok && !data.error) {
+      conversationHistory.push({ role: "user", content: question });
+      conversationHistory.push({ role: "assistant", content: data.answer });
     }
-
-    if (!res.body) throw new Error("Brak strumienia w odpowiedzi");
-
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const parts = buffer.split("\n\n");
-      buffer = parts.pop();
-
-      for (const part of parts) {
-        if (part.startsWith("event: verify")) {
-          const dataLine = part.split("\n").find((l) => l.startsWith("data:"));
-          if (!dataLine) continue;
-          const verify = JSON.parse(dataLine.slice(5).trim());
-          if (botRow) botRow.bubble.classList.remove("streaming");
-          if (!verify.ok) {
-            // Bezpiecznik zadziałał: podmieniamy pokazany tekst na uczciwy fallback.
-            if (!botRow) { botRow = createBotRow(); messagesEl.appendChild(botRow.row); }
-            botRow.bubble.classList.remove("bot");
-            botRow.bubble.classList.add("gap");
-            botRow.bubble.textContent = verify.fallback;
-            addBadge("gap");
-          } else if (verify.source) {
-            addBadge("source", verify.source);
-          }
-          continue;
-        }
-        if (!part.startsWith("data:")) continue;
-        const payload = part.slice(5).trim();
-        if (payload === "[DONE]") continue;
-        let obj;
-        try { obj = JSON.parse(payload); } catch { continue; }
-        if (obj.response) {
-          if (firstToken) {
-            typing.remove();
-            botRow = createBotRow();
-            messagesEl.appendChild(botRow.row);
-            firstToken = false;
-          }
-          accumulated += obj.response;
-          botRow.bubble.textContent = accumulated;
-          messagesEl.scrollTop = messagesEl.scrollHeight;
-        }
-      }
-    }
-
-    conversationHistory.push({ role: "user", content: question });
-    conversationHistory.push({ role: "assistant", content: accumulated });
   } catch (e) {
     typing.remove();
-    if (!botRow) { botRow = createBotRow(); messagesEl.appendChild(botRow.row); }
-    botRow.bubble.classList.remove("streaming");
-    botRow.bubble.textContent = "Nie udało się połączyć. Spróbuj ponownie.";
+    const { row, bubble } = createBotRow();
+    bubble.classList.remove("streaming");
+    bubble.textContent = "Nie udało się połączyć. Spróbuj ponownie.";
+    messagesEl.appendChild(row);
   } finally {
     sendBtn.disabled = false;
   }

@@ -20,25 +20,25 @@
   body { margin: 0; font-family: 'IBM Plex Sans', sans-serif; color: var(--neutral-900); background: var(--stone-50); }
   .font-display { font-family: 'Oswald', sans-serif; text-transform: uppercase; letter-spacing: 0.03em; }
   .font-mono { font-family: 'IBM Plex Mono', monospace; }
-
+ 
   header { border-bottom: 1px solid var(--stone-200); padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; background: white; }
   header .logo { display: flex; align-items: center; gap: 8px; font-weight: 600; }
   header nav { display: flex; gap: 24px; font-size: 12px; color: var(--stone-500); }
   @media (max-width: 640px) { header nav { display: none; } }
-
+ 
   .hero { background: var(--neutral-900); color: white; padding: 56px 24px; }
   .hero h1 { font-size: 32px; max-width: 520px; margin: 0 0 12px; }
   .hero p { color: var(--stone-400); max-width: 420px; font-size: 14px; margin: 0 0 20px; }
   .hero button { background: var(--amber); color: var(--neutral-900); border: none; padding: 10px 18px; font-size: 12px; border-radius: 6px; cursor: pointer; transition: transform 0.15s var(--ease-out-expo), box-shadow 0.15s; }
   .hero button:hover { box-shadow: 0 4px 18px var(--amber-glow); transform: translateY(-1px); }
   .hero button:active { transform: scale(0.96); }
-
+ 
   .grid { padding: 40px 24px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
   .grid.four { grid-template-columns: repeat(4, 1fr); padding-top: 0; }
   @media (max-width: 640px) { .grid, .grid.four { grid-template-columns: repeat(2, 1fr); } }
   .placeholder { height: 96px; background: var(--stone-100); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 11px; color: var(--stone-400); transition: background 0.2s; }
   .placeholder:hover { background: var(--stone-200); }
-
+ 
   .widget-wrap { padding: 0 24px; position: relative; }
   .widget-wrap::before {
     content: ""; position: absolute; inset: -30px 24px; z-index: 0;
@@ -61,7 +61,7 @@
     animation: shimmer 5s ease-in-out infinite;
   }
   @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
-
+ 
   .widget-toggle { width: 100%; display: flex; align-items: center; gap: 12px; padding: 16px; background: none; border: none; cursor: pointer; text-align: left; }
   .avatar {
     width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0;
@@ -76,7 +76,7 @@
   .widget-toggle .subtitle { font-size: 11px; color: var(--stone-500); margin-top: 2px; }
   .chevron { transition: transform 0.3s var(--ease-out-expo); color: var(--stone-400); margin-left: auto; flex-shrink: 0; }
   .chevron.open { transform: rotate(180deg); }
-
+ 
   .panel { max-height: 0; overflow: hidden; transition: max-height 0.4s var(--ease-out-expo); }
   .panel.open { max-height: 340px; }
   .messages { padding: 4px 16px 0; max-height: 264px; overflow-y: auto; }
@@ -90,51 +90,51 @@
   .bubble.gap { background: var(--orange-50); border: 1px solid var(--orange-200); color: var(--orange-900); border-bottom-left-radius: 4px; }
   .bubble.streaming::after { content: ""; display: inline-block; width: 2px; height: 12px; background: var(--amber-dark); margin-left: 2px; vertical-align: middle; animation: blink 0.9s step-end infinite; }
   @keyframes blink { 50% { opacity: 0; } }
-
+ 
   .badge-row { margin-left: 32px; display: flex; gap: 6px; flex-wrap: wrap; }
   .badge { display: inline-flex; align-items: center; gap: 4px; margin-top: 4px; padding: 2px 9px; border-radius: 999px; font-size: 10px; animation: slideIn 0.3s var(--ease-out-expo); }
   .badge.source { background: #fef3c7; border: 1px solid #fcd34d; color: #92400e; }
   .badge.gap-badge { background: var(--orange-100); border: 1px solid var(--orange-200); color: var(--orange-800); }
-
+ 
   .typing-dots { display: flex; gap: 3px; padding: 10px 13px; background: white; border: 1px solid var(--stone-200); border-radius: 14px; border-bottom-left-radius: 4px; width: fit-content; margin-left: 32px; }
   .typing-dots span { width: 5px; height: 5px; border-radius: 50%; background: var(--stone-400); animation: bounce 1.2s ease-in-out infinite; }
   .typing-dots span:nth-child(2) { animation-delay: 0.15s; }
   .typing-dots span:nth-child(3) { animation-delay: 0.3s; }
   @keyframes bounce { 0%, 60%, 100% { transform: translateY(0); opacity: 0.5; } 30% { transform: translateY(-4px); opacity: 1; } }
-
+ 
   .chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 16px 0; }
   .chip { font-size: 11px; padding: 5px 11px; border-radius: 999px; border: 1px solid var(--stone-300); background: white; color: var(--stone-600); cursor: pointer; transition: all 0.2s var(--ease-out-expo); }
   .chip:hover { border-color: var(--amber); color: var(--amber-dark); transform: translateY(-1px); box-shadow: 0 3px 10px rgba(245,158,11,0.15); }
   .chip:active { transform: scale(0.96); }
-
+ 
   .input-row { display: flex; gap: 8px; padding: 12px 16px 16px; }
-  .input-row input { flex: 1; padding: 9px 13px; font-size: 13px; border: 1px solid var(--stone-300); border-radius: 10px; font-family: inherit; background: rgba(255,255,255,0.8); transition: border-color 0.2s, box-shadow 0.2s; }
-  .input-row input:focus { outline: none; border-color: var(--amber); box-shadow: 0 0 0 3px rgba(245,158,11,0.15); }
+  .input-row textarea { flex: 1; padding: 9px 13px; font-size: 13px; border: 1px solid var(--stone-300); border-radius: 10px; font-family: inherit; background: rgba(255,255,255,0.8); transition: border-color 0.2s, box-shadow 0.2s; resize: none; max-height: 120px; overflow-y: auto; line-height: 1.5; }
+  .input-row textarea:focus { outline: none; border-color: var(--amber); box-shadow: 0 0 0 3px rgba(245,158,11,0.15); }
   .input-row button { padding: 9px 15px; background: var(--neutral-900); color: white; border: none; border-radius: 10px; cursor: pointer; transition: transform 0.15s var(--ease-out-expo), background 0.15s; }
   .input-row button:hover:not(:disabled) { background: var(--amber-dark); }
   .input-row button:active:not(:disabled) { transform: scale(0.94); }
   .input-row button:disabled { opacity: 0.35; cursor: default; }
-
+ 
   .reset-btn { font-size: 10px; color: var(--stone-400); background: none; border: none; cursor: pointer; padding: 6px 16px 0; transition: color 0.2s; }
   .reset-btn:hover { color: var(--amber-dark); }
   .footer-note { display: flex; align-items: center; gap: 6px; padding: 10px 16px; border-top: 1px solid rgba(0,0,0,0.06); background: rgba(245,245,244,0.6); font-size: 10px; color: var(--stone-400); }
-
+ 
   footer { margin-top: 32px; padding: 20px 24px; border-top: 1px solid var(--stone-200); font-size: 11px; color: var(--stone-400); display: flex; justify-content: space-between; }
 </style>
 </head>
 <body>
-
+ 
 <header>
   <div class="logo font-display">BudMax</div>
   <nav><span>O firmie</span><span>Usługi</span><span>Realizacje</span><span>Kontakt</span></nav>
 </header>
-
+ 
 <div class="hero">
   <h1 class="font-display">Budujemy solidnie od 2009 roku</h1>
   <p>Domy jednorodzinne, remonty i nadzór budowlany na Pomorzu Zachodnim.</p>
   <button class="font-display">Bezpłatna wycena</button>
 </div>
-
+ 
 <div class="grid">
   <div class="placeholder">Budowa domów</div>
   <div class="placeholder">Remonty</div>
@@ -146,7 +146,7 @@
   <div class="placeholder">realizacja 03</div>
   <div class="placeholder">realizacja 04</div>
 </div>
-
+ 
 <div class="widget-wrap">
   <div class="widget">
     <div class="widget-shimmer"></div>
@@ -160,42 +160,42 @@
       </div>
       <svg class="chevron" id="chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
     </button>
-
+ 
     <div class="panel" id="panel">
       <button class="reset-btn" id="resetBtn" style="display:none;">↺ wyczyść rozmowę</button>
       <div class="messages" id="messages"></div>
     </div>
-
+ 
     <div class="chips" id="chips"></div>
-
+ 
     <form class="input-row" id="askForm">
-      <input type="text" id="questionInput" placeholder="Napisz pytanie..." autocomplete="off">
+      <textarea id="questionInput" placeholder="Napisz pytanie..." rows="1"></textarea>
       <button type="submit" id="sendBtn">Wyślij</button>
     </form>
-
+ 
     <div class="footer-note">
       <span>🔒</span>
       <span>Odpowiedzi generowane wyłącznie na podstawie dokumentacji firmy.</span>
     </div>
   </div>
 </div>
-
+ 
 <footer>
   <span>© 2026 BudMax Sp. z o.o.</span>
   <span>NIP 000-000-00-00 · woj. zachodniopomorskie</span>
 </footer>
-
+ 
 <script>
 const WORKER_URL = "https://knowbase-budmax.rezi7608.workers.dev";
 const MAX_HISTORY = 6; // ile ostatnich wiadomości (user+assistant) wysyłać jako pamięć rozmowy
-
+ 
 const CHIPS = [
   "Czy montujecie fotowoltaikę?",
   "Czym się różni stan surowy od deweloperskiego?",
   "Ile trzeba wpłacić na start?",
   "Robicie ogrody?",
 ];
-
+ 
 const chipsEl = document.getElementById("chips");
 CHIPS.forEach((c) => {
   const btn = document.createElement("button");
@@ -204,7 +204,7 @@ CHIPS.forEach((c) => {
   btn.onclick = () => ask(c);
   chipsEl.appendChild(btn);
 });
-
+ 
 const panel = document.getElementById("panel");
 const chevron = document.getElementById("chevron");
 const messagesEl = document.getElementById("messages");
@@ -212,26 +212,36 @@ const resetBtn = document.getElementById("resetBtn");
 const form = document.getElementById("askForm");
 const input = document.getElementById("questionInput");
 const sendBtn = document.getElementById("sendBtn");
-
+ 
 let open = false;
 let conversationHistory = []; // [{role:"user"|"assistant", content:"..."}]
-
+ 
 document.getElementById("toggleBtn").onclick = () => setOpen(!open);
 input.addEventListener("focus", () => setOpen(true));
+input.addEventListener("input", () => {
+  input.style.height = "auto";
+  input.style.height = Math.min(input.scrollHeight, 120) + "px";
+});
+input.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    ask(input.value);
+  }
+});
 resetBtn.onclick = () => {
   messagesEl.innerHTML = "";
   conversationHistory = [];
   resetBtn.style.display = "none";
 };
 form.onsubmit = (e) => { e.preventDefault(); ask(input.value); };
-
+ 
 function setOpen(v) {
   open = v;
   panel.classList.toggle("open", open);
   chevron.classList.toggle("open", open);
   chipsEl.style.display = open ? "none" : "flex";
 }
-
+ 
 function addUserBubble(text) {
   const row = document.createElement("div");
   row.className = "msg-row user";
@@ -240,7 +250,7 @@ function addUserBubble(text) {
   messagesEl.appendChild(row);
   messagesEl.scrollTop = messagesEl.scrollHeight;
 }
-
+ 
 function addTypingIndicator() {
   const el = document.createElement("div");
   el.className = "typing-dots";
@@ -249,14 +259,14 @@ function addTypingIndicator() {
   messagesEl.scrollTop = messagesEl.scrollHeight;
   return el;
 }
-
+ 
 function createBotRow() {
   const row = document.createElement("div");
   row.className = "msg-row";
   row.innerHTML = `<div class="msg-avatar"></div><div class="bubble bot streaming"></div>`;
   return { row, bubble: row.querySelector(".bubble") };
 }
-
+ 
 function addBadge(kind, text) {
   const badgeRow = document.createElement("div");
   badgeRow.className = "badge-row";
@@ -268,7 +278,7 @@ function addBadge(kind, text) {
   messagesEl.appendChild(badgeRow);
   messagesEl.scrollTop = messagesEl.scrollHeight;
 }
-
+ 
 function typewriterReveal(el, text, speed = 12) {
   return new Promise((resolve) => {
     let i = 0;
@@ -285,18 +295,19 @@ function typewriterReveal(el, text, speed = 12) {
     }, speed);
   });
 }
-
+ 
 async function ask(question) {
   if (!question.trim() || sendBtn.disabled) return;
   setOpen(true);
   input.value = "";
+  input.style.height = "auto";
   addUserBubble(question);
   resetBtn.style.display = "block";
   sendBtn.disabled = true;
-
+ 
   const typing = addTypingIndicator();
   const historyToSend = conversationHistory.slice(-MAX_HISTORY);
-
+ 
   try {
     const res = await fetch(WORKER_URL, {
       method: "POST",
@@ -305,16 +316,16 @@ async function ask(question) {
     });
     const data = await res.json();
     typing.remove();
-
+ 
     const { row, bubble } = createBotRow();
     if (data.gap) bubble.classList.add("gap");
     messagesEl.appendChild(row);
-
+ 
     await typewriterReveal(bubble, data.answer || "Wystąpił błąd. Spróbuj ponownie.");
-
+ 
     if (data.source) addBadge("source", data.source);
     if (data.gap) addBadge("gap");
-
+ 
     if (res.ok && !data.error) {
       conversationHistory.push({ role: "user", content: question });
       conversationHistory.push({ role: "assistant", content: data.answer });
@@ -332,3 +343,4 @@ async function ask(question) {
 </script>
 </body>
 </html>
+ 

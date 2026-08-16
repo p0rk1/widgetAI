@@ -1,0 +1,5 @@
+# W repozytorium wszystkie pliki tekstowe trzymamy w LF i tak samo je
+# wydajemy przy checkoucie — niezależnie od core.autocrlf na danej maszynie.
+# Bez tego Windows dostaje CRLF w kopii roboczej i git ostrzega przy każdym
+# `git add`, mimo że w samym repo nic się nie zmienia.
+* text=auto eol=lf

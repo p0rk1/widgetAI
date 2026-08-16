@@ -16,6 +16,7 @@ Aktualny stan: działające demo na fikcyjnej firmie budowlanej **BudMax Sp. z o
 | `worker.js` | Backend — RAG, weryfikacja, endpointy | Cloudflare Worker `knowbase-budmax` |
 | `index.html` | Strona firmy z osadzonym widgetem | GitHub Pages |
 | `panel.html` | Panel analityczny dla właściciela firmy | GitHub Pages |
+| `wrangler.toml` | Konfiguracja deployu — bindingi, data kompatybilności | repo |
 
 Adresy:
 - Worker: `https://knowbase-budmax.rezi7608.workers.dev`
@@ -34,6 +35,16 @@ Bindingi Workera — **wszystkie cztery są wymagane**:
 albo Worker → Settings → Variables → Add secret. **Nigdy w repo — jest publiczne.**
 Bez ustawionego sekretu endpointy administracyjne zwracają 403 (fail-closed).
 
+Sekret **jest ustawiony**, a jego wartość przechowuje właściciel projektu poza
+repozytorium. Nie ma jej w kodzie, w konfiguracji ani w tym pliku — jeśli jest
+potrzebna, trzeba o nią poprosić, nie zgadywać ani nie odtwarzać z historii.
+Wartości `budmax-reindex-2026` i `gieldowa1q2w3e` są **martwe i spalone**
+(pierwsza leżała jawnie w kodzie, druga wyciekła do zapisu rozmowy).
+Nie przywracać ich i nie używać jako przykładów — także w dokumentacji.
+
+Wartość podaje się wyłącznie w monicie `wrangler secret put`, nigdy jako argument
+w linii komendy: argumenty trafiają do historii powłoki na dysku.
+
 Modele:
 - Generowanie: `@cf/meta/llama-3.1-8b-instruct-fast`
 - Embeddingi: `@cf/baai/bge-m3` (1024 wymiary — musi zgadzać się z indeksem)
@@ -41,6 +52,41 @@ Modele:
 **Uwaga:** katalog modeli Cloudflare zmienia się bez uprzedzenia. Jeśli Worker
 zwraca błąd połączenia z modelem, najpierw sprawdź
 `https://developers.cloudflare.com/workers-ai/models/` czy model nie został wycofany.
+
+## wrangler.toml jest źródłem prawdy
+
+Deploy z CLI traktuje ten plik jako pełny opis Workera — **binding, którego tam nie ma,
+zostaje usunięty z działającego Workera**. Dodając binding w dashboardzie, dopisz go
+też tutaj, inaczej najbliższy `wrangler deploy` go zdejmie, a Worker wywali się
+dopiero przy pierwszym zapytaniu.
+
+`compatibility_date = "2026-08-04"` odwzorowuje stan sprzed przejścia na CLI.
+**Nie podbijać przy okazji** — to zmiana zachowania runtime'u, nie porządki.
+Tylko świadoma decyzja z powodem.
+
+Sekretów w tym pliku nie ma i być nie może — przeżywają deploy niezależnie od niego.
+
+## Jak się wdraża
+
+Projekt jest pod kontrolą wersji i wdrażany z CLI. **Wcześniejszy sposób pracy —
+wklejanie kodu do edytora w dashboardzie Cloudflare — jest nieaktualny.** Kod na
+dysku jest źródłem prawdy; zmiana zrobiona w dashboardzie zostanie po cichu
+nadpisana przy najbliższym deployu.
+
+```
+node --check worker.js          # przed każdym commitem
+wrangler deploy --dry-run       # sprawdza bindingi bez wysyłki
+wrangler deploy                 # wdrożenie
+git push origin main            # remote na SSH (git@github.com:p0rk1/widgetAI.git)
+```
+
+Cofnięcie: `wrangler rollback` wraca do poprzedniej wersji, a
+`wrangler versions deploy <id> --name knowbase-budmax` do dowolnej wcześniejszej.
+Cloudflare trzyma poprzednie wersje, więc nieudany deploy jest odwracalny —
+przed ryzykowną zmianą warto zanotować `Current Version ID` z wyjścia deployu.
+
+Deploy nie rusza `index.html` ani `panel.html` — te idą na GitHub Pages przez
+`git push`. Zmiana w widgecie wymaga pusha, nie deployu, i odwrotnie.
 
 ## Endpointy
 
@@ -133,15 +179,23 @@ trafność wyszukiwania i jest praktyką do powtórzenia u kolejnych klientów.
 
 ## Następne kroki
 
+Kolejność jest celowa — uzasadnienie jest częścią decyzji, nie ozdobnikiem.
+
 1. **Test 70B** (`@cf/meta/llama-3.3-70b-instruct-fp8-fast`) — wymaga planu Workers Paid
-   (5 USD/mies.). Zmiana to jedna stała `MODEL_ID`. Cel: sprawdzić ile problemów
-   znika samo przy mocniejszym modelu, zamiast dokładać warstwy w ciemno.
-2. **Druga branża** — kancelaria albo gabinet. Sprawdzenie, ile zabezpieczeń jest
+   (5 USD/mies.). Zmiana to jedna stała `MODEL_ID`, deploy i `wrangler rollback`
+   gdyby wypadł gorzej. **Idzie pierwszy, bo przesuwa punkt odniesienia dla kalibracji
+   wszystkiego, co potem** — progi, wzorce obietnic i liczba warstw weryfikacji były
+   strojone pod słabości modelu 8B. Strojenie ich dalej przed tym testem to ryzyko
+   pracy nad problemami, które znikają same.
+2. **Bot dla pracowników** — drugi tryb: procedury BHP, kadry, instrukcje wykonania
+   zadań. Ton instruktażowy, nie sprzedażowy. Wymaga prawdziwego logowania
+   i twardej separacji od przestrzeni publicznej. To druga połowa produktu, nie dodatek —
+   i **stawka jest wyższa niż przy FAQ**: zmyślona odpowiedź o procedurze BHP szkodzi
+   inaczej niż zmyślony termin realizacji.
+3. **Druga branża** — kancelaria albo gabinet. Sprawdzenie, ile zabezpieczeń jest
    uniwersalnych, a ile to protezy pod budowlankę (wzorce mówią o rabatach
    w hurtowniach — u kancelarii groźne będą terminy przedawnienia i szanse wygranej).
-3. **Bot dla pracowników** — drugi tryb: procedury BHP, kadry, instrukcje wykonania
-   zadań. Ton instruktażowy, nie sprzedażowy. Wymaga prawdziwego logowania
-   i twardej separacji od przestrzeni publicznej.
+   Ważne poznawczo, ale **nie blokuje sprzedaży** — dlatego po dwóch poprzednich.
 4. **Skrypt osadzający** — Shadow DOM, jedna linijka `<script>` do wklejenia na
    dowolnej stronie klienta, izolacja stylów w obie strony.
 5. **Multi-tenant** — dopiero przy 2-3 płacących klientach: D1 z tabelą klientów,
@@ -156,3 +210,21 @@ trafność wyszukiwania i jest praktyką do powtórzenia u kolejnych klientów.
   bo przeglądarka wysyła w nagłówku Origin tylko protokół i host
 - Nie dodawać warstw zabezpieczeń bez zmierzenia problemu na `/debug` —
   projekt ma za sobą kilka rund łatania objawów zamiast przyczyn
+
+## Utrzymanie tego pliku
+
+**Ten plik jest jedyną pamięcią projektu między sesjami.** Poza nim zostaje kod,
+który mówi *co* robi, ale nie *dlaczego tak* ani *czego już próbowano*.
+
+Po każdej sesji, w której zapadła decyzja architektoniczna, zmienił się stan
+infrastruktury albo coś zostało odrzucone jako ślepa uliczka — **zaktualizuj go
+i wypchnij na GitHub, zanim uznasz zadanie za skończone.** Aktualizacja jest
+częścią zadania, nie sprzątaniem po nim.
+
+Zapisuj **wnioski i zakazy, nie proces dochodzenia do nich.** „SSE wycofane, bo
+Cloudflare buforuje" jest warte miejsca; relacja z debugowania nie jest. Dobry wpis
+oszczędza następnej sesji powtórzenia ślepej uliczki — reszta to szum, który
+rozcieńcza to, co ważne.
+
+Martwe wartości, wycofane podejścia i obalone założenia zostawiaj **oznaczone jako
+martwe**, nie usuwaj po cichu. Zniknięty zapis wraca jako ten sam błąd za trzy sesje.

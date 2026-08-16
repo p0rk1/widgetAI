@@ -46,8 +46,10 @@ Wartość podaje się wyłącznie w monicie `wrangler secret put`, nigdy jako ar
 w linii komendy: argumenty trafiają do historii powłoki na dysku.
 
 Modele:
-- Generowanie: `@cf/meta/llama-3.1-8b-instruct-fast`
+- Generowanie: `@cf/meta/llama-3.3-70b-instruct-fp8-fast` (od 16.08.2026 — patrz „Dlaczego 70B")
 - Embeddingi: `@cf/baai/bge-m3` (1024 wymiary — musi zgadzać się z indeksem)
+
+Poprzednio `@cf/meta/llama-3.1-8b-instruct-fast`. **Nie wracać do 8B** — powód niżej.
 
 **Uwaga:** katalog modeli Cloudflare zmienia się bez uprzedzenia. Jeśli Worker
 zwraca błąd połączenia z modelem, najpierw sprawdź
@@ -140,6 +142,35 @@ CITATION_THRESHOLD = 0.48   # 0.42 przepuszczało za dużo, 0.5 odrzucało popra
 
 Zmieniając progi, użyj `/debug` — pokazuje dokładne wyniki podobieństwa zamiast zgadywania.
 
+## Dlaczego 70B
+
+Test przeprowadzony 16.08.2026 na tym samym zestawie co wcześniej dla 8B:
+10 pytań kontrolnych + dwie długie, wielowątkowe wiadomości klientów. Zmieniona
+była **wyłącznie stała `MODEL_ID`** — progi, prompt i `TOP_K` bez zmian, żeby wynik
+dało się przypisać modelowi, a nie kalibracji.
+
+Zniknęły **wszystkie** halucynacje, które 8B generowało powtarzalnie:
+- zmyślona cena za metr
+- obietnica wolnych terminów
+- potwierdzanie założeń klienta o rabatach i stawkach VAT
+- wymyślony czas realizacji
+- informacja o płatności z góry, sprzeczna z dokumentacją
+
+Do tego czysta polszczyzna bez literówek i brak powtórzeń w obrębie jednej odpowiedzi.
+
+**Wskaźnik mierzalny — liczba zdań wycinanych przez weryfikację:** 8B wycinało
+1–3 zdania w praktycznie każdej długiej odpowiedzi, 70B wyciął 0 przy pierwszej
+i 1 przy drugiej. Model generuje mniej treści bez pokrycia, więc weryfikacja ma
+mniej pracy.
+
+**Nieoczekiwany wynik:** przewidywaliśmy, że uległość wobec klienta (potwierdzanie
+jego założeń) zostanie, bo to cecha trenowania, a nie rozmiaru. 70B pytania o VAT
+i rabaty po prostu **przemilczało**, zamiast grzecznie potwierdzić.
+
+**Wniosek:** warstwy weryfikacji zostają — działają niezależnie od modelu i to one
+dają gwarancję, nie prawdopodobieństwo. Ale 70B rozwiązało problemy, których nie
+dało się załatać kodem po czterech rundach prób. **Nie wracać do 8B.**
+
 ## Decyzje, do których nie wracać
 
 - **Prawdziwy streaming SSE — wycofany.** Cloudflare buforował odpowiedź mimo
@@ -149,7 +180,8 @@ Zmieniając progi, użyj `/debug` — pokazuje dokładne wyniki podobieństwa za
   przy każdej zmianie cennika, miesza wiedzę klientów. RAG jest właściwą architekturą.
 - **Ogród ≠ ogrodzenie** — rozdzielone strukturalnie: osobne fragmenty (`c42`, `c43`)
   z jawnym odsyłaczem do siebie nawzajem w treści, plus instrukcja w prompcie.
-  Model 8B mylił je wielokrotnie.
+  Mylił je wielokrotnie model 8B. Rozdzielenie **zostaje mimo przejścia na 70B** —
+  to poprawna struktura danych, nie proteza pod słabszy model.
 - **Batching wszędzie** — Cloudflare ma limit 50 podzapytań na jedno wywołanie Workera.
   Reindeks idzie paczkami po 10, weryfikacja zdań jednym wywołaniem embeddingu.
 
@@ -160,8 +192,10 @@ art. 568 §1 KC (rękojmia 5 lat / 2 lata), WT2021 (izolacyjność), KSeF (obowi
 od kwietnia 2026), program Czyste Powietrze (kwoty dofinansowania).
 
 **Rękojmia i gwarancja to dwie różne instytucje** — rękojmia jest ustawowa i obowiązuje
-zawsze, gwarancja jest dobrowolna. Model 8B je mylił, stąd osobny fragment `c46`
-tłumaczący różnicę.
+zawsze, gwarancja jest dobrowolna. Mylił je model 8B, stąd osobny fragment `c46`
+tłumaczący różnicę. Fragment zostaje — 70B trafia w to rozróżnienie samo z siebie
+(„niezależnie od ustawowej rękojmi, udzielamy dodatkowej gwarancji umownej"),
+ale to zasługa dobrej treści, nie powód, żeby ją usuwać.
 
 Fragmenty zaczynają się od sformułowań, których używają pytający ("Gdzie działamy
 i gdzie realizujemy budowy…"), nie tylko od języka oficjalnego dokumentu. To poprawia
@@ -169,8 +203,8 @@ trafność wyszukiwania i jest praktyką do powtórzenia u kolejnych klientów.
 
 ## Znane ograniczenia
 
-- Model 8B generuje literówki po polsku ("z przyjemieniem") — do naprawy tylko przez
-  większy model
+- ~~Model 8B generuje literówki po polsku ("z przyjemieniem")~~ — **nieaktualne
+  od 16.08.2026**, zniknęło wraz z przejściem na 70B
 - Wyniki wahają się między uruchomieniami przy tym samym pytaniu
 - Wykrywanie obietnic wzorcami tekstowymi jest z natury zawodne — model wymyśla nowe
   sformułowania. Dokładanie kolejnych wzorców ma malejący zwrot.
@@ -181,24 +215,21 @@ trafność wyszukiwania i jest praktyką do powtórzenia u kolejnych klientów.
 
 Kolejność jest celowa — uzasadnienie jest częścią decyzji, nie ozdobnikiem.
 
-1. **Test 70B** (`@cf/meta/llama-3.3-70b-instruct-fp8-fast`) — wymaga planu Workers Paid
-   (5 USD/mies.). Zmiana to jedna stała `MODEL_ID`, deploy i `wrangler rollback`
-   gdyby wypadł gorzej. **Idzie pierwszy, bo przesuwa punkt odniesienia dla kalibracji
-   wszystkiego, co potem** — progi, wzorce obietnic i liczba warstw weryfikacji były
-   strojone pod słabości modelu 8B. Strojenie ich dalej przed tym testem to ryzyko
-   pracy nad problemami, które znikają same.
-2. **Bot dla pracowników** — drugi tryb: procedury BHP, kadry, instrukcje wykonania
+- ~~**Test 70B**~~ — ✅ **wykonane i rozstrzygnięte 16.08.2026.** Model zmieniony
+  na stałe, szczegóły w sekcji „Dlaczego 70B". Nie otwierać ponownie.
+
+1. **Bot dla pracowników** — drugi tryb: procedury BHP, kadry, instrukcje wykonania
    zadań. Ton instruktażowy, nie sprzedażowy. Wymaga prawdziwego logowania
    i twardej separacji od przestrzeni publicznej. To druga połowa produktu, nie dodatek —
    i **stawka jest wyższa niż przy FAQ**: zmyślona odpowiedź o procedurze BHP szkodzi
    inaczej niż zmyślony termin realizacji.
-3. **Druga branża** — kancelaria albo gabinet. Sprawdzenie, ile zabezpieczeń jest
+2. **Druga branża** — kancelaria albo gabinet. Sprawdzenie, ile zabezpieczeń jest
    uniwersalnych, a ile to protezy pod budowlankę (wzorce mówią o rabatach
    w hurtowniach — u kancelarii groźne będą terminy przedawnienia i szanse wygranej).
-   Ważne poznawczo, ale **nie blokuje sprzedaży** — dlatego po dwóch poprzednich.
-4. **Skrypt osadzający** — Shadow DOM, jedna linijka `<script>` do wklejenia na
+   Ważne poznawczo, ale **nie blokuje sprzedaży** — dlatego po bocie dla pracowników.
+3. **Skrypt osadzający** — Shadow DOM, jedna linijka `<script>` do wklejenia na
    dowolnej stronie klienta, izolacja stylów w obie strony.
-5. **Multi-tenant** — dopiero przy 2-3 płacących klientach: D1 z tabelą klientów,
+4. **Multi-tenant** — dopiero przy 2-3 płacących klientach: D1 z tabelą klientów,
    namespaces w Vectorize per klient.
 
 ## Zasady pracy nad tym projektem
@@ -210,6 +241,25 @@ Kolejność jest celowa — uzasadnienie jest częścią decyzji, nie ozdobnikie
   bo przeglądarka wysyła w nagłówku Origin tylko protokół i host
 - Nie dodawać warstw zabezpieczeń bez zmierzenia problemu na `/debug` —
   projekt ma za sobą kilka rund łatania objawów zamiast przyczyn
+
+## Przepływ kontekstu
+
+Projekt prowadzony jest w dwóch miejscach i **to rozdzielenie jest zamierzone**:
+
+- **Decyzje architektoniczne, kierunek produktu i rozstrzyganie kompromisów** zapadają
+  w rozmowie z Claude w przeglądarce, gdzie żyje pełna historia projektu — dlaczego
+  coś odrzucono, co już próbowano, jakie były wyniki testów.
+- **Wykonanie, zmiany w kodzie, deploy i operacje na repo** dzieją się tutaj,
+  w Claude Code, który widzi rzeczywisty stan plików i infrastruktury.
+
+**Ten plik jest jedynym pomostem między nimi.** Żadna z tych stron nie widzi historii
+tej drugiej — poza tym, co tu zapisane.
+
+Dlatego po każdej sesji, w której coś rozstrzygnięto, zapisz tu **wniosek i jego
+uzasadnienie w jednym–dwóch zdaniach.** Nie proces dochodzenia, ale wystarczająco,
+żeby za miesiąc nikt nie kwestionował decyzji ani nie zaczynał od nowa czegoś, co już
+odrzucono. Rzeczy porzucone oznaczaj jawnie jako ślepe uliczki **z powodem**, zamiast
+po cichu usuwać.
 
 ## Utrzymanie tego pliku
 

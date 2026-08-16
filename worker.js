@@ -16,7 +16,7 @@
 //   https://twoj-worker.workers.dev/reindex?key=TWOJ_SEKRET
 // Rób to za każdym razem, gdy zmienisz CHUNKS.
 
-const MODEL_ID = "@cf/meta/llama-3.1-8b-instruct-fast";
+const MODEL_ID = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
 const EMBED_MODEL_ID = "@cf/baai/bge-m3";
 const TOP_K = 8; // podniesione z 6 — krótkie, ogólne pytania miały za mało kandydatów
 const MIN_CHUNKS = 2;

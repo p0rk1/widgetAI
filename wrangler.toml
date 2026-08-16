@@ -15,6 +15,11 @@ main = "worker.js"
 compatibility_date = "2026-08-04"
 workers_dev = true
 
+# Bez tego Cloudflare wystawia każdą wersję pod osobnym adresem podglądu.
+# Widget i tak chodzi wyłącznie z ALLOWED_ORIGIN, więc to była tylko
+# dodatkowa powierzchnia bez zastosowania.
+preview_urls = false
+
 [ai]
 binding = "AI"
 

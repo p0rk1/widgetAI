@@ -184,6 +184,16 @@ dało się załatać kodem po czterech rundach prób. **Nie wracać do 8B.**
   to poprawna struktura danych, nie proteza pod słabszy model.
 - **Batching wszędzie** — Cloudflare ma limit 50 podzapytań na jedno wywołanie Workera.
   Reindeks idzie paczkami po 10, weryfikacja zdań jednym wywołaniem embeddingu.
+- **Zwrot per Pan/Pani ustępuje jawnej prośbie klienta — i tak ma zostać.**
+  W `STYL ODPOWIEDZI` jest reguła o uprzejmym dystansie i ona działa: przy zwykłym
+  przedstawieniu się model odpowiada „Dzień dobry, Panie Kowalski", przy luźnym
+  pytaniu bez imienia — bezosobowo. Ale gdy klient wprost napisze „mów mi po imieniu",
+  model go posłucha („Cześć Marek"). **To jest zachowanie poprawne, nie usterka.**
+  Preferencja co do formy zwracania się należy do klienta i nie naraża firmy na nic —
+  inaczej niż zmyślona cena czy obiecany termin. Dlatego reguła tonu **świadomie
+  została w `STYL ODPOWIEDZI`, a nie w `BEZWZGLĘDNE ZAKAZY`**, gdzie sformułowania
+  trzymają się mocniej i nadpisałyby wolę klienta. Nie „naprawiać" tego przez
+  przeniesienie wyżej ani dopisanie „także gdy klient prosi inaczej".
 
 ## Dokumentacja BudMax
 

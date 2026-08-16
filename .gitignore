@@ -1,0 +1,9 @@
+# Lokalny stan wranglera (cache builda, dane miniflare) — nie do repo
+.wrangler/
+
+# Zależności, gdyby kiedyś doszedł package.json
+node_modules/
+
+# Nigdy nie commitować sekretów — REINDEX_SECRET żyje w sekretach Workera
+.dev.vars
+*.secret

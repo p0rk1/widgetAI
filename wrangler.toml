@@ -1,0 +1,27 @@
+# Konfiguracja Workera knowbase-budmax.
+#
+# Odwzorowuje stan ustawiony wcześniej ręcznie w dashboardzie — data
+# kompatybilności i wszystkie trzy bindingi są przepisane z wersji
+# cccc273c (sprawdzone przez `wrangler versions view`). Deploy traktuje
+# ten plik jako źródło prawdy: czego tu nie ma, to zniknie z Workera.
+#
+# REINDEX_SECRET celowo NIE jest tutaj wymieniony. Sekrety ustawia się
+# osobno (`wrangler secret put REINDEX_SECRET --name knowbase-budmax`)
+# i przeżywają deploy — wpisanie ich do repo zniweczyłoby cały sens
+# przeniesienia klucza poza kod.
+
+name = "knowbase-budmax"
+main = "worker.js"
+compatibility_date = "2026-08-04"
+workers_dev = true
+
+[ai]
+binding = "AI"
+
+[[kv_namespaces]]
+binding = "RATE_LIMIT_KV"
+id = "aeead86f2597488bacbad23b8fe5317a"
+
+[[vectorize]]
+binding = "VECTORIZE"
+index_name = "budmax-knowledge"

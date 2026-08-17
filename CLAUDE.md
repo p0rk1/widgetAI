@@ -16,7 +16,9 @@ Aktualny stan: działające demo na fikcyjnej firmie budowlanej **BudMax Sp. z o
 | `worker.js` | Backend — RAG, weryfikacja, endpointy | Cloudflare Worker `knowbase-budmax` |
 | `index.html` | Strona firmy z osadzonym widgetem | GitHub Pages |
 | `panel.html` | Panel analityczny dla właściciela firmy | GitHub Pages |
-| `wrangler.toml` | Konfiguracja deployu — bindingi, data kompatybilności | repo |
+| `wrangler.toml` | Konfiguracja deployu — bindingi, zmienne Access, data kompatybilności | repo |
+| `ZERO-TRUST.md` | Instrukcja konfiguracji logowania do trybu wewnętrznego | repo |
+| `test-access.mjs` | Test weryfikacji tokenu Access (`node test-access.mjs`) | repo |
 
 Adresy:
 - Worker: `https://knowbase-budmax.rezi7608.workers.dev`
@@ -54,6 +56,61 @@ Poprzednio `@cf/meta/llama-3.1-8b-instruct-fast`. **Nie wracać do 8B** — pow�
 **Uwaga:** katalog modeli Cloudflare zmienia się bez uprzedzenia. Jeśli Worker
 zwraca błąd połączenia z modelem, najpierw sprawdź
 `https://developers.cloudflare.com/workers-ai/models/` czy model nie został wycofany.
+
+## Tożsamość i uprawnienia
+
+Dwa rozłączne mechanizmy, celowo — do 17.08.2026 był jeden i to był problem.
+
+| Endpoint | Kto | Czym się uwierzytelnia |
+|---|---|---|
+| `POST /` | każdy | — |
+| `POST /internal` | pracownik | tożsamość z Cloudflare Zero Trust Access (Google / Microsoft) |
+| `/reindex`, `/purge`, `/stats`, `/debug` | administrator | `REINDEX_SECRET` |
+
+**Dlaczego rozdzielone.** Wcześniej `/internal` chodził na tym samym sekrecie co
+`/reindex` i `/purge`, więc pracownik dostający dostęp do bota dostawał też prawo
+skasowania indeksu. Sekret na `/internal` **przestał działać** i nie ma tam ścieżki
+obejścia — `?key=` zwraca 401 z komunikatem, że klucz już nie otwiera tego trybu.
+
+**Weryfikacja tokenu.** `verifyAccessJwt()` sprawdza cztery rzeczy i nie ufa samej
+obecności nagłówka `Cf-Access-Jwt-Assertion` — nagłówek może dopisać każdy, kto
+trafi do Workera z pominięciem Access, choćby przez adres `workers.dev`:
+
+1. **podpis** RS256 przeciwko kluczom publicznym zespołu
+   (`https://<zespół>/cdn-cgi/access/certs`, cache 1 h, jedno wymuszone odświeżenie
+   przy nieznanym `kid`),
+2. **wystawca** (`iss`) równy domenie zespołu,
+3. **odbiorca** (`aud`) zawierający `ACCESS_AUD` tej aplikacji,
+4. **ważność** (`exp`, `nbf`) z tolerancją 60 s na rozjazd zegarów.
+
+Podpis jest sprawdzany **przed** zaufaniem czemukolwiek z ładunku. Token z `alg: none`
+odpada na sprawdzeniu algorytmu.
+
+**Konfiguracja.** `ACCESS_TEAM_DOMAIN` i `ACCESS_AUD` w `[vars]` w `wrangler.toml`.
+To **nie są sekrety** — bezpieczeństwo daje weryfikacja podpisu, nie tajność tych
+wartości. Muszą być w pliku, a nie w dashboardzie, bo `wrangler deploy` skasowałby
+zmienną, której w pliku nie ma. Krok po kroku: **`ZERO-TRUST.md`**.
+
+**Ścieżka awaryjna.** Puste zmienne = tryb wewnętrzny wyłączony: `/internal` zwraca
+**503 z listą brakujących zmiennych i odesłaniem do instrukcji**, nie milczące 403.
+Odmowa dostępu i brak konfiguracji to dwie różne sytuacje i mają różne kody.
+
+**Ograniczenie, które blokuje dokończenie etapu.** Access **nie obejmuje adresów
+`*.workers.dev`** — aplikacje self-hosted buduje się z domen w koncie Cloudflare.
+Worker chodzi dziś wyłącznie pod `knowbase-budmax.rezi7608.workers.dev`, więc
+**etap 2 wymaga własnej domeny**. Do tego czasu `/internal` stoi na 503, a publiczny
+widget działa niezależnie. Custom domain trzeba dopisać także do `wrangler.toml`
+(`[[routes]]` z `custom_domain = true`), inaczej deploy ją zdejmie.
+
+**`identity` z tokenu** — `email` i `domena` są odczytywane i przekazywane do
+`handleAsk()`, które odsyła je w polu `zalogowany`. **Nic po nich jeszcze nie
+filtruje.** To przygotowanie pod rozpoznawanie klienta przy wielu firmach.
+
+**Test:** `node test-access.mjs` — 14 przypadków, w tym ważny token, obcy podpis,
+nieznany `kid`, wygasły, obce `iss`, obce `aud`, `nbf` w przyszłości, `alg: none`
+i obie ścieżki awaryjne. Podstawia własną parę kluczy w miejsce kluczy zespołu,
+więc sprawdza także przypadek pozytywny bez klikania w panelu. Testuje funkcję
+importowaną z `worker.js`, nie jej kopię.
 
 ## Separacja przestrzeni wiedzy — na poziomie danych, nie promptu
 
@@ -208,13 +265,14 @@ Deploy nie rusza `index.html` ani `panel.html` — te idą na GitHub Pages przez
 
 ## Endpointy
 
-Wszystkie administracyjne chronione parametrem `?key=` równym sekretowi
-`REINDEX_SECRET` — sprawdza to `isAdmin()`, jedno miejsce dla wszystkich.
+Uprawnienia są **rozdzielone na dwa niezależne mechanizmy** — patrz „Tożsamość
+i uprawnienia". Endpointy administracyjne chroni parametr `?key=` równy sekretowi
+`REINDEX_SECRET` (sprawdza `isAdmin()`); `/internal` chroni tożsamość z Access.
 
 - `POST /` — zapytanie z widgetu: `{question, history}`. Przeszukuje **wyłącznie
   przestrzeń `public`**, wpisaną na sztywno w routingu
-- `POST /internal?key=…` — bot dla pracowników, przeszukuje `public` + `internal`.
-  Tymczasowo na kluczu administracyjnym — logowanie przez Google/Microsoft w kolejnym etapie
+- `POST /internal` — bot dla pracowników, przeszukuje `public` + `internal`.
+  **Wyłącznie na tożsamości z Cloudflare Access** — `REINDEX_SECRET` tu nie działa
 - `GET /reindex?key=…&space=public|internal` — **uruchom po każdej zmianie CHUNKS
   lub INTERNAL_CHUNKS**. Bez `space` indeksuje `public` (zgodnie z dotychczasowym
   zachowaniem). Każdą przestrzeń indeksuje się osobno
@@ -396,10 +454,10 @@ Kolejność jest celowa — uzasadnienie jest częścią decyzji, nie ozdobnikie
    - ~~**Etap 1: separacja przestrzeni wiedzy**~~ — ✅ **wykonane 17.08.2026.**
      Namespaces `public`/`internal`, rozdzielone endpointy, `INTERNAL_CHUNKS`,
      pole `role`. Szczelność potwierdzona testem — patrz „Separacja przestrzeni wiedzy".
-   - **Etap 2: prawdziwe logowanie** — Google/Microsoft OAuth zamiast klucza
-     administracyjnego na `/internal`. Do tego czasu `/internal` **nie nadaje się
-     do udostępnienia pracownikom**: dzieli sekret z `/reindex` i `/purge`, więc
-     kto dostaje dostęp do bota, dostaje też prawo skasowania indeksu.
+   - ~~**Etap 2: prawdziwe logowanie**~~ — ✅ **kod gotowy i wdrożony 17.08.2026.**
+     Weryfikacja JWT z Zero Trust Access, sekret na `/internal` unieważniony.
+     **Pozostaje konfiguracja w panelu** (`ZERO-TRUST.md`) — wymaga własnej domeny,
+     bo Access nie obejmuje `workers.dev`. Do tego czasu `/internal` zwraca 503.
    - **Etap 3: ton instruktażowy** — `buildSystemPrompt()` jest wspólny dla obu
      endpointów i mówi o „stronie firmy". Świadomie nie ruszony w etapie 1,
      żeby zmiana pozostała czysto strukturalna.
@@ -423,7 +481,8 @@ Kolejność jest celowa — uzasadnienie jest częścią decyzji, nie ozdobnikie
   Odczekaj i powtórz, zanim zaczniesz cokolwiek diagnozować. Kosztowało to jeden
   fałszywy alarm „regresja publicznego endpointu" 17.08.2026
 - Przy zmianie progów → najpierw `/debug`, potem decyzja
-- Przed commitem → `node --check worker.js`
+- Przed commitem → `node --check worker.js`; przy zmianach w weryfikacji tokenu
+  także `node test-access.mjs`
 - `ALLOWED_ORIGIN` to sama domena bez ścieżki (`https://p0rk1.github.io`),
   bo przeglądarka wysyła w nagłówku Origin tylko protokół i host
 - Nie dodawać warstw zabezpieczeń bez zmierzenia problemu na `/debug` —

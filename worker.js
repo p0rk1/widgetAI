@@ -304,10 +304,224 @@ function corsHeaders() {
 
 // Klucz administracyjny żyje w sekrecie Workera, nie w kodzie. Fail-closed:
 // jeśli sekret nie jest ustawiony, żaden klucz z URL-a nie otwiera endpointu.
+//
+// UWAGA: `isAdmin` chroni WYŁĄCZNIE endpointy administracyjne (/reindex, /purge,
+// /stats, /debug). Na /internal ten klucz **nie działa** — patrz sekcja niżej.
 function isAdmin(url, env) {
   const secret = env.REINDEX_SECRET;
   if (!secret) return false;
   return url.searchParams.get("key") === secret;
+}
+
+// ============================================================
+// TOŻSAMOŚĆ — Cloudflare Zero Trust Access (tylko /internal)
+// ============================================================
+//
+// PO CO TO ISTNIEJE
+// Do etapu 1 /internal chodził na tym samym sekrecie co /reindex i /purge, więc
+// pracownik dostający dostęp do bota dostawał też prawo skasowania indeksu.
+// Teraz uprawnienia są rozdzielone:
+//   - /reindex, /purge, /stats, /debug → REINDEX_SECRET (administrator)
+//   - /internal                        → tożsamość z Access (pracownik)
+// Sekret na /internal **przestał działać** i nie ma tam żadnej ścieżki obejścia.
+//
+// CZEGO NIE ROBIMY
+// Nie ufamy samej obecności nagłówka `Cf-Access-Jwt-Assertion`. Nagłówek może
+// dopisać każdy, kto trafi do Workera z pominięciem Access (choćby przez adres
+// workers.dev). Dlatego token jest weryfikowany kryptograficznie: podpis
+// przeciwko kluczom publicznym zespołu, wystawca, odbiorca (AUD) i ważność.
+// Bez kompletu tych czterech sprawdzeń nagłówek jest bezwartościowy.
+
+const ACCESS_CERTS_TTL_MS = 3_600_000; // klucze zespołu rotują rzadko
+const ACCESS_CLOCK_SKEW_S = 60;        // tolerancja rozjazdu zegarów
+
+// Cache kluczy w zasięgu modułu — izolat Workera bywa użyty do wielu żądań,
+// więc oszczędza to pobrania. Cache jest per-izolat, nie globalny: wygaśnięcie
+// klucza po stronie Cloudflare zostanie podchwycone najpóźniej po TTL.
+let accessCertsCache = { teamDomain: null, fetchedAt: 0, keys: null };
+
+function base64UrlToBytes(input) {
+  const b64 = input.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = b64 + "=".repeat((4 - (b64.length % 4)) % 4);
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+function base64UrlToJson(input) {
+  return JSON.parse(new TextDecoder().decode(base64UrlToBytes(input)));
+}
+
+// Konfiguracja Access. Obie wartości są jawne (nie są sekretami) i mieszkają
+// w [vars] w wrangler.toml — dzięki temu deploy z CLI ich nie zgubi.
+function accessConfig(env) {
+  const teamDomain = (env.ACCESS_TEAM_DOMAIN || "")
+    .trim()
+    .replace(/^https?:\/\//, "")
+    .replace(/\/+$/, "");
+  const aud = (env.ACCESS_AUD || "").trim();
+  const missing = [];
+  if (!teamDomain) missing.push("ACCESS_TEAM_DOMAIN");
+  if (!aud) missing.push("ACCESS_AUD");
+  return { teamDomain, aud, missing };
+}
+
+async function fetchAccessCerts(teamDomain, { force = false } = {}) {
+  const swieze =
+    accessCertsCache.keys &&
+    accessCertsCache.teamDomain === teamDomain &&
+    Date.now() - accessCertsCache.fetchedAt < ACCESS_CERTS_TTL_MS;
+  if (swieze && !force) return accessCertsCache.keys;
+
+  const res = await fetch(`https://${teamDomain}/cdn-cgi/access/certs`);
+  if (!res.ok) {
+    throw new Error(`klucze zespołu niedostępne (HTTP ${res.status} z ${teamDomain})`);
+  }
+  const body = await res.json();
+  const keys = Array.isArray(body.keys) ? body.keys : [];
+  if (!keys.length) {
+    throw new Error(`zespół ${teamDomain} nie zwrócił żadnych kluczy publicznych`);
+  }
+  accessCertsCache = { teamDomain, fetchedAt: Date.now(), keys };
+  return keys;
+}
+
+// Zwraca { ok: true, identity } albo { ok: false, status, error, szczegoly }.
+// Nigdy nie rzuca — wywołujący ma dostać czytelny powód, nie milczące 403.
+async function verifyAccessJwt(request, env) {
+  const { teamDomain, aud, missing } = accessConfig(env);
+
+  // Ścieżka awaryjna: Access nieskonfigurowany. 503, nie 403 — to nie jest
+  // odmowa dostępu, tylko brak konfiguracji, i komunikat ma to mówić wprost.
+  if (missing.length) {
+    return {
+      ok: false,
+      status: 503,
+      error: "Tryb wewnętrzny nie jest jeszcze skonfigurowany — brak połączenia z Cloudflare Zero Trust Access.",
+      szczegoly: {
+        brakujace_zmienne: missing,
+        co_zrobic: "Uzupełnij [vars] w wrangler.toml i wdroż ponownie. Krok po kroku: ZERO-TRUST.md w repozytorium.",
+      },
+    };
+  }
+
+  const token =
+    request.headers.get("Cf-Access-Jwt-Assertion") ||
+    (request.headers.get("Cookie") || "").match(/(?:^|;\s*)CF_Authorization=([^;]+)/)?.[1] ||
+    "";
+
+  if (!token) {
+    const uzytoKlucza = new URL(request.url).searchParams.has("key");
+    return {
+      ok: false,
+      status: 401,
+      error: "Brak tokenu tożsamości Cloudflare Access.",
+      szczegoly: {
+        powod: "Żądanie nie przeszło przez Access — brak nagłówka Cf-Access-Jwt-Assertion i ciasteczka CF_Authorization.",
+        co_zrobic: uzytoKlucza
+          ? "Klucz administracyjny (?key=) NIE otwiera już trybu wewnętrznego. Wejdź przez adres objęty aplikacją Access i zaloguj się przez Google albo Microsoft."
+          : "Wejdź przez adres objęty aplikacją Access i zaloguj się przez Google albo Microsoft.",
+      },
+    };
+  }
+
+  const czesci = token.split(".");
+  if (czesci.length !== 3) {
+    return { ok: false, status: 401, error: "Token tożsamości ma nieprawidłową budowę." };
+  }
+
+  let naglowek, ladunek;
+  try {
+    naglowek = base64UrlToJson(czesci[0]);
+    ladunek = base64UrlToJson(czesci[1]);
+  } catch {
+    return { ok: false, status: 401, error: "Nie udało się odczytać tokenu tożsamości." };
+  }
+
+  if (naglowek.alg !== "RS256") {
+    return { ok: false, status: 401, error: `Nieobsługiwany algorytm podpisu: ${naglowek.alg}.` };
+  }
+
+  // Podpis sprawdzamy PRZED zaufaniem czemukolwiek z ładunku.
+  let keys;
+  try {
+    keys = await fetchAccessCerts(teamDomain);
+  } catch (e) {
+    return {
+      ok: false,
+      status: 502,
+      error: "Nie udało się pobrać kluczy publicznych zespołu Access — token nie może zostać zweryfikowany.",
+      szczegoly: { powod: e.message },
+    };
+  }
+
+  let jwk = keys.find((k) => k.kid === naglowek.kid);
+  if (!jwk) {
+    // Klucz mógł się przed chwilą zrotować — jedna próba odświeżenia cache.
+    try {
+      keys = await fetchAccessCerts(teamDomain, { force: true });
+      jwk = keys.find((k) => k.kid === naglowek.kid);
+    } catch { /* niżej i tak odrzucimy */ }
+  }
+  if (!jwk) {
+    return { ok: false, status: 401, error: "Token podpisano kluczem nieznanym dla tego zespołu." };
+  }
+
+  const podpisOk = await crypto.subtle.verify(
+    "RSASSA-PKCS1-v1_5",
+    await crypto.subtle.importKey(
+      "jwk",
+      { kty: jwk.kty, n: jwk.n, e: jwk.e, alg: "RS256", ext: true },
+      { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+      false,
+      ["verify"]
+    ),
+    base64UrlToBytes(czesci[2]),
+    new TextEncoder().encode(`${czesci[0]}.${czesci[1]}`)
+  );
+  if (!podpisOk) {
+    return { ok: false, status: 401, error: "Podpis tokenu tożsamości jest nieprawidłowy." };
+  }
+
+  // Dopiero teraz ładunek jest wiarygodny.
+  const oczekiwanyIss = `https://${teamDomain}`;
+  if (ladunek.iss !== oczekiwanyIss) {
+    return { ok: false, status: 401, error: `Token wystawiony przez inny zespół (${ladunek.iss || "brak"}).` };
+  }
+
+  const odbiorcy = Array.isArray(ladunek.aud) ? ladunek.aud : [ladunek.aud].filter(Boolean);
+  if (!odbiorcy.includes(aud)) {
+    return {
+      ok: false,
+      status: 401,
+      error: "Token wystawiony dla innej aplikacji Access.",
+      szczegoly: { powod: "Wartość AUD w tokenie nie zgadza się z ACCESS_AUD tego Workera." },
+    };
+  }
+
+  const teraz = Math.floor(Date.now() / 1000);
+  if (typeof ladunek.exp !== "number" || ladunek.exp + ACCESS_CLOCK_SKEW_S < teraz) {
+    return { ok: false, status: 401, error: "Token tożsamości wygasł — zaloguj się ponownie." };
+  }
+  if (typeof ladunek.nbf === "number" && ladunek.nbf - ACCESS_CLOCK_SKEW_S > teraz) {
+    return { ok: false, status: 401, error: "Token tożsamości nie jest jeszcze ważny." };
+  }
+
+  // E-mail i domena — podstawa przyszłego rozpoznawania klienta w architekturze
+  // wielu firm. Na razie tylko odczytane i przekazane dalej, nic po nich nie filtruje.
+  const email = (ladunek.email || "").toLowerCase();
+  const domena = email.includes("@") ? email.split("@").pop() : null;
+
+  return {
+    ok: true,
+    identity: {
+      email: email || null,
+      domena,
+      sub: ladunek.sub || null,
+      wygasa: ladunek.exp,
+    },
+  };
 }
 
 function jsonResponse(obj, extraHeaders, status = 200) {
@@ -768,13 +982,14 @@ export default {
     }
 
     // Bot dla pracowników. Przestrzenie podaje TA linia, nie żądanie.
-    // Na razie chroniony tym samym kluczem co endpointy administracyjne —
-    // prawdziwe logowanie przez Google/Microsoft dojdzie w kolejnym etapie.
+    // Dostęp wyłącznie na tożsamość z Cloudflare Access — REINDEX_SECRET tu
+    // nie działa, celowo: pracownik nie ma mieć prawa do /reindex ani /purge.
     if (url.pathname === "/internal") {
-      if (!isAdmin(url, env)) {
-        return jsonResponse({ error: "Brak dostępu." }, corsHeaders(), 403);
+      const auth = await verifyAccessJwt(request, env);
+      if (!auth.ok) {
+        return jsonResponse({ error: auth.error, szczegoly: auth.szczegoly }, corsHeaders(), auth.status);
       }
-      return handleAsk(request, env, SPACES_FOR_INTERNAL, SPACE_INTERNAL);
+      return handleAsk(request, env, SPACES_FOR_INTERNAL, SPACE_INTERNAL, auth.identity);
     }
 
     // Publiczny widget. `SPACES_FOR_PUBLIC` to stała modułowa — nie ma ścieżki,
@@ -786,7 +1001,10 @@ export default {
 // Wspólna obsługa pytania dla obu endpointów. `spaces` przychodzi wyłącznie
 // z routingu powyżej i nigdy z danych żądania — to jest ten jeden szczegół,
 // na którym stoi cała separacja.
-async function handleAsk(request, env, spaces, askedFrom) {
+// `identity` przychodzi tylko z /internal (z zweryfikowanego tokenu Access).
+// Na razie jest wyłącznie odczytane i odsyłane w odpowiedzi — nic po nim nie
+// filtruje. Będzie podstawą rozpoznawania klienta przy wielu firmach.
+async function handleAsk(request, env, spaces, askedFrom, identity = null) {
   let question, history;
   try {
     const body = await request.json();
@@ -853,8 +1071,20 @@ async function handleAsk(request, env, spaces, askedFrom) {
       source: verdict.source,
       gap: false,
       trimmed: verdict.removed || 0,
+      // Publiczna odpowiedź zachowuje dotychczasowy kształt — pole dochodzi
+      // tylko wtedy, gdy pytający jest zalogowany.
+      ...(identity ? { zalogowany: { email: identity.email, domena: identity.domena } } : {}),
     }, corsHeaders());
   } catch (e) {
     return jsonResponse({ answer: `Błąd: ${e.message}. Sprawdź bindingi AI i VECTORIZE.`, source: null, gap: false }, corsHeaders(), 502);
   }
+}
+
+// Eksporty wyłącznie na potrzeby testu weryfikacji tokenu (test-access.mjs).
+// Cloudflare uruchamia `export default` — te nazwy nie zmieniają zachowania
+// Workera, pozwalają za to sprawdzić ścieżkę „ważny token" bez klikania w panelu.
+export { verifyAccessJwt, accessConfig, resetAccessCertsCache };
+
+function resetAccessCertsCache() {
+  accessCertsCache = { teamDomain: null, fetchedAt: 0, keys: null };
 }

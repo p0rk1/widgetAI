@@ -20,6 +20,19 @@ workers_dev = true
 # dodatkowa powierzchnia bez zastosowania.
 preview_urls = false
 
+# Konfiguracja Cloudflare Zero Trust Access dla endpointu /internal.
+# To NIE są sekrety — identyfikator odbiorcy (AUD) i nazwa zespołu są jawne,
+# a bezpieczeństwo daje weryfikacja podpisu, nie tajność tych wartości.
+# Dlatego mieszkają tutaj, a nie w `wrangler secret`: deploy z CLI i tak
+# traktuje ten plik jako źródło prawdy, więc wpis w dashboardzie by zniknął.
+#
+# Puste wartości = tryb wewnętrzny wyłączony. /internal zwraca wtedy 503
+# z wyjaśnieniem, czego brakuje (nie milczące 403). Wypełnij po utworzeniu
+# aplikacji w Zero Trust — instrukcja krok po kroku w ZERO-TRUST.md.
+[vars]
+ACCESS_TEAM_DOMAIN = ""   # np. "budmax.cloudflareaccess.com"
+ACCESS_AUD = ""           # Application Audience (AUD) Tag z zakładki Overview aplikacji
+
 [ai]
 binding = "AI"
 

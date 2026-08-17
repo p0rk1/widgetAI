@@ -45,7 +45,7 @@ Nie przywracać ich i nie używać jako przykładów — także w dokumentacji.
 Wartość podaje się wyłącznie w monicie `wrangler secret put`, nigdy jako argument
 w linii komendy: argumenty trafiają do historii powłoki na dysku.
 
-Modele:
+Modele — konfigurowane w obiekcie `PROVIDER` w `worker.js`, nie w luźnych stałych:
 - Generowanie: `@cf/meta/llama-3.3-70b-instruct-fp8-fast` (od 16.08.2026 — patrz „Dlaczego 70B")
 - Embeddingi: `@cf/baai/bge-m3` (1024 wymiary — musi zgadzać się z indeksem)
 
@@ -54,6 +54,49 @@ Poprzednio `@cf/meta/llama-3.1-8b-instruct-fast`. **Nie wracać do 8B** — pow�
 **Uwaga:** katalog modeli Cloudflare zmienia się bez uprzedzenia. Jeśli Worker
 zwraca błąd połączenia z modelem, najpierw sprawdź
 `https://developers.cloudflare.com/workers-ai/models/` czy model nie został wycofany.
+
+## Granica dostawcy — model i baza wektorowa są wymienne
+
+W `worker.js` jest sekcja **„GRANICA DOSTAWCY"**: obiekt `PROVIDER` (identyfikatory
+modeli, wymiarowość, parametry generowania) plus pięć funkcji, które jako jedyne
+dotykają `env.AI` i `env.VECTORIZE`:
+
+| Funkcja | Kontrakt |
+|---|---|
+| `embed(env, texts)` | tablica tekstów → tablica wektorów, w kolejności wejścia |
+| `generate(env, systemPrompt, messages, opts)` | → gotowy tekst odpowiedzi (system prompt składa funkcja) |
+| `vectorSearch(env, vector, opts)` | → tablica dopasowań z `score`, `values` i `metadata` |
+| `vectorUpsert(env, vectors)` | zapis do indeksu (`/reindex`) |
+| `vectorDelete(env, ids)` | usunięcie z indeksu (`/purge`) |
+
+**Dlaczego to istnieje.** Cloudflare wystarcza na dziś i na dziesiątki klientów,
+ale ma dwie luki: brak gwarancji rezydencji danych w UE poza planem enterprise
+oraz katalog modeli zmieniający się bez uprzedzenia — raz już nas to trafiło,
+model został wycofany między sesjami. Segment premium (kancelarie, medycyna,
+finanse) będzie wymagał hostingu w UE. Granica ma pozwolić obsłużyć takiego
+klienta **tą samą bazą kodu, samą konfiguracją** — podmiana dostawcy to zmiana
+`PROVIDER` i wnętrz tych funkcji, bez dotykania logiki RAG i weryfikacji.
+
+**Czego nie wolno przez nią przepuszczać:**
+- `env.AI` i `env.VECTORIZE` nie pojawiają się nigdzie poza tą sekcją. Kontrola:
+  `grep -n "env\.AI\|env\.VECTORIZE\|@cf/" worker.js` — wszystkie trafienia muszą
+  mieścić się w obrębie sekcji.
+- Literał `@cf/...` żyje wyłącznie w `PROVIDER`.
+- Kształt odpowiedzi dostawcy (`res.data`, `res.response`, `results.matches`)
+  nie wychodzi na zewnątrz — funkcje zwracają zwykłe tablice i stringi.
+
+`env` jest pierwszym argumentem każdej z nich, bo w Workerach bindingi żyją
+per-request i nie ma do nich dostępu z zasięgu modułu. To jedyne odstępstwo od
+kontraktu `embed(texts)` / `generate(...)` / `vectorSearch(...)` — wymuszone
+przez platformę, nie przez wygodę.
+
+`vectorUpsert` i `vectorDelete` nie były w pierwotnym zamyśle (miały być trzy
+funkcje), ale bez nich `env.VECTORIZE` wyciekłoby do `/reindex` i `/purge`,
+a granica z jednym wyjątkiem przestaje być granicą.
+
+Refaktoryzacja z 17.08.2026 była **czysto strukturalna** — progi, prompt, `CHUNKS`
+i logika weryfikacji bez zmian, zachowanie identyczne (potwierdzone porównaniem
+wyników `/debug` przed i po).
 
 ## wrangler.toml jest źródłem prawdy
 

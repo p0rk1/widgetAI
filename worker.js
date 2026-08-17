@@ -16,8 +16,6 @@
 //   https://twoj-worker.workers.dev/reindex?key=TWOJ_SEKRET
 // Rób to za każdym razem, gdy zmienisz CHUNKS.
 
-const MODEL_ID = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
-const EMBED_MODEL_ID = "@cf/baai/bge-m3";
 const TOP_K = 8; // podniesione z 6 — krótkie, ogólne pytania miały za mało kandydatów
 const MIN_CHUNKS = 2;
 const MIN_SIMILARITY = 0.35;
@@ -30,6 +28,89 @@ const RATE_LIMIT_PER_HOUR = 30;
 const LOG_RETENTION_DAYS = 90; // po tylu dniach wpisy w logu wygasają automatycznie
 const COMPANY_NAME = "BudMax Sp. z o.o.";
 const FALLBACK_MESSAGE = "Nie mam takich informacji w mojej dokumentacji — polecam kontakt z biurem.";
+
+// ============================================================
+// GRANICA DOSTAWCY — jedyne miejsce, które wie, że pod spodem jest Cloudflare
+// ============================================================
+//
+// PO CO TO ISTNIEJE
+// Cloudflare wystarcza na dziś i na dziesiątki klientów, ale ma dwie luki:
+// brak gwarancji rezydencji danych w UE poza planem enterprise oraz katalog
+// modeli zmieniający się bez uprzedzenia (raz już nas to trafiło — model został
+// wycofany między sesjami). Segment premium (kancelarie, medycyna, finanse)
+// będzie wymagał hostingu w UE. Ta granica ma pozwolić obsłużyć takiego klienta
+// TĄ SAMĄ BAZĄ KODU, zmieniając wyłącznie obiekt PROVIDER i wnętrza funkcji
+// poniżej — bez dotykania logiki RAG, progów, promptu i weryfikacji.
+//
+// CZEGO NIE WOLNO PRZEZ NIĄ PRZEPUSZCZAĆ
+// - Żaden kod poza tą sekcją nie odwołuje się do `env.AI` ani `env.VECTORIZE`.
+//   Jeśli piszesz `env.AI.run(...)` gdziekolwiek indziej — granica jest złamana.
+// - Nazwy modeli i wymiarowość embeddingów żyją wyłącznie w PROVIDER. Nigdzie
+//   indziej nie ma prawa pojawić się literał `@cf/...`.
+// - Kształt odpowiedzi dostawcy (`res.data`, `res.response`, `results.matches`)
+//   nie wychodzi na zewnątrz. Funkcje zwracają zwykłe tablice i stringi, więc
+//   inny dostawca o innym kształcie odpowiedzi nie przecieka do reszty kodu.
+// - W drugą stronę: do tych funkcji nie trafiają obiekty specyficzne dla
+//   dostawcy — tylko teksty, wektory i liczby.
+//
+// `env` jest pierwszym argumentem, bo w Workerach bindingi żyją per-request
+// i nie ma do nich dostępu z zasięgu modułu.
+
+const PROVIDER = {
+  name: "cloudflare-workers-ai",
+  generation: {
+    // Nie wracać do 8B — patrz CLAUDE.md, sekcja „Dlaczego 70B".
+    model: "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+    temperature: 0.3,
+    maxTokens: 1200,
+  },
+  embedding: {
+    model: "@cf/baai/bge-m3",
+    dimensions: 1024, // musi zgadzać się z wymiarowością indeksu wektorowego
+  },
+};
+
+// embed(env, texts) → tablica wektorów, w kolejności wejścia.
+// Jedno wywołanie na całą tablicę: Cloudflare ma limit 50 podzapytań na
+// wywołanie Workera, więc wsadowość jest wymogiem, nie optymalizacją.
+async function embed(env, texts) {
+  const res = await env.AI.run(PROVIDER.embedding.model, { text: texts });
+  return res.data;
+}
+
+// generate(env, systemPrompt, messages, opts) → gotowy tekst odpowiedzi.
+// `messages` to historia rozmowy BEZ wiadomości systemowej — składa ją ta
+// funkcja, żeby wywołujący nie musiał znać konwencji ról danego dostawcy.
+async function generate(env, systemPrompt, messages, opts = {}) {
+  const result = await env.AI.run(PROVIDER.generation.model, {
+    messages: [{ role: "system", content: systemPrompt }, ...messages],
+    temperature: opts.temperature ?? PROVIDER.generation.temperature,
+    max_tokens: opts.maxTokens ?? PROVIDER.generation.maxTokens,
+  });
+  return (result.response || result.choices?.[0]?.message?.content || "").trim();
+}
+
+// vectorSearch(env, vector, opts) → tablica dopasowań: { id, score, values, metadata }.
+// Wektory (`values`) są potrzebne weryfikacji zdanie-po-zdaniu, metadane —
+// budowie promptu. Zwracamy zawsze tablicę, nigdy undefined.
+async function vectorSearch(env, vector, opts = {}) {
+  const results = await env.VECTORIZE.query(vector, {
+    topK: opts.topK ?? TOP_K,
+    returnMetadata: true,
+    returnValues: true,
+  });
+  return results.matches || [];
+}
+
+// Zapis i usuwanie z indeksu — używane tylko przez /reindex i /purge, ale muszą
+// być tutaj: inaczej `env.VECTORIZE` wyciekłoby poza granicę.
+async function vectorUpsert(env, vectors) {
+  await env.VECTORIZE.insert(vectors);
+}
+
+async function vectorDelete(env, ids) {
+  await env.VECTORIZE.deleteByIds(ids);
+}
 
 // ============================================================
 // TREŚĆ FIRMOWA — 52 fragmenty, oparte o realne przepisy (KC, WT2021,
@@ -143,8 +224,8 @@ function jsonResponse(obj, extraHeaders, status = 200) {
 }
 
 async function embedText(env, text) {
-  const res = await env.AI.run(EMBED_MODEL_ID, { text: [text] });
-  return res.data[0];
+  const vectors = await embed(env, [text]);
+  return vectors[0];
 }
 
 async function handleReindex(env) {
@@ -153,13 +234,13 @@ async function handleReindex(env) {
   for (let i = 0; i < CHUNKS.length; i += BATCH_SIZE) {
     const batch = CHUNKS.slice(i, i + BATCH_SIZE);
     const texts = batch.map((c) => `${c.title}\n${c.text}`);
-    const embedResult = await env.AI.run(EMBED_MODEL_ID, { text: texts });
+    const embedded = await embed(env, texts);
     const vectors = batch.map((chunk, idx) => ({
       id: chunk.id,
-      values: embedResult.data[idx],
+      values: embedded[idx],
       metadata: { title: chunk.title, text: chunk.text },
     }));
-    await env.VECTORIZE.insert(vectors);
+    await vectorUpsert(env, vectors);
     inserted += batch.length;
   }
   return inserted;
@@ -280,13 +361,13 @@ async function verifyClaims(fullText, filtered, env) {
   const claims = splitSentences(fullText);
   const toCheck = claims.length ? claims : [fullText];
 
-  const embedResult = await env.AI.run(EMBED_MODEL_ID, { text: toCheck });
+  const claimVectors = await embed(env, toCheck);
   const usedSources = new Set();
   const kept = [];
   let removed = 0;
 
   for (let i = 0; i < toCheck.length; i++) {
-    const claimVector = embedResult.data[i];
+    const claimVector = claimVectors[i];
     let bestSim = 0, bestTitle = null;
     for (const m of filtered) {
       const sim = cosineSimilarity(claimVector, m.values);
@@ -497,7 +578,7 @@ export default {
         if (!ids.length) {
           return new Response("Podaj ID do usunięcia, np. /purge?key=...&ids=c33,c34", { headers: corsHeaders() });
         }
-        await env.VECTORIZE.deleteByIds(ids);
+        await vectorDelete(env, ids);
         return new Response(`Usunięto z indeksu: ${ids.join(", ")}`, { headers: corsHeaders() });
       } catch (e) {
         return new Response(`Błąd usuwania: ${e.message}`, { status: 500, headers: corsHeaders() });
@@ -512,24 +593,19 @@ export default {
       if (!q) return new Response("Podaj pytanie: /debug?key=...&q=twoje pytanie", { headers: corsHeaders() });
       try {
         const qVector = await embedText(env, q);
-        const results = await env.VECTORIZE.query(qVector, { topK: TOP_K, returnMetadata: true, returnValues: true });
-        const matches = results.matches || [];
+        const matches = await vectorSearch(env, qVector, { topK: TOP_K });
         const filtered = matches.filter((m, idx) => idx < MIN_CHUNKS || m.score >= MIN_SIMILARITY);
 
         const systemPrompt = buildSystemPrompt(filtered.map((m) => m.metadata));
-        const result = await env.AI.run(MODEL_ID, {
-          messages: [{ role: "system", content: systemPrompt }, { role: "user", content: q }],
-          temperature: 0.3, max_tokens: 1200,
-        });
-        const answer = (result.response || "").trim();
+        const answer = await generate(env, systemPrompt, [{ role: "user", content: q }]);
 
         const sentences = splitSentences(answer);
         const toCheck = sentences.length ? sentences : [answer];
-        const embedResult = await env.AI.run(EMBED_MODEL_ID, { text: toCheck });
+        const sentenceVectors = await embed(env, toCheck);
         const sentenceScores = toCheck.map((s, i) => {
           let best = 0, title = null;
           for (const m of filtered) {
-            const sim = cosineSimilarity(embedResult.data[i], m.values);
+            const sim = cosineSimilarity(sentenceVectors[i], m.values);
             if (sim > best) { best = sim; title = m.metadata.title; }
           }
           const passes = best >= CITATION_THRESHOLD;
@@ -597,8 +673,7 @@ export default {
       const topK = isLongQuestion ? TOP_K_LONG : TOP_K;
 
       const qVector = await embedText(env, retrievalQuery);
-      const results = await env.VECTORIZE.query(qVector, { topK, returnMetadata: true, returnValues: true });
-      const allMatches = results.matches || [];
+      const allMatches = await vectorSearch(env, qVector, { topK });
       const filtered = allMatches.filter((m, idx) => idx < MIN_CHUNKS || m.score >= MIN_SIMILARITY);
 
       if (filtered.length === 0) {
@@ -607,10 +682,9 @@ export default {
       }
 
       const systemPrompt = buildSystemPrompt(filtered.map((m) => m.metadata));
-      const messages = [{ role: "system", content: systemPrompt }, ...history, { role: "user", content: question }];
+      const messages = [...history, { role: "user", content: question }];
 
-      const result = await env.AI.run(MODEL_ID, { messages, temperature: 0.3, max_tokens: 1200 });
-      const rawAnswer = (result.response || result.choices?.[0]?.message?.content || "").trim();
+      const rawAnswer = await generate(env, systemPrompt, messages);
 
       if (!rawAnswer || /nie mam takich informacji/i.test(rawAnswer)) {
         await logQuestion(env, question, true, null);

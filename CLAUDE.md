@@ -55,6 +55,62 @@ Poprzednio `@cf/meta/llama-3.1-8b-instruct-fast`. **Nie wracać do 8B** — pow�
 zwraca błąd połączenia z modelem, najpierw sprawdź
 `https://developers.cloudflare.com/workers-ai/models/` czy model nie został wycofany.
 
+## Separacja przestrzeni wiedzy — na poziomie danych, nie promptu
+
+Indeks jest jeden, ale podzielony na **rozłączne przestrzenie nazw** (namespaces
+w Vectorize): `public` (53 fragmenty z `CHUNKS`) i `internal` (`INTERNAL_CHUNKS`).
+
+| Endpoint | Przeszukuje | Skąd bierze zakres |
+|---|---|---|
+| `POST /` | `public` | stała `SPACES_FOR_PUBLIC` |
+| `POST /internal` | `public` + `internal` | stała `SPACES_FOR_INTERNAL` |
+
+Pracownik widzi obie przestrzenie celowo — musi wiedzieć także to, co firma
+obiecuje klientom.
+
+**Dlaczego nie promptem.** Instrukcja „nie ujawniaj treści wewnętrznych" jest
+sugestią dla modelu — działa, dopóki model współpracuje. Prompt injection,
+nietypowe sformułowanie pytania albo nowa wersja modelu ją omijają. Filtr po
+stronie bazy nie ma tej klasy podatności: fragmentu, którego baza nie zwróci,
+model nie ma jak zacytować, bo nigdy go nie zobaczył.
+
+**Dlaczego przestrzeń publiczna jest wpisana na sztywno.** Publiczny endpoint
+nie przyjmuje nazwy przestrzeni **z żadnego źródła** — ani z ciała żądania, ani
+z query stringa, ani z nagłówka. Gdyby przyjmował, cała separacja wisiałaby na
+poprawności sprawdzenia autoryzacji, czyli na kodzie, w którym da się zrobić błąd.
+Przy wpisaniu na sztywno **błąd w autoryzacji nadal nie otwiera** dostępu do
+wiedzy wewnętrznej: widget nie ma czym o nią poprosić. `vectorSearch()` nie ma
+wartości domyślnej dla przestrzeni i rzuca wyjątkiem przy nieznanej nazwie —
+cicha zamiana na `public` byłaby dokładnie tym błędem, który kiedyś pokazałby
+treść nie tej stronie.
+
+**Pole `role` w metadanych** — na razie zawsze `"all"` i nic po nim nie filtruje.
+Jest teraz, bo u klientów premium (kancelarie, medycyna) role będą konieczne,
+a dopisanie pola później oznacza **ponowne indeksowanie u każdego klienta**.
+
+### Wynik testu szczelności (17.08.2026)
+
+Pytanie o marżę, na które odpowiedź istnieje wyłącznie w `INTERNAL_CHUNKS`:
+
+| Kanał | Wynik |
+|---|---|
+| `POST /` (publiczny) | fallback, `gap: true`, `source: null` |
+| `/debug?space=public` | najlepsze dopasowanie **0.406**, zero fragmentów z `internal` |
+| `/debug?space=obie` | lider **0.743** „Widełki marży i granica negocjacji" `[internal]` |
+| `POST /internal` bez klucza | HTTP 403 |
+| `POST /internal` z kluczem | poprawna odpowiedź (22% / 14%) |
+
+Publiczny retrieval pokazał sygnaturę „nic nie pasuje" (0.39–0.406, ściśnięta
+grupa bez lidera) — czyli zachował się tak, jakby wiedzy wewnętrznej po prostu
+nie było. Bo dla niego jej nie ma.
+
+**Uwaga do doboru pytania testowego.** Drugie pytanie kontrolne (o szelki przy
+pracy na wysokości) publiczny bot odpowiedział — i **słusznie**: fragment `c34`
+„BHP i szkolenia pracowników" jest publiczny i zawiera tę informację. Pytanie
+testowe musi dotyczyć treści obecnej **wyłącznie** w `INTERNAL_CHUNKS`, inaczej
+nie testuje separacji, tylko dokumentację. Model odpowiedział zresztą tylko na
+publicznie pokrytą część i wprost odmówił reszty.
+
 ## Granica dostawcy — model i baza wektorowa są wymienne
 
 W `worker.js` jest sekcja **„GRANICA DOSTAWCY"**: obiekt `PROVIDER` (identyfikatory
@@ -66,8 +122,25 @@ dotykają `env.AI` i `env.VECTORIZE`:
 | `embed(env, texts)` | tablica tekstów → tablica wektorów, w kolejności wejścia |
 | `generate(env, systemPrompt, messages, opts)` | → gotowy tekst odpowiedzi (system prompt składa funkcja) |
 | `vectorSearch(env, vector, opts)` | → tablica dopasowań z `score`, `values` i `metadata` |
-| `vectorUpsert(env, vectors)` | zapis do indeksu (`/reindex`) |
+| `vectorUpsert(env, vectors, namespace)` | zapis do indeksu (`/reindex`) |
 | `vectorDelete(env, ids)` | usunięcie z indeksu (`/purge`) |
+
+`vectorSearch` wymaga `opts.namespaces` — nie ma wartości domyślnej. Vectorize
+przeszukuje jedną przestrzeń na zapytanie, więc przy kilku robimy tyle zapytań
+i scalamy wyniki po podobieństwie.
+
+**`upsert`, nie `insert` — poprawka realnego błędu.** `insert` po cichu **pomija**
+wektory o istniejącym ID, więc każda zmiana treści fragmentu nigdy nie docierała
+do indeksu; działało tylko dodawanie nowych. Wyszło to przy przejściu na przestrzenie:
+po pierwszym `upsert` w wynikach `/debug` pojawił się fragment „Serwis pogwarancyjny"
+(0.570 przy pytaniu o elewacje), którego wcześniej nie było, a podobieństwo dla
+„Ogrody i tereny zielone" skoczyło z 0.473 na 0.523. To były odsyłacze dopisane
+w poprzednich sesjach, które **leżały w kodzie, ale nie w indeksie**.
+
+Wniosek na przyszłość: pomiary progów robione przed 17.08.2026 mogły dotyczyć
+częściowo nieaktualnego indeksu. Nie ma powodu ich przeliczać, ale nie traktować
+ich jako dokładnych. `/reindex` jest teraz idempotentny i faktycznie odzwierciedla
+`CHUNKS`.
 
 **Dlaczego to istnieje.** Cloudflare wystarcza na dziś i na dziesiątki klientów,
 ale ma dwie luki: brak gwarancji rezydencji danych w UE poza planem enterprise
@@ -136,13 +209,21 @@ Deploy nie rusza `index.html` ani `panel.html` — te idą na GitHub Pages przez
 ## Endpointy
 
 Wszystkie administracyjne chronione parametrem `?key=` równym sekretowi
-`REINDEX_SECRET` — sprawdza to `isAdmin()`, jedno miejsce dla wszystkich czterech.
+`REINDEX_SECRET` — sprawdza to `isAdmin()`, jedno miejsce dla wszystkich.
 
-- `POST /` — zapytanie z widgetu: `{question, history}`
-- `GET /reindex?key=…` — **uruchom po każdej zmianie CHUNKS**, inaczej indeks jest nieaktualny
-- `GET /stats?key=…` — dane dla panelu
-- `GET /debug?key=…&q=pytanie` — diagnostyka: co znalazło, z jakim wynikiem, które zdania przechodzą weryfikację
-- `GET /purge?key=…&ids=c01,c02` — usuwa wpisy z indeksu
+- `POST /` — zapytanie z widgetu: `{question, history}`. Przeszukuje **wyłącznie
+  przestrzeń `public`**, wpisaną na sztywno w routingu
+- `POST /internal?key=…` — bot dla pracowników, przeszukuje `public` + `internal`.
+  Tymczasowo na kluczu administracyjnym — logowanie przez Google/Microsoft w kolejnym etapie
+- `GET /reindex?key=…&space=public|internal` — **uruchom po każdej zmianie CHUNKS
+  lub INTERNAL_CHUNKS**. Bez `space` indeksuje `public` (zgodnie z dotychczasowym
+  zachowaniem). Każdą przestrzeń indeksuje się osobno
+- `GET /stats?key=…` — dane dla panelu. Pytania z `/internal` są **odfiltrowane** —
+  panel należy do właściciela firmy i dotyczy widgetu publicznego
+- `GET /debug?key=…&q=pytanie&space=public|internal|obie` — diagnostyka: co znalazło,
+  z jakim wynikiem, **z której przestrzeni**, które zdania przechodzą weryfikację.
+  Bez `space` sprawdza `public`
+- `GET /purge?key=…&ids=c01,c02` — usuwa wpisy z indeksu (ID są globalne, niezależne od przestrzeni)
 
 ## Jak działa przepływ zapytania
 
@@ -278,7 +359,8 @@ Sposób postępowania do powtórzenia, wypracowany na przypadku elewacji.
 3. **Poprawka** — nowy fragment zaczynający się od sformułowania pytającego,
    z jawnym rozgraniczeniem wobec sąsiednich fragmentów i odsyłaczem **w obie strony**
    (wzorzec ogród/ogrodzenie, patrz „Decyzje, do których nie wracać").
-4. **Reindeks** — `/reindex`, bez tego indeks nie widzi nowego fragmentu.
+4. **Reindeks** — `/reindex?space=…`, bez tego indeks nie widzi nowego fragmentu.
+   Odczekaj chwilę: zapis do Vectorize jest asynchroniczny.
 5. **Weryfikacja przez `/debug`** — nowy fragment powinien odskoczyć od reszty
    **o co najmniej 0.1**. Elewacje po poprawce: 0.577 vs 0.482 (pytanie jednowyrazowe)
    i 0.739 vs 0.533 (pełne pytanie), odpowiedzi w obu wariantach identyczne merytorycznie.
@@ -308,10 +390,21 @@ Kolejność jest celowa — uzasadnienie jest częścią decyzji, nie ozdobnikie
   na stałe, szczegóły w sekcji „Dlaczego 70B". Nie otwierać ponownie.
 
 1. **Bot dla pracowników** — drugi tryb: procedury BHP, kadry, instrukcje wykonania
-   zadań. Ton instruktażowy, nie sprzedażowy. Wymaga prawdziwego logowania
-   i twardej separacji od przestrzeni publicznej. To druga połowa produktu, nie dodatek —
+   zadań. Ton instruktażowy, nie sprzedażowy. To druga połowa produktu, nie dodatek —
    i **stawka jest wyższa niż przy FAQ**: zmyślona odpowiedź o procedurze BHP szkodzi
    inaczej niż zmyślony termin realizacji.
+   - ~~**Etap 1: separacja przestrzeni wiedzy**~~ — ✅ **wykonane 17.08.2026.**
+     Namespaces `public`/`internal`, rozdzielone endpointy, `INTERNAL_CHUNKS`,
+     pole `role`. Szczelność potwierdzona testem — patrz „Separacja przestrzeni wiedzy".
+   - **Etap 2: prawdziwe logowanie** — Google/Microsoft OAuth zamiast klucza
+     administracyjnego na `/internal`. Do tego czasu `/internal` **nie nadaje się
+     do udostępnienia pracownikom**: dzieli sekret z `/reindex` i `/purge`, więc
+     kto dostaje dostęp do bota, dostaje też prawo skasowania indeksu.
+   - **Etap 3: ton instruktażowy** — `buildSystemPrompt()` jest wspólny dla obu
+     endpointów i mówi o „stronie firmy". Świadomie nie ruszony w etapie 1,
+     żeby zmiana pozostała czysto strukturalna.
+   - **Etap 4: treść wewnętrzna** — `INTERNAL_CHUNKS` ma teraz 3 fragmenty
+     testowe (marża, BHP, kadry), nie prawdziwą dokumentację.
 2. **Druga branża** — kancelaria albo gabinet. Sprawdzenie, ile zabezpieczeń jest
    uniwersalnych, a ile to protezy pod budowlankę (wzorce mówią o rabatach
    w hurtowniach — u kancelarii groźne będą terminy przedawnienia i szanse wygranej).
@@ -323,7 +416,12 @@ Kolejność jest celowa — uzasadnienie jest częścią decyzji, nie ozdobnikie
 
 ## Zasady pracy nad tym projektem
 
-- Po każdej zmianie `CHUNKS` → uruchom `/reindex`
+- Po każdej zmianie `CHUNKS` → `/reindex?space=public`; po zmianie `INTERNAL_CHUNKS`
+  → `/reindex?space=internal`. Przestrzenie indeksuje się osobno
+- **Zapis do Vectorize jest asynchroniczny.** Zapytanie zaraz po `/reindex` potrafi
+  zwrócić pustkę albo częściowy indeks — to nie jest błąd separacji ani progów.
+  Odczekaj i powtórz, zanim zaczniesz cokolwiek diagnozować. Kosztowało to jeden
+  fałszywy alarm „regresja publicznego endpointu" 17.08.2026
 - Przy zmianie progów → najpierw `/debug`, potem decyzja
 - Przed commitem → `node --check worker.js`
 - `ALLOWED_ORIGIN` to sama domena bez ścieżki (`https://p0rk1.github.io`),

@@ -30,6 +30,44 @@ const COMPANY_NAME = "BudMax Sp. z o.o.";
 const FALLBACK_MESSAGE = "Nie mam takich informacji w mojej dokumentacji — polecam kontakt z biurem.";
 
 // ============================================================
+// PRZESTRZENIE WIEDZY — separacja na poziomie danych, nie promptu
+// ============================================================
+//
+// Publiczny widget i bot dla pracowników korzystają z tego samego indeksu,
+// ale z ROZŁĄCZNYCH przestrzeni nazw (namespaces) w bazie wektorowej.
+// Zapytanie do przestrzeni `public` fizycznie nie widzi wektorów z `internal` —
+// to filtr po stronie bazy, wykonany zanim cokolwiek trafi do modelu.
+//
+// DLACZEGO NIE PROMPTEM
+// Instrukcja w prompcie („nie ujawniaj treści wewnętrznych") jest sugestią dla
+// modelu — działa, dopóki model współpracuje. Prompt injection, nietypowe
+// sformułowanie pytania albo nowa wersja modelu ją omijają. Separacja
+// namespace'ami nie ma tej klasy podatności: fragmentu, którego baza nie zwróci,
+// model nie ma jak zacytować, bo nigdy go nie zobaczył.
+//
+// DLACZEGO PRZESTRZEŃ PUBLICZNA JEST WPISANA NA SZTYWNO
+// Publiczny endpoint NIE przyjmuje nazwy przestrzeni jako parametru — ani z
+// ciała żądania, ani z query stringa, ani z nagłówka. Gdyby przyjmował, cała
+// separacja wisiałaby na poprawności sprawdzenia autoryzacji, czyli na kodzie,
+// w którym da się zrobić błąd. Przy wpisaniu na sztywno błąd w autoryzacji
+// **nadal nie otwiera** dostępu do wiedzy wewnętrznej: publiczny widget nie ma
+// fizycznej możliwości poprosić o `internal`, bo nie ma czym.
+const SPACE_PUBLIC = "public";
+const SPACE_INTERNAL = "internal";
+const SPACES_ALLOWED = [SPACE_PUBLIC, SPACE_INTERNAL];
+
+// Przestrzenie przeszukiwane przez poszczególne endpointy. Listy są stałymi
+// modułowymi, nie da się ich złożyć z danych z żądania.
+const SPACES_FOR_PUBLIC = [SPACE_PUBLIC];
+const SPACES_FOR_INTERNAL = [SPACE_PUBLIC, SPACE_INTERNAL]; // pracownik widzi też to, co firma obiecuje klientom
+
+// Rola widzącego fragment. Na starcie wszyscy widzą wszystko, ale u klientów
+// premium (kancelarie, medycyna) role będą konieczne — a dopisanie tego pola
+// później oznacza ponowne indeksowanie u każdego klienta. Dlatego jest teraz,
+// mimo że nic jeszcze po nim nie filtruje.
+const DEFAULT_ROLE = "all";
+
+// ============================================================
 // GRANICA DOSTAWCY — jedyne miejsce, które wie, że pod spodem jest Cloudflare
 // ============================================================
 //
@@ -90,22 +128,62 @@ async function generate(env, systemPrompt, messages, opts = {}) {
   return (result.response || result.choices?.[0]?.message?.content || "").trim();
 }
 
+// Sprawdza, że przestrzeń jest jedną ze znanych. Rzuca zamiast zwracać wartość
+// domyślną: cicha zamiana nieznanej przestrzeni na `public` byłaby dokładnie tym
+// błędem, który mógłby kiedyś pokazać treść wewnętrzną nie tej stronie.
+function assertSpaces(namespaces) {
+  if (!Array.isArray(namespaces) || namespaces.length === 0) {
+    throw new Error("Nie podano przestrzeni wiedzy do przeszukania.");
+  }
+  for (const ns of namespaces) {
+    if (!SPACES_ALLOWED.includes(ns)) {
+      throw new Error(`Nieznana przestrzeń wiedzy: ${ns}`);
+    }
+  }
+  return namespaces;
+}
+
 // vectorSearch(env, vector, opts) → tablica dopasowań: { id, score, values, metadata }.
 // Wektory (`values`) są potrzebne weryfikacji zdanie-po-zdaniu, metadane —
 // budowie promptu. Zwracamy zawsze tablicę, nigdy undefined.
+//
+// `opts.namespaces` jest OBOWIĄZKOWE i nie ma wartości domyślnej — wywołujący
+// musi świadomie powiedzieć, którą przestrzeń przeszukuje. Vectorize przeszukuje
+// jedną przestrzeń na zapytanie, więc przy kilku robimy tyle zapytań i scalamy
+// wyniki po wyniku podobieństwa, jakby przyszły z jednego.
 async function vectorSearch(env, vector, opts = {}) {
-  const results = await env.VECTORIZE.query(vector, {
-    topK: opts.topK ?? TOP_K,
-    returnMetadata: true,
-    returnValues: true,
-  });
-  return results.matches || [];
+  const namespaces = assertSpaces(opts.namespaces);
+  const topK = opts.topK ?? TOP_K;
+
+  const perSpace = await Promise.all(
+    namespaces.map((ns) =>
+      env.VECTORIZE.query(vector, {
+        namespace: ns,
+        topK,
+        returnMetadata: true,
+        returnValues: true,
+      })
+    )
+  );
+
+  const merged = [];
+  for (const results of perSpace) {
+    for (const m of results.matches || []) merged.push(m);
+  }
+  merged.sort((a, b) => b.score - a.score);
+  return merged.slice(0, topK);
 }
 
 // Zapis i usuwanie z indeksu — używane tylko przez /reindex i /purge, ale muszą
 // być tutaj: inaczej `env.VECTORIZE` wyciekłoby poza granicę.
-async function vectorUpsert(env, vectors) {
-  await env.VECTORIZE.insert(vectors);
+//
+// `upsert`, nie `insert`: insert po cichu POMIJA wektory o istniejącym ID, więc
+// zmiana treści fragmentu nigdy nie docierała do indeksu — poprawka wymagała
+// wcześniej usunięcia wpisu przez /purge. Upsert nadpisuje, dzięki czemu
+// /reindex jest idempotentny i faktycznie odzwierciedla CHUNKS.
+async function vectorUpsert(env, vectors, namespace) {
+  const [ns] = assertSpaces([namespace]);
+  await env.VECTORIZE.upsert(vectors.map((v) => ({ ...v, namespace: ns })));
 }
 
 async function vectorDelete(env, ids) {
@@ -196,6 +274,22 @@ const CHUNKS = [
   { id: "c51", title: "Zmiany w trakcie budowy", text: "Zmiana zakresu prac wymaga pisemnego aneksu do umowy z aktualizacją kosztorysu. Zmiany zgłoszone przed rozpoczęciem danego etapu nie generują dodatkowych kosztów administracyjnych, zgłoszone później — mogą generować." },
   { id: "c52", title: "Obszar działania i dojazd", text: "Gdzie działamy i gdzie realizujemy budowy: na terenie województwa zachodniopomorskiego, głównie w okolicach Szczecina i Kołobrzegu. Obsługujemy klientów z tego regionu. Dla budów powyżej 60 km od siedziby doliczamy ryczałt transportowy ustalany indywidualnie." },
 ];
+
+// ============================================================
+// TREŚĆ WEWNĘTRZNA — wyłącznie dla pracowników, przestrzeń `internal`
+// ============================================================
+// Rusztowanie pod bota dla pracowników (procedury BHP, kadry, instrukcje
+// wykonania zadań). Na razie trzy fragmenty, których jedynym zadaniem jest
+// SPRAWDZENIE SZCZELNOŚCI separacji — każdy zawiera informację, której publiczny
+// widget nie ma prawa ujawnić klientowi. Docelowa treść dojdzie w kolejnym etapie.
+//
+// Stawka jest tu wyższa niż przy FAQ: zmyślona odpowiedź o procedurze BHP szkodzi
+// inaczej niż zmyślony termin realizacji. Warstwy weryfikacji obowiązują tak samo.
+const INTERNAL_CHUNKS = [
+  { id: "i01", title: "Widełki marży i granica negocjacji", text: "Jaką marżę zakładamy przy wycenach: standardowa marża na robociznę wynosi 22 procent, a minimalna granica, poniżej której handlowiec nie schodzi bez zgody zarządu, to 14 procent. Przy zleceniach powyżej 400 tysięcy złotych dopuszczalne jest zejście do 12 procent po akceptacji zarządu. Tych wartości nie komunikujemy klientom — w rozmowie z klientem podajemy wyłącznie cenę końcową z kosztorysu." },
+  { id: "i02", title: "Procedura BHP — praca na wysokości powyżej 2 metrów", text: "Jak pracujemy na wysokości: każda praca powyżej 2 metrów wymaga szelek bezpieczeństwa z amortyzatorem oraz punktu kotwiczenia sprawdzonego przez brygadzistę przed rozpoczęciem zmiany. Rusztowanie odbiera kierownik budowy wpisem do dziennika. Przy wietrze powyżej 10 metrów na sekundę prace na rusztowaniu wstrzymujemy. Zgłoszenie braku sprzętu ochronnego kierujemy do brygadzisty i nie rozpoczynamy pracy do czasu jego uzupełnienia." },
+  { id: "i03", title: "Nadgodziny i urlop — zgłaszanie", text: "Jak zgłaszamy nadgodziny i urlop: nadgodziny zgłasza brygadzista w raporcie tygodniowym do piątku do godziny 14, rozliczane są w kolejnym okresie płacowym. Wniosek urlopowy składamy w kadrach najpóźniej 7 dni przed planowanym terminem, a w okresie od maja do września — 14 dni przed, ze względu na spiętrzenie prac sezonowych." },
+];
 // ============================================================
 
 const ALLOWED_ORIGIN = "https://p0rk1.github.io";
@@ -228,19 +322,33 @@ async function embedText(env, text) {
   return vectors[0];
 }
 
-async function handleReindex(env) {
+// Która tablica zasila którą przestrzeń. Mapa jest jawna, żeby nie dało się
+// przypadkiem zaindeksować treści wewnętrznej do przestrzeni publicznej.
+function chunksForSpace(space) {
+  if (space === SPACE_PUBLIC) return CHUNKS;
+  if (space === SPACE_INTERNAL) return INTERNAL_CHUNKS;
+  throw new Error(`Nieznana przestrzeń wiedzy: ${space}`);
+}
+
+async function handleReindex(env, space) {
+  const source = chunksForSpace(space);
   const BATCH_SIZE = 10; // grupujemy, żeby nie przekroczyć limitu subrequestów na jedno wywołanie Workera
   let inserted = 0;
-  for (let i = 0; i < CHUNKS.length; i += BATCH_SIZE) {
-    const batch = CHUNKS.slice(i, i + BATCH_SIZE);
+  for (let i = 0; i < source.length; i += BATCH_SIZE) {
+    const batch = source.slice(i, i + BATCH_SIZE);
     const texts = batch.map((c) => `${c.title}\n${c.text}`);
     const embedded = await embed(env, texts);
     const vectors = batch.map((chunk, idx) => ({
       id: chunk.id,
       values: embedded[idx],
-      metadata: { title: chunk.title, text: chunk.text },
+      metadata: {
+        title: chunk.title,
+        text: chunk.text,
+        space,
+        role: chunk.role || DEFAULT_ROLE,
+      },
     }));
-    await vectorUpsert(env, vectors);
+    await vectorUpsert(env, vectors, space);
     inserted += batch.length;
   }
   return inserted;
@@ -472,7 +580,10 @@ function sanitizeHistory(rawHistory) {
 
 // Zapis pytania do logu. Świadomie NIE zapisujemy adresu IP ani niczego
 // pozwalającego zidentyfikować pytającego — tylko treść pytania i wynik.
-async function logQuestion(env, question, gap, source) {
+// `space` mówi, z którego endpointu przyszło pytanie. Panel właściciela firmy
+// pokazuje analitykę publicznego widgetu — pytania pracowników nie mają się tam
+// mieszać, nawet zanim bot wewnętrzny dostanie własny panel.
+async function logQuestion(env, question, gap, source, space = SPACE_PUBLIC) {
   if (!env.RATE_LIMIT_KV) return;
   try {
     const key = `log:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
@@ -480,6 +591,7 @@ async function logQuestion(env, question, gap, source) {
       q: question.slice(0, 300),
       gap,
       source: source || null,
+      space,
       ts: Date.now(),
     });
     await env.RATE_LIMIT_KV.put(key, entry, { expirationTtl: LOG_RETENTION_DAYS * 86400 });
@@ -513,8 +625,14 @@ export default {
         return new Response("Brak dostępu.", { status: 403, headers: corsHeaders() });
       }
       try {
-        const n = await handleReindex(env);
-        return new Response(`Zaindeksowano ${n} fragmentów.`, { headers: corsHeaders() });
+        // Domyślnie `public` — zachowuje dotychczasowe zachowanie /reindex bez
+        // parametru. Treść wewnętrzną trzeba zaindeksować świadomie: ?space=internal
+        const space = url.searchParams.get("space") || SPACE_PUBLIC;
+        if (!SPACES_ALLOWED.includes(space)) {
+          return new Response(`Nieznana przestrzeń: ${space}. Dozwolone: ${SPACES_ALLOWED.join(", ")}.`, { status: 400, headers: corsHeaders() });
+        }
+        const n = await handleReindex(env, space);
+        return new Response(`Zaindeksowano ${n} fragmentów w przestrzeni "${space}".`, { headers: corsHeaders() });
       } catch (e) {
         return new Response(`Błąd indeksowania: ${e.message}.`, { status: 500, headers: corsHeaders() });
       }
@@ -525,7 +643,10 @@ export default {
         return jsonResponse({ error: "Brak dostępu." }, corsHeaders(), 403);
       }
       try {
-        const entries = await readLog(env);
+        // Panel należy do właściciela firmy i dotyczy publicznego widgetu.
+        // Pytania pracowników z /internal odfiltrowujemy — wpisy sprzed
+        // separacji nie mają pola `space` i liczą się jako publiczne.
+        const entries = (await readLog(env)).filter((e) => (e.space || SPACE_PUBLIC) !== SPACE_INTERNAL);
         const total = entries.length;
         const gaps = entries.filter((e) => e.gap);
         const answered = entries.filter((e) => !e.gap);
@@ -593,7 +714,11 @@ export default {
       if (!q) return new Response("Podaj pytanie: /debug?key=...&q=twoje pytanie", { headers: corsHeaders() });
       try {
         const qVector = await embedText(env, q);
-        const matches = await vectorSearch(env, qVector, { topK: TOP_K });
+        // /debug jest administracyjny, więc może zajrzeć do obu przestrzeni —
+        // ale też wyłącznie do tych wskazanych jawnie: ?space=public|internal|obie
+        const spaceParam = url.searchParams.get("space") || SPACE_PUBLIC;
+        const spaces = spaceParam === "obie" ? SPACES_FOR_INTERNAL : [spaceParam];
+        const matches = await vectorSearch(env, qVector, { topK: TOP_K, namespaces: spaces });
         const filtered = matches.filter((m, idx) => idx < MIN_CHUNKS || m.score >= MIN_SIMILARITY);
 
         const systemPrompt = buildSystemPrompt(filtered.map((m) => m.metadata));
@@ -622,8 +747,13 @@ export default {
 
         return jsonResponse({
           pytanie: q,
+          przeszukane_przestrzenie: spaces,
           progi: { MIN_SIMILARITY, CITATION_THRESHOLD },
-          znalezione_fragmenty: matches.map((m) => ({ tytul: m.metadata.title, wynik: m.score.toFixed(3) })),
+          znalezione_fragmenty: matches.map((m) => ({
+            tytul: m.metadata.title,
+            wynik: m.score.toFixed(3),
+            przestrzen: m.metadata.space || "(brak — fragment sprzed separacji)",
+          })),
           po_filtrze: filtered.length,
           odpowiedz: answer,
           weryfikacja_zdan: sentenceScores,
@@ -637,75 +767,94 @@ export default {
       return new Response("Method not allowed", { status: 405, headers: corsHeaders() });
     }
 
-    let question, history;
-    try {
-      const body = await request.json();
-      question = (body.question || "").toString().trim();
-      history = sanitizeHistory(body.history);
-    } catch {
-      return jsonResponse({ error: "Nieprawidłowe zapytanie" }, corsHeaders(), 400);
+    // Bot dla pracowników. Przestrzenie podaje TA linia, nie żądanie.
+    // Na razie chroniony tym samym kluczem co endpointy administracyjne —
+    // prawdziwe logowanie przez Google/Microsoft dojdzie w kolejnym etapie.
+    if (url.pathname === "/internal") {
+      if (!isAdmin(url, env)) {
+        return jsonResponse({ error: "Brak dostępu." }, corsHeaders(), 403);
+      }
+      return handleAsk(request, env, SPACES_FOR_INTERNAL, SPACE_INTERNAL);
     }
 
-    if (!question || question.length > MAX_QUESTION_LENGTH) {
-      return jsonResponse({
-        answer: question ? `Twoja wiadomość jest za długa (limit ${MAX_QUESTION_LENGTH} znaków). Spróbuj podzielić ją na kilka krótszych pytań.` : "Pytanie nie może być puste.",
-        source: null,
-        gap: false,
-      }, corsHeaders(), 400);
-    }
-
-    if (env.RATE_LIMIT_KV) {
-      const ip = request.headers.get("cf-connecting-ip") || "unknown";
-      const bucket = Math.floor(Date.now() / 3600000);
-      const key = `rl:${ip}:${bucket}`;
-      const current = parseInt((await env.RATE_LIMIT_KV.get(key)) || "0", 10);
-      if (current >= RATE_LIMIT_PER_HOUR) {
-        return jsonResponse({ answer: "Zbyt wiele zapytań z tego adresu. Spróbuj za chwilę.", source: null, gap: false }, corsHeaders(), 429);
-      }
-      await env.RATE_LIMIT_KV.put(key, String(current + 1), { expirationTtl: 3600 });
-    }
-
-    try {
-      const recentUserMsgs = history.filter((h) => h.role === "user").slice(-2).map((h) => h.content);
-      const retrievalQuery = [...recentUserMsgs, question].join("\n");
-
-      const isLongQuestion = question.length >= LONG_QUESTION_CHARS;
-      const topK = isLongQuestion ? TOP_K_LONG : TOP_K;
-
-      const qVector = await embedText(env, retrievalQuery);
-      const allMatches = await vectorSearch(env, qVector, { topK });
-      const filtered = allMatches.filter((m, idx) => idx < MIN_CHUNKS || m.score >= MIN_SIMILARITY);
-
-      if (filtered.length === 0) {
-        await logQuestion(env, question, true, null);
-        return jsonResponse({ answer: FALLBACK_MESSAGE, source: null, gap: true }, corsHeaders());
-      }
-
-      const systemPrompt = buildSystemPrompt(filtered.map((m) => m.metadata));
-      const messages = [...history, { role: "user", content: question }];
-
-      const rawAnswer = await generate(env, systemPrompt, messages);
-
-      if (!rawAnswer || /nie mam takich informacji/i.test(rawAnswer)) {
-        await logQuestion(env, question, true, null);
-        return jsonResponse({ answer: FALLBACK_MESSAGE, source: null, gap: true }, corsHeaders());
-      }
-
-      const verdict = await verifyClaims(rawAnswer, filtered, env);
-      if (!verdict.ok) {
-        await logQuestion(env, question, true, null);
-        return jsonResponse({ answer: verdict.fallback, source: null, gap: true }, corsHeaders());
-      }
-
-      await logQuestion(env, question, false, verdict.source);
-      return jsonResponse({
-        answer: verdict.text,
-        source: verdict.source,
-        gap: false,
-        trimmed: verdict.removed || 0,
-      }, corsHeaders());
-    } catch (e) {
-      return jsonResponse({ answer: `Błąd: ${e.message}. Sprawdź bindingi AI i VECTORIZE.`, source: null, gap: false }, corsHeaders(), 502);
-    }
+    // Publiczny widget. `SPACES_FOR_PUBLIC` to stała modułowa — nie ma ścieżki,
+    // którą żądanie mogłoby wpłynąć na zakres przeszukiwania.
+    return handleAsk(request, env, SPACES_FOR_PUBLIC, SPACE_PUBLIC);
   },
 };
+
+// Wspólna obsługa pytania dla obu endpointów. `spaces` przychodzi wyłącznie
+// z routingu powyżej i nigdy z danych żądania — to jest ten jeden szczegół,
+// na którym stoi cała separacja.
+async function handleAsk(request, env, spaces, askedFrom) {
+  let question, history;
+  try {
+    const body = await request.json();
+    question = (body.question || "").toString().trim();
+    history = sanitizeHistory(body.history);
+  } catch {
+    return jsonResponse({ error: "Nieprawidłowe zapytanie" }, corsHeaders(), 400);
+  }
+
+  if (!question || question.length > MAX_QUESTION_LENGTH) {
+    return jsonResponse({
+      answer: question ? `Twoja wiadomość jest za długa (limit ${MAX_QUESTION_LENGTH} znaków). Spróbuj podzielić ją na kilka krótszych pytań.` : "Pytanie nie może być puste.",
+      source: null,
+      gap: false,
+    }, corsHeaders(), 400);
+  }
+
+  if (env.RATE_LIMIT_KV) {
+    const ip = request.headers.get("cf-connecting-ip") || "unknown";
+    const bucket = Math.floor(Date.now() / 3600000);
+    const key = `rl:${ip}:${bucket}`;
+    const current = parseInt((await env.RATE_LIMIT_KV.get(key)) || "0", 10);
+    if (current >= RATE_LIMIT_PER_HOUR) {
+      return jsonResponse({ answer: "Zbyt wiele zapytań z tego adresu. Spróbuj za chwilę.", source: null, gap: false }, corsHeaders(), 429);
+    }
+    await env.RATE_LIMIT_KV.put(key, String(current + 1), { expirationTtl: 3600 });
+  }
+
+  try {
+    const recentUserMsgs = history.filter((h) => h.role === "user").slice(-2).map((h) => h.content);
+    const retrievalQuery = [...recentUserMsgs, question].join("\n");
+
+    const isLongQuestion = question.length >= LONG_QUESTION_CHARS;
+    const topK = isLongQuestion ? TOP_K_LONG : TOP_K;
+
+    const qVector = await embedText(env, retrievalQuery);
+    const allMatches = await vectorSearch(env, qVector, { topK, namespaces: spaces });
+    const filtered = allMatches.filter((m, idx) => idx < MIN_CHUNKS || m.score >= MIN_SIMILARITY);
+
+    if (filtered.length === 0) {
+      await logQuestion(env, question, true, null, askedFrom);
+      return jsonResponse({ answer: FALLBACK_MESSAGE, source: null, gap: true }, corsHeaders());
+    }
+
+    const systemPrompt = buildSystemPrompt(filtered.map((m) => m.metadata));
+    const messages = [...history, { role: "user", content: question }];
+
+    const rawAnswer = await generate(env, systemPrompt, messages);
+
+    if (!rawAnswer || /nie mam takich informacji/i.test(rawAnswer)) {
+      await logQuestion(env, question, true, null, askedFrom);
+      return jsonResponse({ answer: FALLBACK_MESSAGE, source: null, gap: true }, corsHeaders());
+    }
+
+    const verdict = await verifyClaims(rawAnswer, filtered, env);
+    if (!verdict.ok) {
+      await logQuestion(env, question, true, null, askedFrom);
+      return jsonResponse({ answer: verdict.fallback, source: null, gap: true }, corsHeaders());
+    }
+
+    await logQuestion(env, question, false, verdict.source, askedFrom);
+    return jsonResponse({
+      answer: verdict.text,
+      source: verdict.source,
+      gap: false,
+      trimmed: verdict.removed || 0,
+    }, corsHeaders());
+  } catch (e) {
+    return jsonResponse({ answer: `Błąd: ${e.message}. Sprawdź bindingi AI i VECTORIZE.`, source: null, gap: false }, corsHeaders(), 502);
+  }
+}

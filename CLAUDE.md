@@ -197,7 +197,7 @@ dało się załatać kodem po czterech rundach prób. **Nie wracać do 8B.**
 
 ## Dokumentacja BudMax
 
-52 fragmenty w tablicy `CHUNKS`, oparte na realnych przepisach:
+53 fragmenty w tablicy `CHUNKS`, oparte na realnych przepisach:
 art. 568 §1 KC (rękojmia 5 lat / 2 lata), WT2021 (izolacyjność), KSeF (obowiązkowy
 od kwietnia 2026), program Czyste Powietrze (kwoty dofinansowania).
 
@@ -210,6 +210,42 @@ ale to zasługa dobrej treści, nie powód, żeby ją usuwać.
 Fragmenty zaczynają się od sformułowań, których używają pytający ("Gdzie działamy
 i gdzie realizujemy budowy…"), nie tylko od języka oficjalnego dokumentu. To poprawia
 trafność wyszukiwania i jest praktyką do powtórzenia u kolejnych klientów.
+
+### Usługa brzmiąca wiarygodnie, której dokumentacja nie zawiera
+
+Powtarzalny wzorzec, nie jednorazowy przypadek. Klient pyta o coś, co firma budowlana
+oczywiście robi, ale czego w `CHUNKS` nie ma — model sięga wtedy po najbliższy
+brzmieniowo fragment i odpowiada twierdząco na podstawie czegoś innego.
+
+Znane wystąpienia:
+- **Tarasy** — brak fragmentu, złapane wcześniej, zabezpieczone regułą w prompcie
+  („nie zakładaj, że jest oferowany"). Fragmentu nadal nie ma.
+- **Elewacje i docieplenia** — 17.08.2026, luka załatana fragmentem `c53`.
+
+## Procedura łatania luk w dokumentacji
+
+Sposób postępowania do powtórzenia, wypracowany na przypadku elewacji.
+
+1. **Objaw** — sprzeczne odpowiedzi na to samo pytanie zadane różnie sformułowane,
+   albo pytanie oznaczone w panelu jako luka.
+2. **Diagnoza przez `/debug`** — ściśnięta grupa wyników bez wyraźnego lidera
+   (elewacje przed poprawką: 0.43–0.48) oznacza **brak fragmentu**. Wyraźny lider
+   (0.6–0.8) oznacza, że fragment jest, a problem leży gdzie indziej — w progach,
+   prompcie albo treści fragmentu. Nie ruszaj progów przed tym rozstrzygnięciem.
+3. **Poprawka** — nowy fragment zaczynający się od sformułowania pytającego,
+   z jawnym rozgraniczeniem wobec sąsiednich fragmentów i odsyłaczem **w obie strony**
+   (wzorzec ogród/ogrodzenie, patrz „Decyzje, do których nie wracać").
+4. **Reindeks** — `/reindex`, bez tego indeks nie widzi nowego fragmentu.
+5. **Weryfikacja przez `/debug`** — nowy fragment powinien odskoczyć od reszty
+   **o co najmniej 0.1**. Elewacje po poprawce: 0.577 vs 0.482 (pytanie jednowyrazowe)
+   i 0.739 vs 0.533 (pełne pytanie), odpowiedzi w obu wariantach identyczne merytorycznie.
+
+**Przy usłudze nieobecnej w dokumentacji weryfikacja semantyczna nie jest ostatnią
+linią obrony.** Przed poprawką model odpowiedział „tak, wykonujemy elewacje", cytując
+fragment o wykończeniu wnętrz — z wynikiem 0.676, **powyżej `CITATION_THRESHOLD`**,
+bo zdanie brzmi podobnie, mimo że dotyczy czego innego. To argument za kompletnością
+dokumentacji, **nie za podnoszeniem progów**: próg, który odciąłby 0.676, odciąłby
+też poprawne parafrazy.
 
 ## Znane ograniczenia
 

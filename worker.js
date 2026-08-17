@@ -292,13 +292,29 @@ const INTERNAL_CHUNKS = [
 ];
 // ============================================================
 
-const ALLOWED_ORIGIN = "https://p0rk1.github.io";
+// Lista, nie pojedyncza wartość — przy wielu klientach każdy będzie miał własną
+// stronę, z której wolno wołać Workera. Wpisy to **sama domena bez ścieżki**,
+// bo przeglądarka wysyła w nagłówku Origin tylko protokół i host.
+//
+// Kolejność ma znaczenie tylko dla pierwszego wpisu: jest odpowiedzią domyślną,
+// gdy Origin nie pasuje do niczego. Nieznany origin i tak zostanie zablokowany
+// przez przeglądarkę — chodzi o to, żeby nie odsyłać mu jego własnej wartości.
+const ALLOWED_ORIGINS = [
+  "https://p0rk1.github.io",              // widget publiczny — GitHub Pages
+  "https://budmax.know-base.app",         // publiczny host klienta
+  "https://budmax-wewnetrzny.know-base.app", // bot dla pracowników (za Access)
+];
 
-function corsHeaders() {
+function corsHeaders(request) {
+  const origin = request?.headers?.get("Origin") || "";
+  const dozwolony = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
   return {
-    "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
+    "Access-Control-Allow-Origin": dozwolony,
     "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type",
+    // Odpowiedź zależy od nagłówka Origin — bez tego pośrednik mógłby podać
+    // jednemu klientowi odpowiedź zbuforowaną dla drugiego.
+    "Vary": "Origin",
   };
 }
 
@@ -831,30 +847,30 @@ export default {
     const url = new URL(request.url);
 
     if (request.method === "OPTIONS") {
-      return new Response(null, { headers: corsHeaders() });
+      return new Response(null, { headers: corsHeaders(request) });
     }
 
     if (url.pathname === "/reindex" && request.method === "GET") {
       if (!isAdmin(url, env)) {
-        return new Response("Brak dostępu.", { status: 403, headers: corsHeaders() });
+        return new Response("Brak dostępu.", { status: 403, headers: corsHeaders(request) });
       }
       try {
         // Domyślnie `public` — zachowuje dotychczasowe zachowanie /reindex bez
         // parametru. Treść wewnętrzną trzeba zaindeksować świadomie: ?space=internal
         const space = url.searchParams.get("space") || SPACE_PUBLIC;
         if (!SPACES_ALLOWED.includes(space)) {
-          return new Response(`Nieznana przestrzeń: ${space}. Dozwolone: ${SPACES_ALLOWED.join(", ")}.`, { status: 400, headers: corsHeaders() });
+          return new Response(`Nieznana przestrzeń: ${space}. Dozwolone: ${SPACES_ALLOWED.join(", ")}.`, { status: 400, headers: corsHeaders(request) });
         }
         const n = await handleReindex(env, space);
-        return new Response(`Zaindeksowano ${n} fragmentów w przestrzeni "${space}".`, { headers: corsHeaders() });
+        return new Response(`Zaindeksowano ${n} fragmentów w przestrzeni "${space}".`, { headers: corsHeaders(request) });
       } catch (e) {
-        return new Response(`Błąd indeksowania: ${e.message}.`, { status: 500, headers: corsHeaders() });
+        return new Response(`Błąd indeksowania: ${e.message}.`, { status: 500, headers: corsHeaders(request) });
       }
     }
 
     if (url.pathname === "/stats" && request.method === "GET") {
       if (!isAdmin(url, env)) {
-        return jsonResponse({ error: "Brak dostępu." }, corsHeaders(), 403);
+        return jsonResponse({ error: "Brak dostępu." }, corsHeaders(request), 403);
       }
       try {
         // Panel należy do właściciela firmy i dotyczy publicznego widgetu.
@@ -895,15 +911,15 @@ export default {
           recentQuestions: entries.slice(0, 50).map((e) => ({ q: e.q, gap: e.gap, source: e.source, ts: e.ts })),
           topSources,
           timeline,
-        }, corsHeaders());
+        }, corsHeaders(request));
       } catch (e) {
-        return jsonResponse({ error: e.message }, corsHeaders(), 500);
+        return jsonResponse({ error: e.message }, corsHeaders(request), 500);
       }
     }
 
     if (url.pathname === "/purge" && request.method === "GET") {
       if (!isAdmin(url, env)) {
-        return new Response("Brak dostępu.", { status: 403, headers: corsHeaders() });
+        return new Response("Brak dostępu.", { status: 403, headers: corsHeaders(request) });
       }
       try {
         // Usuwa z indeksu wpisy o ID, których już nie ma w CHUNKS (pozostałości
@@ -911,21 +927,21 @@ export default {
         const idsParam = url.searchParams.get("ids") || "";
         const ids = idsParam.split(",").map((s) => s.trim()).filter(Boolean);
         if (!ids.length) {
-          return new Response("Podaj ID do usunięcia, np. /purge?key=...&ids=c33,c34", { headers: corsHeaders() });
+          return new Response("Podaj ID do usunięcia, np. /purge?key=...&ids=c33,c34", { headers: corsHeaders(request) });
         }
         await vectorDelete(env, ids);
-        return new Response(`Usunięto z indeksu: ${ids.join(", ")}`, { headers: corsHeaders() });
+        return new Response(`Usunięto z indeksu: ${ids.join(", ")}`, { headers: corsHeaders(request) });
       } catch (e) {
-        return new Response(`Błąd usuwania: ${e.message}`, { status: 500, headers: corsHeaders() });
+        return new Response(`Błąd usuwania: ${e.message}`, { status: 500, headers: corsHeaders(request) });
       }
     }
 
     if (url.pathname === "/debug" && request.method === "GET") {
       if (!isAdmin(url, env)) {
-        return new Response("Brak dostępu.", { status: 403, headers: corsHeaders() });
+        return new Response("Brak dostępu.", { status: 403, headers: corsHeaders(request) });
       }
       const q = url.searchParams.get("q");
-      if (!q) return new Response("Podaj pytanie: /debug?key=...&q=twoje pytanie", { headers: corsHeaders() });
+      if (!q) return new Response("Podaj pytanie: /debug?key=...&q=twoje pytanie", { headers: corsHeaders(request) });
       try {
         const qVector = await embedText(env, q);
         // /debug jest administracyjny, więc może zajrzeć do obu przestrzeni —
@@ -971,14 +987,14 @@ export default {
           po_filtrze: filtered.length,
           odpowiedz: answer,
           weryfikacja_zdan: sentenceScores,
-        }, corsHeaders());
+        }, corsHeaders(request));
       } catch (e) {
-        return jsonResponse({ blad: e.message }, corsHeaders(), 500);
+        return jsonResponse({ blad: e.message }, corsHeaders(request), 500);
       }
     }
 
     if (request.method !== "POST") {
-      return new Response("Method not allowed", { status: 405, headers: corsHeaders() });
+      return new Response("Method not allowed", { status: 405, headers: corsHeaders(request) });
     }
 
     // Bot dla pracowników. Przestrzenie podaje TA linia, nie żądanie.
@@ -987,7 +1003,7 @@ export default {
     if (url.pathname === "/internal") {
       const auth = await verifyAccessJwt(request, env);
       if (!auth.ok) {
-        return jsonResponse({ error: auth.error, szczegoly: auth.szczegoly }, corsHeaders(), auth.status);
+        return jsonResponse({ error: auth.error, szczegoly: auth.szczegoly }, corsHeaders(request), auth.status);
       }
       return handleAsk(request, env, SPACES_FOR_INTERNAL, SPACE_INTERNAL, auth.identity);
     }
@@ -1011,7 +1027,7 @@ async function handleAsk(request, env, spaces, askedFrom, identity = null) {
     question = (body.question || "").toString().trim();
     history = sanitizeHistory(body.history);
   } catch {
-    return jsonResponse({ error: "Nieprawidłowe zapytanie" }, corsHeaders(), 400);
+    return jsonResponse({ error: "Nieprawidłowe zapytanie" }, corsHeaders(request), 400);
   }
 
   if (!question || question.length > MAX_QUESTION_LENGTH) {
@@ -1019,7 +1035,7 @@ async function handleAsk(request, env, spaces, askedFrom, identity = null) {
       answer: question ? `Twoja wiadomość jest za długa (limit ${MAX_QUESTION_LENGTH} znaków). Spróbuj podzielić ją na kilka krótszych pytań.` : "Pytanie nie może być puste.",
       source: null,
       gap: false,
-    }, corsHeaders(), 400);
+    }, corsHeaders(request), 400);
   }
 
   if (env.RATE_LIMIT_KV) {
@@ -1028,7 +1044,7 @@ async function handleAsk(request, env, spaces, askedFrom, identity = null) {
     const key = `rl:${ip}:${bucket}`;
     const current = parseInt((await env.RATE_LIMIT_KV.get(key)) || "0", 10);
     if (current >= RATE_LIMIT_PER_HOUR) {
-      return jsonResponse({ answer: "Zbyt wiele zapytań z tego adresu. Spróbuj za chwilę.", source: null, gap: false }, corsHeaders(), 429);
+      return jsonResponse({ answer: "Zbyt wiele zapytań z tego adresu. Spróbuj za chwilę.", source: null, gap: false }, corsHeaders(request), 429);
     }
     await env.RATE_LIMIT_KV.put(key, String(current + 1), { expirationTtl: 3600 });
   }
@@ -1046,7 +1062,7 @@ async function handleAsk(request, env, spaces, askedFrom, identity = null) {
 
     if (filtered.length === 0) {
       await logQuestion(env, question, true, null, askedFrom);
-      return jsonResponse({ answer: FALLBACK_MESSAGE, source: null, gap: true }, corsHeaders());
+      return jsonResponse({ answer: FALLBACK_MESSAGE, source: null, gap: true }, corsHeaders(request));
     }
 
     const systemPrompt = buildSystemPrompt(filtered.map((m) => m.metadata));
@@ -1056,13 +1072,13 @@ async function handleAsk(request, env, spaces, askedFrom, identity = null) {
 
     if (!rawAnswer || /nie mam takich informacji/i.test(rawAnswer)) {
       await logQuestion(env, question, true, null, askedFrom);
-      return jsonResponse({ answer: FALLBACK_MESSAGE, source: null, gap: true }, corsHeaders());
+      return jsonResponse({ answer: FALLBACK_MESSAGE, source: null, gap: true }, corsHeaders(request));
     }
 
     const verdict = await verifyClaims(rawAnswer, filtered, env);
     if (!verdict.ok) {
       await logQuestion(env, question, true, null, askedFrom);
-      return jsonResponse({ answer: verdict.fallback, source: null, gap: true }, corsHeaders());
+      return jsonResponse({ answer: verdict.fallback, source: null, gap: true }, corsHeaders(request));
     }
 
     await logQuestion(env, question, false, verdict.source, askedFrom);
@@ -1074,9 +1090,9 @@ async function handleAsk(request, env, spaces, askedFrom, identity = null) {
       // Publiczna odpowiedź zachowuje dotychczasowy kształt — pole dochodzi
       // tylko wtedy, gdy pytający jest zalogowany.
       ...(identity ? { zalogowany: { email: identity.email, domena: identity.domena } } : {}),
-    }, corsHeaders());
+    }, corsHeaders(request));
   } catch (e) {
-    return jsonResponse({ answer: `Błąd: ${e.message}. Sprawdź bindingi AI i VECTORIZE.`, source: null, gap: false }, corsHeaders(), 502);
+    return jsonResponse({ answer: `Błąd: ${e.message}. Sprawdź bindingi AI i VECTORIZE.`, source: null, gap: false }, corsHeaders(request), 502);
   }
 }
 

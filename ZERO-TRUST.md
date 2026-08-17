@@ -9,21 +9,22 @@ to celowe, nie awaria.
 
 ---
 
-## Zanim zaczniesz — jeden warunek, który może zablokować całość
+## Stan wyjściowy — co już jest gotowe
 
-**Access nie obejmuje adresów `*.workers.dev`.** Aplikacje typu *Self-hosted*
-buduje się z domen, które masz w swoim koncie Cloudflare, a `workers.dev` do
-nich nie należy. Worker chodzi dziś wyłącznie pod
-`knowbase-budmax.rezi7608.workers.dev`, więc **potrzebna jest własna domena
-podpięta do Cloudflare** — inaczej etapu 2 nie da się dokończyć.
+Domena `know-base.app` jest w koncie Cloudflare, a Worker ma dwa własne adresy
+(wdrożone 17.08.2026, wersja `51f7b541`):
 
-Jeśli domeny nie ma, są dwie drogi:
-- kupić dowolną i przenieść jej DNS do Cloudflare (plan darmowy wystarcza),
-- albo odłożyć etap 2 i zostawić `/internal` w stanie 503 — publiczny widget
-  działa niezależnie i nic na tym nie traci.
+| Adres | Do czego | Stan |
+|---|---|---|
+| `budmax.know-base.app` | publiczny endpoint widgetu | działa, odpowiada |
+| `budmax-wewnetrzny.know-base.app` | bot dla pracowników | działa, zwraca 503 do czasu konfiguracji Access |
+| `knowbase-budmax.rezi7608.workers.dev` | stary adres, nadal używany przez widget i panel | działa, zostaje |
 
-Reszta instrukcji zakłada, że domena jest. Poniżej występuje jako
-`twojadomena.pl`, a adres bota jako `bot.twojadomena.pl`.
+**Rozdzielenie na dwa hosty jest sednem tej konfiguracji.** Aplikacja Access
+obejmie **cały host wewnętrzny**, a nie ścieżkę w środku hosta publicznego.
+Dzięki temu nie da się jej ustawić tak, żeby przypadkiem zażądała logowania od
+klientów albo zostawiła `/internal` bez ochrony — na tym hoście nie ma nic
+publicznego, co dałoby się zepsuć.
 
 > Nazwy pól w panelach Cloudflare, Google i Microsoft bywają zmieniane między
 > wydaniami. Wartości, które faktycznie mają znaczenie (adres przekierowania,
@@ -36,9 +37,16 @@ Reszta instrukcji zakłada, że domena jest. Poniżej występuje jako
 
 1. Panel Cloudflare → **Zero Trust** (lewa kolumna).
 2. Przy pierwszym wejściu kreator poprosi o **nazwę zespołu** (*team name*).
-   Wpisz np. `budmax`. Nazwa jest trwała i trudna do zmiany.
-3. Wybierz plan **Free** (do 50 użytkowników — mieści się w profilu klienta).
-4. Zanotuj powstały adres zespołu: `budmax.cloudflareaccess.com`.
+   Wpisz **`knowbase`**. Nazwa jest trwała i trudna do zmiany.
+
+   > Zespół należy do Ciebie jako dostawcy, **nie do klienta**. Jeden zespół
+   > obsłuży wszystkich klientów — każdy dostanie własną aplikację Access
+   > wewnątrz niego. Nazwanie zespołu `budmax` byłoby błędem, który zobaczyłby
+   > każdy kolejny klient na ekranie logowania.
+
+3. Wybierz plan **Free** (do 50 użytkowników — liczonych łącznie dla wszystkich
+   klientów, warto to śledzić przy trzecim i kolejnych).
+4. Zanotuj powstały adres zespołu: `knowbase.cloudflareaccess.com`.
 
 ➡️ To jest przyszła wartość **`ACCESS_TEAM_DOMAIN`**.
 
@@ -56,7 +64,7 @@ Najpierw po stronie Google:
 4. W **Authorized redirect URIs** wpisz dokładnie:
 
    ```
-   https://budmax.cloudflareaccess.com/cdn-cgi/access/callback
+   https://knowbase.cloudflareaccess.com/cdn-cgi/access/callback
    ```
 
 5. Zapisz i skopiuj **Client ID** oraz **Client secret**.
@@ -84,7 +92,7 @@ Najpierw po stronie Microsoftu:
 3. **Redirect URI** → platforma **Web** → dokładnie:
 
    ```
-   https://budmax.cloudflareaccess.com/cdn-cgi/access/callback
+   https://knowbase.cloudflareaccess.com/cdn-cgi/access/callback
    ```
 
 4. Po utworzeniu skopiuj z zakładki **Overview**:
@@ -106,50 +114,50 @@ Teraz po stronie Cloudflare:
 
 ---
 
-## Krok 4. Nadaj Workerowi własny adres
+## Krok 4. Adresy Workera — ✅ zrobione
 
-Bez tego Access nie ma czego chronić.
+Oba hosty są już wdrożone i odpowiadają, nic tu nie klikasz. Wpisy żyją
+w `wrangler.toml` jako `[[routes]]` z `custom_domain = true` — **muszą tam
+zostać**, bo deploy z CLI traktuje ten plik jako pełny opis Workera i zdjąłby
+domenę, której w nim nie ma.
 
-1. Panel Cloudflare → **Workers & Pages → knowbase-budmax → Settings → Domains & Routes**.
-2. **Add → Custom Domain** → `bot.twojadomena.pl` → zapisz.
-   Cloudflare sam doda rekord DNS.
-3. **Natychmiast dopisz to samo do `wrangler.toml`**, inaczej najbliższy
-   `wrangler deploy` zdejmie domenę (ten plik jest źródłem prawdy):
+Kontrola, gdyby coś się rozjechało:
 
-   ```toml
-   [[routes]]
-   pattern = "bot.twojadomena.pl"
-   custom_domain = true
-   ```
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" -X POST https://budmax.know-base.app/ \
+  -H "Content-Type: application/json" -d '{"question":"test"}'          # 200
 
-4. Sprawdź, że adres odpowiada:
+curl -s -o /dev/null -w "%{http_code}\n" -X POST https://budmax-wewnetrzny.know-base.app/internal \
+  -H "Content-Type: application/json" -d '{"question":"test"}'          # 503 teraz, 401 po konfiguracji
+```
 
-   ```
-   curl -i https://bot.twojadomena.pl/internal -X POST -d '{"question":"test"}'
-   ```
-
-   Oczekiwane teraz: **401** (brak tokenu) albo **503** (jeśli zmienne wciąż puste).
-
-Publiczny widget zostaje na `workers.dev` i nic się dla niego nie zmienia.
+Widget i panel nadal wołają stary adres `workers.dev` i tak zostaje —
+przeniesienie ich na `budmax.know-base.app` to osobna, świadoma zmiana.
 
 ---
 
 ## Krok 5. Utwórz aplikację Access
 
 1. Zero Trust → **Access → Applications → Add an application → Self-hosted**.
-2. **Application name**: `KnowBase — tryb wewnętrzny`.
+2. **Application name**: `BudMax — tryb wewnętrzny`.
+   (Nazwa per klient, bo aplikacji będzie tyle, ilu klientów.)
 3. **Session Duration**: `24 hours` (pracownik loguje się raz dziennie).
-4. **Application domain** — i to jest miejsce, w którym łatwo o kosztowny błąd:
+4. **Application domain**:
 
    | Pole | Wartość |
    |---|---|
-   | Subdomain | `bot` |
-   | Domain | `twojadomena.pl` |
-   | Path | `internal` |
+   | Subdomain | `budmax-wewnetrzny` |
+   | Domain | `know-base.app` |
+   | Path | **zostaw puste** |
 
-   **Ścieżka musi być ustawiona.** Bez niej Access obejmie cały host, w tym `/`,
-   i zażąda logowania od publicznego widgetu, gdybyś kiedyś przeniósł go na tę
-   domenę.
+   **Ścieżki celowo nie ustawiamy** — aplikacja ma objąć cały host. Na
+   `budmax-wewnetrzny.know-base.app` nie ma niczego publicznego, więc nie ma
+   czego zablokować, a `/internal` nie ma jak zostać poza ochroną.
+
+   > To jest zmiana względem pierwotnego planu, w którym oba tryby dzieliły
+   > jeden host, a Access ograniczał się do ścieżki `/internal`. Rozdzielenie
+   > hostów usuwa cały ten rodzaj błędu — dlatego pole `Path` ma zostać puste.
+
 5. **Identity providers**: zaznacz Google i Microsoft. Odznacz
    *Accept all available identity providers*, jeśli mają działać tylko te dwa.
 
@@ -182,7 +190,7 @@ pojedyncze adresy osób, które mają testować. Regułę domenową włączysz p
 
    ```toml
    [vars]
-   ACCESS_TEAM_DOMAIN = "budmax.cloudflareaccess.com"
+   ACCESS_TEAM_DOMAIN = "knowbase.cloudflareaccess.com"
    ACCESS_AUD = "tu-wklej-aud-tag"
    ```
 
@@ -204,26 +212,30 @@ ustawione w dashboardzie zniknęłyby przy najbliższym `wrangler deploy`.
 
 ## Krok 8. Sprawdź, że działa
 
-**Z przeglądarki** — wejdź na `https://bot.twojadomena.pl/internal`. Powinno
-przekierować na ekran logowania Cloudflare z wyborem Google / Microsoft.
-Po zalogowaniu zobaczysz odpowiedź Workera (dla GET będzie to `405` — to dobrze,
-znaczy że Access przepuścił i zadziałał Worker).
+**Z przeglądarki** — wejdź na `https://budmax-wewnetrzny.know-base.app/internal`.
+Powinno przekierować na ekran logowania Cloudflare z wyborem Google / Microsoft.
+Po zalogowaniu zobaczysz odpowiedź Workera (dla GET będzie to `405 Method not
+allowed` — to dobrze, znaczy że Access przepuścił i zadziałał Worker).
+
+Sprawdź też **hosta publicznego**: `https://budmax.know-base.app/` **nie może**
+poprosić o logowanie. Jeśli prosi, aplikacja Access została zbudowana na złej
+subdomenie.
 
 **Z terminala** — trzy przypadki, które muszą wypaść dokładnie tak:
 
 ```bash
 # 1. bez tokenu → 401
-curl -s -o /dev/null -w "%{http_code}\n" -X POST https://bot.twojadomena.pl/internal \
+curl -s -o /dev/null -w "%{http_code}\n" -X POST https://budmax-wewnetrzny.know-base.app/internal \
   -H "Content-Type: application/json" -d '{"question":"Jaka jest marza?"}'
 
 # 2. z podrobionym tokenem → 401
-curl -s -X POST https://bot.twojadomena.pl/internal \
+curl -s -X POST https://budmax-wewnetrzny.know-base.app/internal \
   -H "Content-Type: application/json" \
   -H "Cf-Access-Jwt-Assertion: aaa.bbb.ccc" \
   -d '{"question":"Jaka jest marza?"}'
 
 # 3. dawny sekret administracyjny → 401 (ma już NIE działać)
-curl -s -X POST "https://bot.twojadomena.pl/internal?key=TWOJ_SEKRET" \
+curl -s -X POST "https://budmax-wewnetrzny.know-base.app/internal?key=TWOJ_SEKRET" \
   -H "Content-Type: application/json" -d '{"question":"Jaka jest marza?"}'
 ```
 
@@ -231,7 +243,7 @@ curl -s -X POST "https://bot.twojadomena.pl/internal?key=TWOJ_SEKRET" \
 ciasteczko `CF_Authorization` i:
 
 ```bash
-curl -s -X POST https://bot.twojadomena.pl/internal \
+curl -s -X POST https://budmax-wewnetrzny.know-base.app/internal \
   -H "Content-Type: application/json" \
   -H "Cookie: CF_Authorization=WKLEJ_TU" \
   -d '{"question":"Jaka jest standardowa marza na robocizne?"}'
@@ -247,22 +259,41 @@ Odpowiedź powinna zawierać treść z `INTERNAL_CHUNKS` oraz pole
 | Objaw | Przyczyna | Co zrobić |
 |---|---|---|
 | `503` i lista brakujących zmiennych | `ACCESS_TEAM_DOMAIN` / `ACCESS_AUD` puste | Krok 7 |
-| `401 Brak tokenu` mimo zalogowania | Access nie obejmuje tej ścieżki | Sprawdź *Application domain* — subdomena, domena i path (krok 5) |
+| `401 Brak tokenu` mimo zalogowania | Access nie obejmuje tego hosta | Sprawdź *Application domain* — subdomena ma być `budmax-wewnetrzny`, `Path` puste (krok 5) |
+| Publiczny host prosi o logowanie | Aplikacja Access zbudowana na `budmax` zamiast `budmax-wewnetrzny` | Popraw *Application domain* (krok 5) |
 | `401 Token wystawiony dla innej aplikacji` | AUD z innej aplikacji Access | Przepisz AUD z właściwej aplikacji (krok 7) |
 | `401 Token wystawiony przez inny zespół` | Literówka w `ACCESS_TEAM_DOMAIN` | Ma być pełny host `nazwa.cloudflareaccess.com`, bez `https://` |
-| `502 Nie udało się pobrać kluczy` | Zła nazwa zespołu albo chwilowa awaria | Sprawdź `https://NAZWA.cloudflareaccess.com/cdn-cgi/access/certs` w przeglądarce |
+| `502 Nie udało się pobrać kluczy` | Zła nazwa zespołu albo chwilowa awaria | Sprawdź `https://knowbase.cloudflareaccess.com/cdn-cgi/access/certs` w przeglądarce |
 | Domena przestała działać po deployu | Custom domain nie ma go w `wrangler.toml` | Krok 4, punkt 3 |
-| Logowanie wraca błędem `redirect_uri_mismatch` | Zły adres przekierowania u dostawcy | Musi być `https://ZESPOL.cloudflareaccess.com/cdn-cgi/access/callback` |
+| Logowanie wraca błędem `redirect_uri_mismatch` | Zły adres przekierowania u dostawcy | Musi być `https://knowbase.cloudflareaccess.com/cdn-cgi/access/callback` |
 
 ---
 
 ## Co ta konfiguracja zmienia w uprawnieniach
 
-| Endpoint | Kto ma dostęp | Czym się uwierzytelnia |
+| Adres i endpoint | Kto ma dostęp | Czym się uwierzytelnia |
 |---|---|---|
-| `POST /` | każdy | — (publiczny widget) |
-| `POST /internal` | pracownik z reguły Access | tożsamość Google / Microsoft |
-| `/reindex`, `/purge`, `/stats`, `/debug` | administrator | `REINDEX_SECRET` |
+| `budmax.know-base.app` → `POST /` | każdy | — (publiczny widget) |
+| `budmax-wewnetrzny.know-base.app` → `POST /internal` | pracownik z reguły Access | tożsamość Google / Microsoft |
+| dowolny host → `/reindex`, `/purge`, `/stats`, `/debug` | administrator | `REINDEX_SECRET` |
 
 Sedno etapu 2: **pracownik przestał dzielić sekret z administratorem.** Kto ma
 dostęp do bota, nie ma już prawa skasować indeksu.
+
+---
+
+## Kolejny klient — co powtórzyć
+
+Struktura jest per klient, więc przy `kancelaria.know-base.app`:
+
+1. dwa wpisy `[[routes]]` w `wrangler.toml` (`kancelaria`, `kancelaria-wewnetrzny`),
+2. oba hosty plus stronę klienta dopisane do `ALLOWED_ORIGINS` w `worker.js`,
+3. **osobna** aplikacja Access na `kancelaria-wewnetrzny.know-base.app`,
+   z własną regułą (`@kancelaria.pl`) — bo polityka dostępu jest inna dla
+   każdej firmy,
+4. `deploy`.
+
+Punkt 3 oznacza **własny AUD dla każdego klienta**, a `ACCESS_AUD` jest dziś
+pojedynczą wartością. Przy drugim kliencie trzeba to zamienić na mapę
+`host → AUD`. To jest znany dług, nie przeoczenie — nie ma sensu budować mapy
+dla jednego wpisu, ale nie da się jej ominąć przy drugim.

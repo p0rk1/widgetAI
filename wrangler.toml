@@ -13,12 +13,21 @@
 name = "knowbase-budmax"
 main = "worker.js"
 compatibility_date = "2026-08-04"
+
+# Stary adres knowbase-budmax.rezi7608.workers.dev ZOSTAJE włączony.
+# Odwołują się do niego na sztywno index.html i panel.html (stała WORKER_URL),
+# więc wyłączenie go zerwałoby działający widget i panel w tej samej sekundzie.
+# Migracja widgetu na adres własnej domeny to osobna, świadoma zmiana.
 workers_dev = true
 
 # Bez tego Cloudflare wystawia każdą wersję pod osobnym adresem podglądu.
-# Widget i tak chodzi wyłącznie z ALLOWED_ORIGIN, więc to była tylko
+# Widget i tak chodzi wyłącznie z listy ALLOWED_ORIGINS, więc to była tylko
 # dodatkowa powierzchnia bez zastosowania.
 preview_urls = false
+
+# UWAGA NA KOLEJNOŚĆ: wszystko poniżej pierwszej tabeli ([[routes]], [vars], …)
+# należy już do tej tabeli, nie do konfiguracji głównej. Klucze najwyższego
+# poziomu — name, main, workers_dev, preview_urls — muszą zostać tutaj, nad nimi.
 
 # Konfiguracja Cloudflare Zero Trust Access dla endpointu /internal.
 # To NIE są sekrety — identyfikator odbiorcy (AUD) i nazwa zespołu są jawne,
@@ -43,3 +52,23 @@ id = "aeead86f2597488bacbad23b8fe5317a"
 [[vectorize]]
 binding = "VECTORIZE"
 index_name = "budmax-knowledge"
+
+# Własna domena, dwa hosty na klienta. Rozdzielenie jest celowe: aplikacja
+# Access obejmuje CAŁY host wewnętrzny, więc nie ma tam ścieżki publicznej,
+# którą dałoby się przypadkiem odsłonić albo zablokować.
+#
+# Oba hosty są jednopoziomowe — pokrywa je darmowy certyfikat *.know-base.app.
+# Zejście poziom niżej (internal.budmax.know-base.app) wymagałoby płatnego
+# certyfikatu, dlatego myślnik zamiast kropki.
+#
+# Kolejnego klienta dodaje się dwoma takimi wpisami plus jego domenami
+# w ALLOWED_ORIGINS w worker.js. Gwiazdki (*.know-base.app) celowo NIE ma:
+# Worker jest jednodzierżawny, więc dowolna nieistniejąca subdomena
+# odpowiadałaby dziś dokumentacją BudMaksu.
+[[routes]]
+pattern = "budmax.know-base.app"
+custom_domain = true
+
+[[routes]]
+pattern = "budmax-wewnetrzny.know-base.app"
+custom_domain = true

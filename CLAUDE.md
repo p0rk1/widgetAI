@@ -20,8 +20,10 @@ Aktualny stan: działające demo na fikcyjnej firmie budowlanej **BudMax Sp. z o
 | `ZERO-TRUST.md` | Instrukcja konfiguracji logowania do trybu wewnętrznego | repo |
 | `test-access.mjs` | Test weryfikacji tokenu Access (`node test-access.mjs`) | repo |
 
-Adresy:
-- Worker: `https://knowbase-budmax.rezi7608.workers.dev`
+Adresy — **własna domena `know-base.app` (Cloudflare Registrar), dwa hosty na klienta**:
+- Publiczny: `https://budmax.know-base.app` — endpoint widgetu
+- Wewnętrzny: `https://budmax-wewnetrzny.know-base.app` — bot dla pracowników, za Access
+- Stary: `https://knowbase-budmax.rezi7608.workers.dev` — **nadal działa i ma działać**
 - Strona: `https://p0rk1.github.io/widgetAI/`
 - Panel: `https://p0rk1.github.io/widgetAI/panel.html`
 
@@ -56,6 +58,50 @@ Poprzednio `@cf/meta/llama-3.1-8b-instruct-fast`. **Nie wracać do 8B** — pow�
 **Uwaga:** katalog modeli Cloudflare zmienia się bez uprzedzenia. Jeśli Worker
 zwraca błąd połączenia z modelem, najpierw sprawdź
 `https://developers.cloudflare.com/workers-ai/models/` czy model nie został wycofany.
+
+## Adresy i domeny
+
+`know-base.app` jest w koncie Cloudflare. **Dwa hosty na klienta**, nie jeden:
+
+| Host | Rola |
+|---|---|
+| `budmax.know-base.app` | publiczny endpoint widgetu |
+| `budmax-wewnetrzny.know-base.app` | bot dla pracowników, cały host za Access |
+| `knowbase-budmax.rezi7608.workers.dev` | stary adres — **zostaje włączony** |
+
+**Dlaczego dwa hosty, a nie jeden ze ścieżką.** Aplikacja Access obejmuje cały
+host wewnętrzny, więc nie ma tam ścieżki publicznej, którą dałoby się
+przypadkiem odsłonić albo zablokować. Wariant „jeden host + Access na ścieżce
+`/internal`" został **odrzucony**: ochrona stałaby wtedy na poprawnie wpisanym
+polu `Path`, a pomyłka w nim albo odsłania tryb wewnętrzny, albo każe klientom
+się logować. Rozdzielenie hostów usuwa cały ten rodzaj błędu.
+
+**Dlaczego myślnik, a nie kropka** (`budmax-wewnetrzny`, nie `internal.budmax`).
+Darmowy certyfikat `*.know-base.app` pokrywa tylko jeden poziom subdomeny.
+Trzeci poziom wymagałby płatnego certyfikatu.
+
+**Dlaczego bez gwiazdki.** Trasa `*.know-base.app` obsłużyłaby wszystkich
+klientów bez dopisywania czegokolwiek, ale Worker jest jednodzierżawny —
+dowolna nieistniejąca subdomena odpowiadałaby dziś dokumentacją BudMaksu.
+Wildcard ma sens dopiero po multi-tenant, gdy Worker rozpoznaje klienta po
+hoście i odmawia nieznanym.
+
+**Stary adres `workers.dev` zostaje.** `index.html` i `panel.html` mają go
+wpisanego na sztywno w stałej `WORKER_URL`, więc wyłączenie zerwałoby widget
+i panel natychmiast. Przeniesienie ich na `budmax.know-base.app` to osobna,
+świadoma zmiana — wymaga edycji obu plików i `git push` (GitHub Pages),
+nie `wrangler deploy`.
+
+**`ALLOWED_ORIGINS` to lista, nie pojedyncza wartość.** `corsHeaders(request)`
+odbija Origin, jeśli jest na liście, a w przeciwnym razie zwraca pierwszy wpis —
+nieznany origin i tak zostanie zablokowany przez przeglądarkę. Nagłówek `Vary:
+Origin` jest konieczny, żeby pośrednik nie podał jednemu klientowi odpowiedzi
+zbuforowanej dla drugiego. Wpisy to sama domena bez ścieżki.
+
+**Dług do spłacenia przy drugim kliencie:** każdy klient dostanie własną
+aplikację Access (bo polityka dostępu jest inna dla każdej firmy), czyli własny
+AUD — a `ACCESS_AUD` jest dziś pojedynczą wartością. Trzeba to będzie zamienić
+na mapę `host → AUD`. Znany dług, nie przeoczenie.
 
 ## Tożsamość i uprawnienia
 
@@ -95,12 +141,15 @@ zmienną, której w pliku nie ma. Krok po kroku: **`ZERO-TRUST.md`**.
 **503 z listą brakujących zmiennych i odesłaniem do instrukcji**, nie milczące 403.
 Odmowa dostępu i brak konfiguracji to dwie różne sytuacje i mają różne kody.
 
-**Ograniczenie, które blokuje dokończenie etapu.** Access **nie obejmuje adresów
-`*.workers.dev`** — aplikacje self-hosted buduje się z domen w koncie Cloudflare.
-Worker chodzi dziś wyłącznie pod `knowbase-budmax.rezi7608.workers.dev`, więc
-**etap 2 wymaga własnej domeny**. Do tego czasu `/internal` stoi na 503, a publiczny
-widget działa niezależnie. Custom domain trzeba dopisać także do `wrangler.toml`
-(`[[routes]]` z `custom_domain = true`), inaczej deploy ją zdejmie.
+**Access nie obejmuje adresów `*.workers.dev`** — aplikacje self-hosted buduje się
+z domen w koncie Cloudflare. Dlatego 17.08.2026 doszła domena `know-base.app`
+i host `budmax-wewnetrzny.know-base.app` (patrz „Adresy i domeny"). Custom domain
+musi być także w `wrangler.toml` (`[[routes]]` z `custom_domain = true`), inaczej
+deploy ją zdejmie. Zostaje wyklikanie konfiguracji — `ZERO-TRUST.md`.
+
+Konsekwencja dla starego adresu: `/internal` na `workers.dev` **nigdy nie zadziała**,
+bo Access nie postawi tam tokenu. To poprawne zachowanie fail-closed, nie usterka —
+tryb wewnętrzny ma jeden adres i jest nim host wewnętrzny.
 
 **`identity` z tokenu** — `email` i `domena` są odczytywane i przekazywane do
 `handleAsk()`, które odsyła je w polu `zalogowany`. **Nic po nich jeszcze nie
@@ -483,8 +532,8 @@ Kolejność jest celowa — uzasadnienie jest częścią decyzji, nie ozdobnikie
 - Przy zmianie progów → najpierw `/debug`, potem decyzja
 - Przed commitem → `node --check worker.js`; przy zmianach w weryfikacji tokenu
   także `node test-access.mjs`
-- `ALLOWED_ORIGIN` to sama domena bez ścieżki (`https://p0rk1.github.io`),
-  bo przeglądarka wysyła w nagłówku Origin tylko protokół i host
+- `ALLOWED_ORIGINS` to lista samych domen bez ścieżek, bo przeglądarka wysyła
+  w nagłówku Origin tylko protokół i host. Nowy klient = nowe wpisy tutaj
 - Nie dodawać warstw zabezpieczeń bez zmierzenia problemu na `/debug` —
   projekt ma za sobą kilka rund łatania objawów zamiast przyczyn
 

@@ -35,6 +35,12 @@ w sekcjach niżej — tu jest tylko to, gdzie jesteśmy i co jest następne.
 | `51a5da6` | Tryb wewnętrzny na tożsamości z Access, sekret na `/internal` unieważniony |
 | `f2d8a78` | Domena `know-base.app`, dwa hosty na klienta, `ALLOWED_ORIGINS` jako lista |
 
+**Co zrobiono 19.08.2026:** rozdzielony prompt — `buildSystemPrompt()` jest teraz
+rozdzielaczem na wariant publiczny (bez zmian, sprawdzone bajt w bajt) i wewnętrzny
+(ton instruktażowy, jawność treści wewnętrznych, obowiązkowe źródło). Wspólny
+`PROMPT_RDZEN` trzyma reguły rzetelności. Skalibrowane na trzech fragmentach
+testowych — szczegóły w „Prompty — dwa tryby". Wersja `821136dd`.
+
 **Co zrobiono 18.08.2026:** aplikacja Access utworzona w dashboardzie (cały host
 `budmax-wewnetrzny.know-base.app`, `Path` pusty, reguła Allow na adres właściciela),
 AUD i domena zespołu wpisane do `[vars]`, deploy, przetestowane. Kroki 1 i 4–8
@@ -311,6 +317,13 @@ wartości domyślnej dla przestrzeni i rzuca wyjątkiem przy nieznanej nazwie �
 cicha zamiana na `public` byłaby dokładnie tym błędem, który kiedyś pokazałby
 treść nie tej stronie.
 
+**Rozdzielenie promptów niczego tu nie zmienia.** Wariant wewnętrzny każe modelowi
+podawać wartości oznaczone jako niekomunikowane klientom — i to jest bezpieczne
+dokładnie dlatego, że separacja stoi na danych: do publicznego endpointu fragmenty
+z `internal` **nigdy nie trafiają do kontekstu**, więc nie ma czego ujawnić, nawet
+gdyby prompt kazał. Gdyby kiedyś ktoś próbował zrobić odwrotnie — jeden prompt
+i filtrowanie treści instrukcją — patrz akapit wyżej: to jest ta ślepa uliczka.
+
 **Pole `role` w metadanych** — na razie zawsze `"all"` i nic po nim nie filtruje.
 Jest teraz, bo u klientów premium (kancelarie, medycyna) role będą konieczne,
 a dopisanie pola później oznacza **ponowne indeksowanie u każdego klienta**.
@@ -337,6 +350,93 @@ pracy na wysokości) publiczny bot odpowiedział — i **słusznie**: fragment `
 testowe musi dotyczyć treści obecnej **wyłącznie** w `INTERNAL_CHUNKS`, inaczej
 nie testuje separacji, tylko dokumentację. Model odpowiedział zresztą tylko na
 publicznie pokrytą część i wprost odmówił reszty.
+
+## Prompty — dwa tryby, jeden rdzeń rzetelności
+
+Od 19.08.2026 `buildSystemPrompt(contextChunks, tryb)` jest **rozdzielaczem**,
+a nie promptem. Wybiera między `buildPublicSystemPrompt()` a
+`buildInternalSystemPrompt()`.
+
+| Tryb | Kto pyta | Skąd bierze się tryb |
+|---|---|---|
+| `publiczny` | klient na stronie firmy | `trybPromptu(askedFrom)` w `handleAsk()` |
+| `wewnetrzny` | zweryfikowany pracownik | to samo — `askedFrom` to `SPACE_INTERNAL` |
+
+`trybPromptu()` **nie ma wartości domyślnej i rzuca wyjątkiem** przy nieznanej
+przestrzeni — z tego samego powodu co `vectorSearch()`. Tryb przychodzi wyłącznie
+z routingu, nigdy z ciała żądania. `/debug` wybiera wewnętrzny, gdy w zakresie
+przeszukania jest przestrzeń `internal` (`space=internal` albo `space=obie`),
+i **pokazuje wybór w polu `tryb_promptu`** — bez tego kalibracja byłaby zgadywaniem,
+który prompt poszedł do modelu.
+
+**Co jest wspólne: `PROMPT_RDZEN`** — trzy reguły chroniące przed halucynacją
+(zakaz twierdzeń bez pokrycia we fragmentach, zakaz liczb spoza fragmentów,
+dosłowne zdanie o braku informacji). Dopisując regułę rzetelności, dopisz ją
+**tam**, a nie do jednego z wariantów — inaczej tryby się rozjadą i za trzy sesje
+nikt nie będzie wiedział, który jest wzorcem.
+
+**Zdanie o braku informacji musi zostać dosłowne w obu trybach.** `handleAsk()`
+rozpoznaje brak odpowiedzi wyrażeniem `/nie mam takich informacji/i` na surowym
+tekście modelu. Inne sformułowanie w trybie wewnętrznym po cichu rozjechałoby
+tę ścieżkę — odpowiedź „nie wiem" przeszłaby dalej jako zwykła treść.
+
+**Prompt publiczny nie zmienił się przy rozdzieleniu — sprawdzone bajt w bajt.**
+Składa się z tych samych łańcuchów co wcześniej; trzy wspólne reguły są w nim
+wstawiane przez `${...}`, więc wynik jest identyczny (3476 znaków przed i po,
+porównanie przez `git show <commit>:worker.js`). To nie jest kosmetyka: publiczny
+prompt jest kalibrowany od wielu sesji i **zmiana tonu nie ma prawa go dotknąć
+przy okazji**.
+
+### Co zmienia wariant wewnętrzny
+
+Cztery rzeczy, każda z powodu:
+
+1. **Jawność treści wewnętrznych.** Wprost: wartości oznaczone w dokumentacji
+   jako niekomunikowane klientom podaje się pracownikowi z liczbami, a zdanie
+   „tych wartości nie komunikujemy klientom" dotyczy rozmowy z klientem i **nie
+   jest poleceniem zatajenia ich przed pracownikiem**. To reakcja na konkretną
+   wpadkę z 18.08.2026 — model przemilczał 14% przy `trimmed: 0`.
+2. **Ton instruktażowy** — tryb rozkazujący, kroki w kolejności wykonania,
+   każdy w osobnej linii, od czasownika.
+3. **Odpowiedź na wszystkie części pytania** — przy wartości standardowej i jej
+   granicy podaje się obie. Niepełna odpowiedź jest tu groźniejsza niż w trybie
+   publicznym: pracownik nie wie, czego nie dostał.
+4. **Obowiązkowe źródło** — ostatnia linia `Podstawa: <tytuł fragmentu>`.
+
+Zakazy zostały te same co publiczne plus dwa własne: nie uzupełniać procedury
+BHP ani kadrowej „zdrowym rozsądkiem" i nie mylić wymagań obowiązkowych
+z zalecanymi (`wymaga` ≠ `warto`). **Ten tryb zdejmuje zakaz ujawniania,
+nie zakaz zmyślania.**
+
+**Format cytowania jest dobrany pod istniejące warstwy, nie dowolny.**
+`leaksInstructions()` wycina zwroty „zgodnie z dokumentacją", „według
+fragmentów", „na podstawie fragmentów" — gdyby prompt kazał cytować tak,
+weryfikacja kasowałaby każde cytowanie. Linia `Podstawa: …` przechodzi:
+zmierzone podobieństwo 0.648–0.751, czyli powyżej `CITATION_THRESHOLD`, bo tytuł
+fragmentu jest semantycznie blisko jego treści.
+
+### Wynik kalibracji na trzech fragmentach testowych (19.08.2026)
+
+Prompt kalibrowano na `INTERNAL_CHUNKS` **przed** pisaniem treści — to jest ta
+warstwa, w której poprawki nakładają się na siebie, bo fragmenty są niezależne,
+a prompt ma jeden wspólny stan.
+
+| Pytanie | Wynik |
+|---|---|
+| marża + granica negocjacji (`i01`) | **22% i 14%** — komplet, wpadka z 18.08 naprawiona |
+| BHP: co przed pracą na wysokości + kiedy nie wolno na rusztowaniu (`i02`) | 4 kroki w trybie rozkazującym + próg 10 m/s; wszystkie zdania mają pokrycie w `i02` |
+| kadry: nadgodziny + urlop **w lipcu** (`i03`) | piątek do 14 **oraz** 14 dni (model sam zastosował regułę sezonową maj–wrzesień) |
+| kontrola: marża na `space=public` | fallback, `tryb_promptu: publiczny` — publiczny nadal tej treści nie widzi |
+| kontrola: elewacje na `space=public` | ton klientowski bez zmian, żadnej linii `Podstawa:` |
+
+**Zero zdań wyciętych** przez weryfikację we wszystkich trzech pytaniach
+wewnętrznych — ton rozkazujący nie fałszuje pokrycia, bo czasownik w trybie
+rozkazującym jest semantycznie blisko opisu tej samej czynności.
+
+**Czego to nie dowodzi:** trzy fragmenty testowe to nie dokumentacja. Prompt jest
+skalibrowany na treści, którą sami napisaliśmy pod test — dopiero prawdziwa treść
+(etap 4) pokaże, czy reguła „kroki w kolejności" nie łamie się na fragmentach
+opisowych, które żadnej procedury nie zawierają.
 
 ## Granica dostawcy — model i baza wektorowa są wymienne
 
@@ -449,8 +549,9 @@ i uprawnienia". Endpointy administracyjne chroni parametr `?key=` równy sekreto
 - `GET /stats?key=…` — dane dla panelu. Pytania z `/internal` są **odfiltrowane** —
   panel należy do właściciela firmy i dotyczy widgetu publicznego
 - `GET /debug?key=…&q=pytanie&space=public|internal|obie` — diagnostyka: co znalazło,
-  z jakim wynikiem, **z której przestrzeni**, które zdania przechodzą weryfikację.
-  Bez `space` sprawdza `public`
+  z jakim wynikiem, **z której przestrzeni**, które zdania przechodzą weryfikację
+  i **w polu `tryb_promptu`, który wariant promptu poszedł do modelu**
+  (`internal`/`obie` → wewnętrzny). Bez `space` sprawdza `public`
 - `GET /purge?key=…&ids=c01,c02` — usuwa wpisy z indeksu (ID są globalne, niezależne od przestrzeni)
 
 ## Jak działa przepływ zapytania
@@ -614,10 +715,9 @@ też poprawne parafrazy.
   zostaje nierozwiązany dla klienta
 - `INTERNAL_CHUNKS` to 3 fragmenty testowe, nie dokumentacja. Bot dla pracowników
   ma działającą infrastrukturę i pustą treść
-- **Tryb wewnętrzny odpowiada ostrożnie jak klientowi** — wspólny
-  `buildSystemPrompt()` sprawia, że model przemilcza część treści wewnętrznych
-  (pomiar: 14% granicy negocjacji nie padło, mimo `trimmed: 0`). Do rozwiązania
-  w etapie 3
+- ~~**Tryb wewnętrzny odpowiada ostrożnie jak klientowi**~~ — **nieaktualne
+  od 19.08.2026**, rozwiązane osobnym promptem wewnętrznym (patrz „Prompty —
+  dwa tryby"). Pomiar kontrolny: to samo pytanie zwraca teraz 22% **i** 14%
 
 ## Następne kroki
 
@@ -640,9 +740,10 @@ Kolejność jest celowa — uzasadnienie jest częścią decyzji, nie ozdobnikie
      Nie otwierać ponownie. Podpięcie Google i Microsoft obok One-time PIN
      (`ZERO-TRUST.md`, kroki 2–3) zostaje jako konfiguracja dostawców tożsamości —
      **nie blokuje etapu 3** i niczego nie zmienia w kodzie.
-   - **Etap 3: ton instruktażowy** — `buildSystemPrompt()` jest wspólny dla obu
-     endpointów i mówi o „stronie firmy". Świadomie nie ruszony w etapie 1,
-     żeby zmiana pozostała czysto strukturalna.
+   - ~~**Etap 3, warstwa 1: osobny prompt wewnętrzny**~~ — ✅ **wykonane
+     19.08.2026.** Rozdzielacz `buildSystemPrompt(chunks, tryb)`, wspólny
+     `PROMPT_RDZEN`, publiczny nietknięty (sprawdzone bajt w bajt).
+     Skalibrowany na trzech fragmentach testowych — patrz „Prompty — dwa tryby".
    - **Etap 4: treść wewnętrzna** — `INTERNAL_CHUNKS` ma teraz 3 fragmenty
      testowe (marża, BHP, kadry), nie prawdziwą dokumentację.
 2. **Druga branża** — kancelaria albo gabinet. Sprawdzenie, ile zabezpieczeń jest

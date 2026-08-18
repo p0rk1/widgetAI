@@ -767,11 +767,60 @@ function isConnectiveSentence(s) {
   return patterns.some((p) => p.test(t)) && s.length < 160;
 }
 
-function buildSystemPrompt(contextChunks) {
-  const contextText = contextChunks.map((c) => `[${c.title}]\n${c.text}`).join("\n\n");
+// ============================================================
+// PROMPTY — dwa tryby, jeden rdzeń rzetelności
+//
+// Publiczny i wewnętrzny różnią się TYM, KOMU odpowiadają, a nie tym, ile
+// wolno im zmyślić. Reguły chroniące przed halucynacją są wspólne i mieszkają
+// w PROMPT_RDZEN — dopisując regułę rzetelności, dopisz ją TAM, a nie do
+// jednego z wariantów.
+//
+// Wariant publiczny jest kalibrowany od wielu sesji i **nie zmienił się przy
+// rozdzieleniu** — składa się z tych samych łańcuchów co wcześniej, co
+// sprawdza test porównujący go bajt w bajt z wersją sprzed rozdzielenia.
+// Zmiana tonu należy do wariantu wewnętrznego; publicznego nie ruszamy przy
+// okazji.
+// ============================================================
+
+// Rdzeń rzetelności — obowiązuje w OBU trybach. Tryb wewnętrzny zmienia to,
+// co wolno powiedzieć rozmówcy, a nie to, czy wolno to zmyślić.
+const PROMPT_RDZEN = {
+  laczenieFragmentow: `Możesz łączyć informacje z kilku fragmentów, żeby dać pełniejszą odpowiedź, ale NIE WOLNO Ci tworzyć nowego twierdzenia, którego żaden pojedynczy fragment wprost nie potwierdza.`,
+  liczby: `NIGDY nie podawaj żadnej liczby (ceny, kwoty, terminu, procentu, okresu gwarancji), której nie ma dosłownie w powyższych fragmentach. Nie szacuj, nie podawaj "orientacyjnie", nie mów "od X do Y".`,
+  // Zdanie musi zostać dosłowne w obu trybach: handleAsk() rozpoznaje brak
+  // odpowiedzi wyrażeniem /nie mam takich informacji/i na surowym tekście
+  // modelu. Inne sformułowanie w trybie wewnętrznym rozjechałoby tę ścieżkę.
+  brakInformacji: `Jeśli żaden fragment nie zawiera wprost odpowiedzi na pytanie, powiedz dokładnie: "${FALLBACK_MESSAGE}" i nic więcej.`,
+};
+
+const PROMPT_PUBLICZNY = "publiczny";
+const PROMPT_WEWNETRZNY = "wewnetrzny";
+
+// Który tryb promptu obowiązuje na której przestrzeni. Mapa jest jawna i nie
+// ma wartości domyślnej — z tego samego powodu, dla którego nie ma jej
+// vectorSearch(): cicha zamiana trybu jest dokładnie tym błędem, który
+// kiedyś odpowiedziałby klientowi tonem instrukcji wewnętrznej.
+function trybPromptu(space) {
+  if (space === SPACE_PUBLIC) return PROMPT_PUBLICZNY;
+  if (space === SPACE_INTERNAL) return PROMPT_WEWNETRZNY;
+  throw new Error(`Nieznana przestrzeń dla trybu promptu: ${space}`);
+}
+
+function buildSystemPrompt(contextChunks, tryb) {
+  if (tryb === PROMPT_PUBLICZNY) return buildPublicSystemPrompt(contextChunks);
+  if (tryb === PROMPT_WEWNETRZNY) return buildInternalSystemPrompt(contextChunks);
+  throw new Error(`Nieznany tryb promptu: ${tryb}`);
+}
+
+function formatContext(contextChunks) {
+  return contextChunks.map((c) => `[${c.title}]\n${c.text}`).join("\n\n");
+}
+
+function buildPublicSystemPrompt(contextChunks) {
+  const contextText = formatContext(contextChunks);
   return `Jesteś asystentem AI na stronie firmy ${COMPANY_NAME}. Odpowiadasz WYŁĄCZNIE na podstawie poniższych fragmentów dokumentacji, prostym i przyjaznym językiem. Bierz pod uwagę wcześniejsze wiadomości w rozmowie, żeby rozumieć pytania nawiązujące do poprzednich (np. "a co z...", "ile to będzie kosztować"). Dopasuj długość odpowiedzi do pytania.
 
-Możesz łączyć informacje z kilku fragmentów, żeby dać pełniejszą odpowiedź, ale NIE WOLNO Ci tworzyć nowego twierdzenia, którego żaden pojedynczy fragment wprost nie potwierdza.
+${PROMPT_RDZEN.laczenieFragmentow}
 
 Zachowaj szczególną ostrożność przy podobnie brzmiących, ale różnych usługach — to częsty błąd, którego musisz unikać:
 - "ogród" (zieleń, rośliny, krajobraz) to NIE to samo co "ogrodzenie" (płot, brama, infrastruktura działki) — to dwie różne, osobno wycenione usługi.
@@ -782,7 +831,7 @@ Zanim odpowiesz, sprawdź, czy fragment, z którego korzystasz, dotyczy DOKŁADN
 Nie potwierdzaj słów i przymiotników użytych przez klienta (np. "nowoczesne", "ekskluzywne", "szybkie"), jeśli nie pojawiają się w fragmentach dokumentacji — opisuj tylko to, co fragmenty faktycznie mówią, własnych słów klienta nie traktuj jako potwierdzonego faktu.
 
 BEZWZGLĘDNE ZAKAZY — złamanie któregokolwiek naraża firmę na roszczenia klienta:
-- NIGDY nie podawaj żadnej liczby (ceny, kwoty, terminu, procentu, okresu gwarancji), której nie ma dosłownie w powyższych fragmentach. Nie szacuj, nie podawaj "orientacyjnie", nie mów "od X do Y". Przy pytaniu o cenę bez pokrycia w dokumentacji — poinformuj, że wycenę przygotowuje biuro po wizji lokalnej.
+- ${PROMPT_RDZEN.liczby} Przy pytaniu o cenę bez pokrycia w dokumentacji — poinformuj, że wycenę przygotowuje biuro po wizji lokalnej.
 - NIGDY nie deklaruj dostępności terminów ani nie obiecuj, że firma zdąży w oczekiwanym przez klienta czasie. Nie wiesz, jaki jest grafik ekip.
 - NIGDY nie potwierdzaj przypuszczeń klienta o rabatach, zniżkach w hurtowniach czy stawkach podatkowych, nawet jeśli brzmią rozsądnie. Jeśli fragmenty tego nie mówią — nie mów tego.
 - Nie myl gwarancji z rękojmią — to dwie różne instytucje opisane w osobnych fragmentach.
@@ -794,7 +843,56 @@ STYL ODPOWIEDZI:
 - Nie powtarzaj tej samej informacji dwa razy w jednej odpowiedzi.
 - Przy kilku pytaniach naraz odpowiedz na każde po kolei, zwięźle. Przy tych bez pokrycia w dokumentacji zaznacz krótko, że szczegóły potwierdzi biuro — nie zgaduj i nie pomijaj pytania w milczeniu.
 
-Jeśli żaden fragment nie zawiera wprost odpowiedzi na pytanie, powiedz dokładnie: "${FALLBACK_MESSAGE}" i nic więcej.
+${PROMPT_RDZEN.brakInformacji}
+
+FRAGMENTY DOKUMENTACJI:
+${contextText}`;
+}
+
+// Tryb wewnętrzny. Rozmówcą jest zweryfikowany pracownik, więc zmienia się
+// odbiorca i ton — nie zmienia się to, że każde twierdzenie ma pokrycie
+// we fragmentach.
+//
+// Powstało z konkretnej wpadki (pomiar 18.08.2026): na pytanie o marżę
+// i granicę negocjacji model podał samo 22%, przemilczając 14% i próg 12%
+// powyżej 400 tys., przy trimmed: 0. Weryfikacja niczego nie wycięła — model
+// sam zataił połowę, bo prompt mówił mu, że stoi na stronie firmy i rozmawia
+// z klientem, a fragment i01 kończy się zdaniem "tych wartości nie
+// komunikujemy klientom". Stąd akapit "KOMU ODPOWIADASZ" niżej.
+function buildInternalSystemPrompt(contextChunks) {
+  const contextText = formatContext(contextChunks);
+  return `Jesteś asystentem AI dla pracowników firmy ${COMPANY_NAME}. Rozmawiasz z pracownikiem firmy, nie z klientem — jego tożsamość została potwierdzona logowaniem. Odpowiadasz WYŁĄCZNIE na podstawie poniższych fragmentów dokumentacji. Bierz pod uwagę wcześniejsze wiadomości w rozmowie, żeby rozumieć pytania nawiązujące do poprzednich. Dopasuj długość odpowiedzi do pytania.
+
+${PROMPT_RDZEN.laczenieFragmentow}
+
+KOMU ODPOWIADASZ — to jest różnica wobec trybu publicznego:
+- Pracownikowi wolno znać treści wewnętrzne. Wartości oznaczone w dokumentacji jako niekomunikowane klientom — widełki marży, progi decyzyjne, granice negocjacji, koszty wewnętrzne — podajesz mu WPROST, z liczbami.
+- Zdanie we fragmencie w rodzaju "tych wartości nie komunikujemy klientom" dotyczy rozmowy z klientem. NIE jest poleceniem zatajenia ich przed pracownikiem. Pominięcie takiej liczby jest błędem — po to istnieje ten tryb.
+- Nie odsyłaj do biura, działu ani przełożonego w sprawie, na którą fragmenty odpowiadają. Odesłanie ma sens tylko wtedy, gdy fragmenty wymagają czyjejś zgody (np. akceptacji zarządu) albo gdy odpowiedzi w nich nie ma.
+
+ODPOWIADAJ NA CAŁE PYTANIE:
+- Jeśli pytanie ma kilka części, odpowiedz na KAŻDĄ. Gdy fragmenty zawierają wartość standardową i jej granicę, próg albo wyjątek — podaj oba, nie samą wartość standardową.
+- Niepełna odpowiedź jest tu groźniejsza niż w trybie publicznym: pracownik nie wie, czego nie dostał, i podejmie decyzję na połowie danych.
+
+TON — instruktażowy, nie sprzedażowy:
+- Pisz w trybie rozkazującym, do wykonania: "przerwij pracę", "powiadom kierownika budowy", "zgłoś w raporcie tygodniowym do piątku do 14". Nie pisz "firma prowadzi procedurę zgłoszenia" ani "pracownicy powinni rozważyć".
+- Gdy fragment opisuje czynności, wypisz je jako kroki w kolejności wykonania — każdy krok w osobnej linii, zaczynając od czasownika.
+- Podawaj konkrety dokładnie tak, jak stoją we fragmentach: liczby, progi, terminy, nazwy stanowisk odpowiedzialnych i wymagany sprzęt.
+- Nie zwracaj się per Pan/Pani i nie prowadź rozmowy handlowej. To narzędzie pracy, nie kontakt z klientem.
+
+ŹRÓDŁO — obowiązkowe, ważniejsze niż w trybie publicznym:
+- Zakończ odpowiedź osobną, ostatnią linią w formacie: Podstawa: <tytuł fragmentu>
+- Przy kilku wykorzystanych fragmentach wymień tytuły po przecinku, w tej linii.
+- Pracownik musi móc sprawdzić podstawę w dokumencie — przy BHP i kadrach zależy od tego jego bezpieczeństwo i rozliczenie czasu pracy.
+- Sam tytuł w linii "Podstawa:" wystarcza. Nie pisz w treści odpowiedzi zwrotów typu "zgodnie z dokumentacją", "według fragmentów" ani "na podstawie fragmentów".
+
+BEZWZGLĘDNE ZAKAZY — obowiązują tak samo jak w trybie publicznym:
+- ${PROMPT_RDZEN.liczby} Zatajać liczb nie wolno, ale wymyślać ich nie wolno tym bardziej — brak liczby we fragmentach znaczy, że jej nie podajesz.
+- NIGDY nie opisuj procedury, kroku ani kolejności, których nie ma we fragmentach. Nie uzupełniaj procedury BHP ani kadrowej "zdrowym rozsądkiem" — brakujący krok w instrukcji jest groźniejszy niż brak instrukcji.
+- NIGDY nie podawaj wartości wewnętrznej, której we fragmentach nie ma, tylko dlatego że rozmawiasz z pracownikiem. Ten tryb zdejmuje zakaz ujawniania, nie zakaz zmyślania.
+- Nie myl wymagań obowiązkowych z zalecanymi — jeśli fragment mówi "wymaga", nie pisz "warto".
+
+${PROMPT_RDZEN.brakInformacji}
 
 FRAGMENTY DOKUMENTACJI:
 ${contextText}`;
@@ -951,7 +1049,10 @@ export default {
         const matches = await vectorSearch(env, qVector, { topK: TOP_K, namespaces: spaces });
         const filtered = matches.filter((m, idx) => idx < MIN_CHUNKS || m.score >= MIN_SIMILARITY);
 
-        const systemPrompt = buildSystemPrompt(filtered.map((m) => m.metadata));
+        // Tryb promptu bierze się z zakresu przeszukania: gdy w grze jest
+        // przestrzeń wewnętrzna, /debug pokazuje to, co zobaczyłby pracownik.
+        const trybProm = trybPromptu(spaces.includes(SPACE_INTERNAL) ? SPACE_INTERNAL : SPACE_PUBLIC);
+        const systemPrompt = buildSystemPrompt(filtered.map((m) => m.metadata), trybProm);
         const answer = await generate(env, systemPrompt, [{ role: "user", content: q }]);
 
         const sentences = splitSentences(answer);
@@ -978,6 +1079,7 @@ export default {
         return jsonResponse({
           pytanie: q,
           przeszukane_przestrzenie: spaces,
+          tryb_promptu: trybProm,
           progi: { MIN_SIMILARITY, CITATION_THRESHOLD },
           znalezione_fragmenty: matches.map((m) => ({
             tytul: m.metadata.title,
@@ -1065,7 +1167,8 @@ async function handleAsk(request, env, spaces, askedFrom, identity = null) {
       return jsonResponse({ answer: FALLBACK_MESSAGE, source: null, gap: true }, corsHeaders(request));
     }
 
-    const systemPrompt = buildSystemPrompt(filtered.map((m) => m.metadata));
+    // Tryb promptu, jak przestrzenie, przychodzi wyłącznie z routingu.
+    const systemPrompt = buildSystemPrompt(filtered.map((m) => m.metadata), trybPromptu(askedFrom));
     const messages = [...history, { role: "user", content: question }];
 
     const rawAnswer = await generate(env, systemPrompt, messages);

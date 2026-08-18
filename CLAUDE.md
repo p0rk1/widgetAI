@@ -21,8 +21,9 @@ w sekcjach niżej — tu jest tylko to, gdzie jesteśmy i co jest następne.
 - Separacja przestrzeni `public` / `internal` w Vectorize, szczelność przetestowana
 - **Tryb wewnętrzny działa** — aplikacja Access na `budmax-wewnetrzny.know-base.app`
   utworzona 18.08.2026, `ACCESS_TEAM_DOMAIN` i `ACCESS_AUD` w `wrangler.toml`,
-  wdrożone (wersja `e2544cf1`). `/internal` **nie zwraca już 503**.
-  Zastrzeżenie: sprawdzone są **same odmowy** — patrz „Luka w testach" niżej
+  wdrożone (wersja `e2544cf1`). `/internal` **nie zwraca już 503** —
+  pełna ścieżka potwierdzona pomiarem na żywo (niżej), nie tylko testem
+  jednostkowym
 
 **Co zrobiono 16–17.08.2026, w kolejności:**
 
@@ -74,16 +75,31 @@ wziąć to za „aplikacji nie ma". AUD zweryfikowany 18.08.2026 kryptograficzni
 podpis meta-JWT sprawdzony kluczem z JWKS zespołu — poprawny, więc `31995d69…`
 jest wartością tego zespołu, a nie przepisaną z przypadkowego ekranu.
 
-**Luka w testach — ścieżka z ważnym tokenem nie była sprawdzona na żywo.**
-Przetestowano same odmowy (401/302). Wynika to z układu adresów: na hoście
-wewnętrznym Access zatrzymuje bezsesyjne żądanie na brzegu, a na `workers.dev`
-Access nie działa wcale, więc nie ma skąd wziąć prawdziwego tokenu. `test-access.mjs`
-(14/14) sprawdza logikę weryfikacji na **podstawionych** kluczach — to nie to samo
-co prawdziwy token → prawdziwe JWKS → wdrożony Worker. Dwa sposoby zamknięcia
-(ciasteczko `CF_Authorization` z przeglądarki — jedyny pokrywa `email`/`domena`;
-token serwisowy Access — powtarzalny, ale bez e-maila) opisane w `ZERO-TRUST.md`,
-krok 8. **Do czasu wykonania jednego z nich „tryb wewnętrzny działa" znaczy
-„odmawia poprawnie".**
+**Pełna ścieżka potwierdzona pomiarem 18.08.2026 — luka w testach zamknięta.**
+`POST /internal` z prawdziwym ciasteczkiem `CF_Authorization` (logowanie
+One-time PIN) zwrócił:
+
+```json
+{"answer":"Standardowa marża na robociznę wynosi 22 procent.",
+ "source":"Widełki marży i granica negocjacji","gap":false,"trimmed":0,
+ "zalogowany":{"email":"…","domena":"gmail.com"}}
+```
+
+Jednym pomiarem potwierdzone naraz: Access wystawia token na tym hoście, Worker
+weryfikuje go przeciw **prawdziwym** JWKS (brak 401 i 502), `/internal` sięga do
+`INTERNAL_CHUNKS` (`source` = `i01`, treści nie ma w przestrzeni publicznej),
+tożsamość jest odczytana (`zalogowany`), a weryfikacja zdanie po zdaniu niczego
+nie wycięła (`trimmed: 0`). Wcześniej sprawdzone były **same odmowy** —
+`test-access.mjs` (14/14) chodzi po **podstawionych** kluczach, więc nie zastępuje
+tego testu. Procedura do powtórzenia po każdej zmianie w weryfikacji tokenu:
+`ZERO-TRUST.md`, krok 8, sposób A.
+
+**Obserwacja do etapu 3, nie usterka:** pytanie miało dwie części (marża standardowa
+i granica negocjacji), a odpowiedź podała samo 22% — 14% zostało przemilczane przy
+`trimmed: 0`, czyli model tego nie napisał, a nie że weryfikacja wycięła. `i01`
+kończy się zdaniem „tych wartości nie komunikujemy", a `buildSystemPrompt()` jest
+wspólny dla obu trybów i mówi o „stronie firmy". To pierwszy twardy dowód, że
+**etap 3 (ton instruktażowy) jest potrzebny**, a nie kosmetyką.
 
 **Trzy rzeczy, które łatwo popsuć nieświadomie:**
 1. Wyłączenie `workers_dev` zerwie widget i panel — mają stary adres wpisany
@@ -244,8 +260,21 @@ Dlatego weryfikację tokenu testuje się na `workers.dev`, a samo Access — na 
 wewnętrznym. Oczekiwanie „401 bez tokenu na hoście wewnętrznym" było błędne.
 
 **`identity` z tokenu** — `email` i `domena` są odczytywane i przekazywane do
-`handleAsk()`, które odsyła je w polu `zalogowany`. **Nic po nich jeszcze nie
-filtruje.** To przygotowanie pod rozpoznawanie klienta przy wielu firmach.
+`handleAsk()`, które odsyła je w polu `zalogowany`. Działanie potwierdzone
+pomiarem 18.08.2026. **Nic po nich jeszcze nie filtruje.**
+
+`domena` (część adresu po `@`) to **zaplanowany mechanizm rozpoznawania klienta**
+w architekturze wielu firm: przy `@budmax.pl` i `@kancelaria.pl` z jednego zespołu
+Access to ona powie Workerowi, czyją wiedzę wolno przeszukać. Dlatego jest
+odczytywana już teraz, zanim cokolwiek po niej filtruje — razem z polem `role`
+w metadanych i hostem per klient tworzy fundament, którego dopisanie później
+kosztowałoby migrację u każdego klienta.
+
+**Ograniczenie, które to niesie:** w pomiarze `domena` wyszła `gmail.com`, bo
+logował się właściciel projektu. Adres prywatny nie niesie informacji o firmie —
+jako sygnał tożsamości klienta pole zadziała dopiero przy domenach firmowych.
+Rozpoznawanie klienta **nie może więc stać na samej domenie**; host żądania
+zostaje drugim, niezależnym źródłem.
 
 **Test:** `node test-access.mjs` — 14 przypadków, w tym ważny token, obcy podpis,
 nieznany `kid`, wygasły, obce `iss`, obce `aud`, `nbf` w przyszłości, `alg: none`
@@ -585,9 +614,10 @@ też poprawne parafrazy.
   zostaje nierozwiązany dla klienta
 - `INTERNAL_CHUNKS` to 3 fragmenty testowe, nie dokumentacja. Bot dla pracowników
   ma działającą infrastrukturę i pustą treść
-- **Pozytywna ścieżka `/internal` niesprawdzona na żywo** — patrz „Luka w testach"
-  w sekcji „Stan na 18.08.2026". Nie wiadomo z pierwszej ręki, czy `zalogowany`
-  niesie e-mail i domenę ani czy odpowiedź faktycznie sięga do `INTERNAL_CHUNKS`
+- **Tryb wewnętrzny odpowiada ostrożnie jak klientowi** — wspólny
+  `buildSystemPrompt()` sprawia, że model przemilcza część treści wewnętrznych
+  (pomiar: 14% granicy negocjacji nie padło, mimo `trimmed: 0`). Do rozwiązania
+  w etapie 3
 
 ## Następne kroki
 
@@ -603,12 +633,13 @@ Kolejność jest celowa — uzasadnienie jest częścią decyzji, nie ozdobnikie
    - ~~**Etap 1: separacja przestrzeni wiedzy**~~ — ✅ **wykonane 17.08.2026.**
      Namespaces `public`/`internal`, rozdzielone endpointy, `INTERNAL_CHUNKS`,
      pole `role`. Szczelność potwierdzona testem — patrz „Separacja przestrzeni wiedzy".
-   - ~~**Etap 2: prawdziwe logowanie**~~ — ✅ **zamknięte 18.08.2026.** Kod
-     z 17.08.2026 (`f2d8a78`), aplikacja Access i `[vars]` z 18.08.2026.
-     Sekret na `/internal` unieważniony, potwierdzone testem na żywo.
-     Zostało tylko podpięcie Google i Microsoft obok One-time PIN
-     (`ZERO-TRUST.md`, kroki 2–3) — to konfiguracja dostawców tożsamości,
-     nie zmiana w produkcie.
+   - ~~**Etap 2: prawdziwe logowanie**~~ — ✅ **zamknięte w całości 18.08.2026,
+     łącznie z konfiguracją.** Kod z 17.08.2026 (`f2d8a78`), aplikacja Access
+     i `[vars]` z 18.08.2026, sekret na `/internal` unieważniony. **Pełna ścieżka
+     przetestowana na żywo** prawdziwym tokenem z logowania — nie tylko odmowy.
+     Nie otwierać ponownie. Podpięcie Google i Microsoft obok One-time PIN
+     (`ZERO-TRUST.md`, kroki 2–3) zostaje jako konfiguracja dostawców tożsamości —
+     **nie blokuje etapu 3** i niczego nie zmienia w kodzie.
    - **Etap 3: ton instruktażowy** — `buildSystemPrompt()` jest wspólny dla obu
      endpointów i mówi o „stronie firmy". Świadomie nie ruszony w etapie 1,
      żeby zmiana pozostała czysto strukturalna.

@@ -1,6 +1,6 @@
 # Konfiguracja Cloudflare Zero Trust Access dla trybu wewnętrznego
 
-## Stan: ✅ skonfigurowane i wdrożone 18.08.2026
+## Stan: ✅ skonfigurowane, wdrożone i potwierdzone pomiarem 18.08.2026
 
 Aplikacja Access istnieje, `ACCESS_TEAM_DOMAIN` i `ACCESS_AUD` są w `wrangler.toml`,
 Worker wdrożony (wersja `e2544cf1-61ee-468b-ab08-c70447056701`). **`/internal` nie
@@ -18,8 +18,9 @@ odhaczone opisują, co i gdzie faktycznie kliknięto.
 - **Domena zespołu to `knowbase.cloudflareaccess.com`**, mimo że ekran logowania
   pokazuje `late-darkness-273f.cloudflareaccess.com` — to drugie jest napisem,
   nie adresem. Rozstrzygnięte i udowodnione w kroku 1.
-- **Ścieżka z ważnym tokenem nie była sprawdzona na żywo** — przetestowano same
-  odmowy. Opis luki i dwa sposoby jej zamknięcia są w kroku 8.
+- **Pełna ścieżka jest potwierdzona pomiarem z 18.08.2026** — prawdziwy token
+  z logowania przeszedł przez wdrożonego Workera i wrócił z odpowiedzią z wiedzy
+  wewnętrznej. Pomiar i co dokładnie dowodzi: krok 8.
 
 Gdyby `ACCESS_TEAM_DOMAIN` albo `ACCESS_AUD` kiedykolwiek wróciły do pustej
 wartości, `/internal` znów zwróci **503 z wyjaśnieniem, czego brakuje** —
@@ -332,11 +333,11 @@ ustawione w dashboardzie zniknęłyby przy najbliższym `wrangler deploy`.
 
 ---
 
-## Krok 8. Sprawdź, że działa — ✅ odmowy sprawdzone 18.08.2026
+## Krok 8. Sprawdź, że działa — ✅ sprawdzone 18.08.2026, obie strony
 
-> **Sprawdzone są wyłącznie odmowy.** Ścieżka „ważny token → odpowiedź z wiedzy
-> wewnętrznej" nie była nigdy uruchomiona na żywo — dlaczego i jak to zamknąć,
-> patrz „⚠️ Luka w testach" na końcu tego kroku.
+> Sprawdzone **odmowy i przejście**: token z prawdziwego logowania przeszedł przez
+> wdrożonego Workera i wrócił z odpowiedzią z wiedzy wewnętrznej. Pomiar na końcu
+> tego kroku.
 
 **Dwa hosty odpowiadają na `/internal` inaczej i tak ma być.** Na
 `budmax-wewnetrzny.know-base.app` żądanie bez ważnej sesji **nie dociera do
@@ -388,29 +389,52 @@ curl -s -o /dev/null -w "%{http_code}\n" -X POST https://budmax.know-base.app/ \
   -H "Content-Type: application/json" -d '{"question":"Jakie sa terminy platnosci?"}'
 ```
 
-### ⚠️ Luka w testach: ścieżka z **ważnym** tokenem nie była sprawdzona na żywo
+### ✅ Pełna ścieżka potwierdzona pomiarem — 18.08.2026
 
-Wszystko, co przetestowano do 18.08.2026, to **odmowy**. Nikt nie potwierdził na
-działającej instalacji, że token, który *przechodzi*, faktycznie przechodzi.
-Bierze się to z układu adresów, nie z zaniedbania:
+Do tego dnia przetestowane były **same odmowy**, i nie z zaniedbania, tylko przez
+układ adresów: na hoście wewnętrznym Access zatrzymuje bezsesyjne żądanie na brzegu
+(302), a na `workers.dev` Access nie działa wcale, więc nie ma skąd wziąć prawdziwego
+tokenu. `node test-access.mjs` (14/14) sprawdza logikę weryfikacji na **podstawionych**
+kluczach — to nie to samo co prawdziwy token → prawdziwe JWKS → wdrożony Worker.
 
-- na `budmax-wewnetrzny.know-base.app` Access zatrzymuje żądanie bez sesji na
-  brzegu (302) — do Workera nic nie dociera,
-- na `workers.dev` Access nie działa w ogóle, więc nigdy nie postawi tam tokenu.
+Lukę zamknięto sposobem A. Wynik `POST /internal` z ciasteczkiem `CF_Authorization`
+z logowania One-time PIN:
 
-`node test-access.mjs` (14/14) sprawdza tę ścieżkę **na własnej parze kluczy
-podstawionej w miejsce kluczy zespołu** — czyli logikę weryfikacji, ale nie
-zestawienie: prawdziwy token Access → prawdziwe JWKS → wdrożony Worker.
-Zdanie „14/14" nie zastępuje tego testu.
+```json
+{"answer":"Standardowa marża na robociznę wynosi 22 procent.",
+ "source":"Widełki marży i granica negocjacji",
+ "gap":false,"trimmed":0,
+ "zalogowany":{"email":"…","domena":"gmail.com"}}
+```
 
-Co jest jeszcze niesprawdzone poza samym `ok`: czy `zalogowany` niesie e-mail
-i domenę, czy `/internal` faktycznie sięga do `INTERNAL_CHUNKS`, i czy sesja
-z przeglądarki działa dla żądania `POST` z `Content-Type: application/json`.
+Co ten jeden pomiar potwierdza, punkt po punkcie:
+
+| Ogniwo | Dowód w odpowiedzi |
+|---|---|
+| Access wystawia token na tym hoście | żądanie w ogóle dotarło do Workera |
+| Worker weryfikuje podpis, `iss`, `aud`, ważność przeciw **prawdziwym** JWKS | brak 401 i brak 502 |
+| `/internal` sięga do `INTERNAL_CHUNKS` | `source` = `i01`, treści nie ma w przestrzeni publicznej |
+| tożsamość odczytana z ładunku | `zalogowany.email` i `zalogowany.domena` |
+| weryfikacja zdanie po zdaniu nie psuje trybu wewnętrznego | `trimmed: 0`, `gap: false` |
+
+**Obserwacja do etapu 3, nie usterka:** pytanie miało dwie części (marża standardowa
+**i** granica negocjacji), a odpowiedź podała samo 22% — 14% i próg 12% powyżej
+400 tys. zostały przemilczane, przy `trimmed: 0`, czyli **model ich nie napisał**,
+weryfikacja niczego nie wycięła. Najbardziej prawdopodobna przyczyna: `i01` kończy
+się zdaniem „tych wartości nie komunikujemy", a `buildSystemPrompt()` jest wspólny
+dla obu trybów i mówi o „stronie firmy" — model zachowuje się więc ostrożnie jak
+wobec klienta. To jest dokładnie problem, który ma rozwiązać **etap 3 (ton
+instruktażowy)**, i pierwszy twardy dowód, że etap 3 jest potrzebny.
+
+**Uwaga do `domena`:** w pomiarze wyszło `gmail.com`, bo logował się właściciel
+projektu, nie pracownik klienta. Pole ma docelowo rozpoznawać firmę przy wielu
+klientach — na adresie prywatnym nie niesie tej informacji. Do testów wystarcza,
+jako sygnał tożsamości klienta zadziała dopiero przy domenach firmowych.
 
 #### Sposób A — ciasteczko z przeglądarki (pokrywa ścieżkę człowieka)
 
-Jednorazowo, ręcznie, ale jako jedyny sprawdza **tożsamość osoby** (`email`,
-`domena` w polu `zalogowany`):
+**Tym sposobem wykonano pomiar powyżej.** Jako jedyny sprawdza **tożsamość osoby**
+(`email`, `domena` w polu `zalogowany`):
 
 1. Zaloguj się na `https://budmax-wewnetrzny.know-base.app/internal`
    (dziś: One-time PIN na adres z reguły z kroku 6).
@@ -451,8 +475,11 @@ sposób A. Poza tym `Service Auth` **omija logowanie** — to poświadczenie mas
 trzyma się je w zmiennych środowiskowych, nie w repo, i kasuje, gdy przestaje być
 potrzebne.
 
-**Zalecenie:** sposób A raz, teraz, żeby zamknąć lukę; sposób B, gdy `/internal`
-zacznie mieć prawdziwą treść i test dymny po deployu zacznie się opłacać.
+**Stan:** sposób A wykonany 18.08.2026 — luka zamknięta. Sposób B zostaje na
+później: opłaci się, gdy `/internal` dostanie prawdziwą treść i test dymny po
+deployu zacznie mieć co pilnować. Sposób A powtarza się ręcznie po każdej zmianie
+w weryfikacji tokenu — `test-access.mjs` jej nie zastąpi, bo chodzi po
+podstawionych kluczach.
 
 ---
 

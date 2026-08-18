@@ -9,6 +9,41 @@ MailPilot (Michał — wtyczka do Gmaila/Outlooka, opublikowana w sklepie Micros
 
 Aktualny stan: działające demo na fikcyjnej firmie budowlanej **BudMax Sp. z o.o.**
 
+## Stan na 18.08.2026 — zacznij stąd
+
+Skrót dla sesji, która wchodzi w projekt na zimno. Szczegóły i uzasadnienia są
+w sekcjach niżej — tu jest tylko to, gdzie jesteśmy i co jest następne.
+
+**Co działa w produkcji:**
+- Publiczny bot FAQ, 53 fragmenty, weryfikacja zdanie po zdaniu, model 70B
+- Trzy adresy: `budmax.know-base.app`, `budmax-wewnetrzny.know-base.app`,
+  stary `knowbase-budmax.rezi7608.workers.dev` (wszystkie odpowiadają)
+- Separacja przestrzeni `public` / `internal` w Vectorize, szczelność przetestowana
+- Weryfikacja tokenu Zero Trust Access na `/internal` (kod gotowy, 14/14 testów)
+
+**Co zrobiono 16–17.08.2026, w kolejności:**
+
+| Commit | Co |
+|---|---|
+| `7fff5fd` | Fragment `c53` o elewacjach + procedura łatania luk w dokumentacji |
+| `ec0f1c9` | Granica dostawcy — `PROVIDER` + pięć funkcji, model i baza wymienne |
+| `a5ec720` | Rozdzielenie przestrzeni `public` / `internal`, `INTERNAL_CHUNKS`, pole `role` |
+| `51a5da6` | Tryb wewnętrzny na tożsamości z Access, sekret na `/internal` unieważniony |
+| `f2d8a78` | Domena `know-base.app`, dwa hosty na klienta, `ALLOWED_ORIGINS` jako lista |
+
+**Następny ruch — po stronie właściciela, nie kodu:** wyklikać kroki 1–3 i 5–7
+z `ZERO-TRUST.md` (zespół Zero Trust `knowbase`, Google, Microsoft, aplikacja
+Access na `budmax-wewnetrzny.know-base.app`, przepisanie AUD do `wrangler.toml`).
+Krok 4 jest odhaczony. Do tego czasu `/internal` zwraca 503 z listą braków —
+**to jest stan oczekiwany, nie awaria.**
+
+**Trzy rzeczy, które łatwo popsuć nieświadomie:**
+1. Wyłączenie `workers_dev` zerwie widget i panel — mają stary adres wpisany
+   na sztywno w `WORKER_URL`
+2. Binding albo trasa, których nie ma w `wrangler.toml`, znikają przy deployu
+3. `/reindex` po każdej zmianie `CHUNKS` — i odczekać, zapis do Vectorize jest
+   asynchroniczny
+
 ## Pliki
 
 | Plik | Co to | Gdzie żyje |
@@ -487,7 +522,12 @@ też poprawne parafrazy.
 - Wykrywanie obietnic wzorcami tekstowymi jest z natury zawodne — model wymyśla nowe
   sformułowania. Dokładanie kolejnych wzorców ma malejący zwrot.
 - Panel chroni ten sam klucz co endpointy administracyjne — do produkcji potrzeba
-  osobnego hasła i prawdziwego logowania
+  osobnego hasła i prawdziwego logowania. **Uwaga: `/internal` już z tego wyszedł
+  (Access), panel nie.** Właściciel firmy nadal dostaje klucz, który otwiera też
+  `/purge` i `/reindex` — ten sam problem, który rozwiązaliśmy dla pracowników,
+  zostaje nierozwiązany dla klienta
+- `INTERNAL_CHUNKS` to 3 fragmenty testowe, nie dokumentacja. Bot dla pracowników
+  ma działającą infrastrukturę i pustą treść
 
 ## Następne kroki
 
@@ -503,10 +543,10 @@ Kolejność jest celowa — uzasadnienie jest częścią decyzji, nie ozdobnikie
    - ~~**Etap 1: separacja przestrzeni wiedzy**~~ — ✅ **wykonane 17.08.2026.**
      Namespaces `public`/`internal`, rozdzielone endpointy, `INTERNAL_CHUNKS`,
      pole `role`. Szczelność potwierdzona testem — patrz „Separacja przestrzeni wiedzy".
-   - ~~**Etap 2: prawdziwe logowanie**~~ — ✅ **kod gotowy i wdrożony 17.08.2026.**
-     Weryfikacja JWT z Zero Trust Access, sekret na `/internal` unieważniony.
-     **Pozostaje konfiguracja w panelu** (`ZERO-TRUST.md`) — wymaga własnej domeny,
-     bo Access nie obejmuje `workers.dev`. Do tego czasu `/internal` zwraca 503.
+   - ~~**Etap 2: prawdziwe logowanie**~~ — ✅ **kod gotowy i wdrożony 17.08.2026,**
+     wraz z domeną i hostami (`f2d8a78`). Weryfikacja JWT z Zero Trust Access,
+     sekret na `/internal` unieważniony. **Pozostaje wyklikanie konfiguracji**
+     (`ZERO-TRUST.md`, kroki 1–3 i 5–7). Do tego czasu `/internal` zwraca 503.
    - **Etap 3: ton instruktażowy** — `buildSystemPrompt()` jest wspólny dla obu
      endpointów i mówi o „stronie firmy". Świadomie nie ruszony w etapie 1,
      żeby zmiana pozostała czysto strukturalna.
@@ -520,6 +560,17 @@ Kolejność jest celowa — uzasadnienie jest częścią decyzji, nie ozdobnikie
    dowolnej stronie klienta, izolacja stylów w obie strony.
 4. **Multi-tenant** — dopiero przy 2-3 płacących klientach: D1 z tabelą klientów,
    namespaces w Vectorize per klient.
+
+   Część fundamentu jest już położona, świadomie i wcześniej, niż wynikałoby
+   z kolejności — bo dopisanie tego później kosztowałoby migrację u każdego klienta:
+   - pole `role` w metadanych fragmentów (dziś zawsze `"all"`, nic nie filtruje)
+   - `email` i `domena` odczytywane ze zweryfikowanego tokenu Access
+   - host per klient, który da się odczytać z żądania
+   - `ALLOWED_ORIGINS` jako lista
+
+   Czego brakuje: mapy `host → klient`, mapy `host → AUD` (dziś jedna wartość
+   `ACCESS_AUD`), i odmowy dla nieznanego hosta. Do tego czasu **żadnego
+   wildcardu w trasach** — Worker jest jednodzierżawny.
 
 ## Zasady pracy nad tym projektem
 

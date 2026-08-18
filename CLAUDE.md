@@ -21,7 +21,8 @@ w sekcjach niżej — tu jest tylko to, gdzie jesteśmy i co jest następne.
 - Separacja przestrzeni `public` / `internal` w Vectorize, szczelność przetestowana
 - **Tryb wewnętrzny działa** — aplikacja Access na `budmax-wewnetrzny.know-base.app`
   utworzona 18.08.2026, `ACCESS_TEAM_DOMAIN` i `ACCESS_AUD` w `wrangler.toml`,
-  wdrożone (wersja `e2544cf1`). `/internal` **nie zwraca już 503**
+  wdrożone (wersja `e2544cf1`). `/internal` **nie zwraca już 503**.
+  Zastrzeżenie: sprawdzone są **same odmowy** — patrz „Luka w testach" niżej
 
 **Co zrobiono 16–17.08.2026, w kolejności:**
 
@@ -45,13 +46,44 @@ i jednego użytkownika, nie wystarcza dla zespołu klienta. Po ich dodaniu trzeb
 też odznaczyć *Accept all available identity providers* w aplikacji, inaczej PIN
 zostaje jako obejście Workspace.
 
+**Domena zespołu to `knowbase.cloudflareaccess.com` — mimo że ekran logowania
+pokazuje `late-darkness-273f.cloudflareaccess.com`.** Sprawdzone 18.08.2026, bo
+wyglądało to na rozjazd konfiguracji. Rozstrzyga `issuer` z
+`https://knowbase.cloudflareaccess.com/.well-known/openid-configuration`
+(= `https://knowbase.cloudflareaccess.com`), tam też leży JWKS i tam przekierowuje
+sam Access. `late-darkness-273f` zwraca **404 na wszystkim** — dokładnie tyle, co
+nazwa nieistniejącego zespołu — a w HTML strony logowania siedzi jako
+`OrgAvatarLink-title`, czyli **pole wyświetlane** (*Custom pages*), nie domena
+uwierzytelniania. **Nie „poprawiać" `ACCESS_TEAM_DOMAIN` na to, co widać na ekranie** —
+Worker porównuje `iss` dosłownie, więc zerwałoby to logowanie na dwa sposoby naraz.
+
+Napis na karcie logowania da się zmienić osobno (Zero Trust → *Custom pages* →
+nazwa organizacji) **bez** dotykania domeny, tokenów i aplikacji. Prawdziwa zmiana
+nazwy zespołu byłaby czymś innym: nowy `iss` (czyli `ACCESS_TEAM_DOMAIN` + deploy),
+nowe adresy `callback` u Google i Microsoftu, ponowne logowanie wszystkich,
+a stara nazwa wraca do puli i może ją zająć ktoś obcy. Gdyby kiedyś do tego doszło —
+**przed** krokami 2–3 z `ZERO-TRUST.md`, nie po.
+
 **AUD odczytuje się bez dashboardu i bez API.** Access dopisuje go jako parametr
 `kid` do adresu logowania, na który przekierowuje niezalogowanego (`curl -D -` na
 `/internal` hosta wewnętrznego, nagłówek `Location`), a towarzyszący `meta` JWT
 powtarza tę wartość w polu `aud`. API `GET /accounts/{id}/access/apps` **odpada** —
 token OAuth z `wrangler login` nie ma zakresów Zero Trust i zwraca pustą listę
 (a `/access/organizations` błąd uwierzytelnienia), nie błąd uprawnień, więc łatwo
-wziąć to za „aplikacji nie ma".
+wziąć to za „aplikacji nie ma". AUD zweryfikowany 18.08.2026 kryptograficznie:
+podpis meta-JWT sprawdzony kluczem z JWKS zespołu — poprawny, więc `31995d69…`
+jest wartością tego zespołu, a nie przepisaną z przypadkowego ekranu.
+
+**Luka w testach — ścieżka z ważnym tokenem nie była sprawdzona na żywo.**
+Przetestowano same odmowy (401/302). Wynika to z układu adresów: na hoście
+wewnętrznym Access zatrzymuje bezsesyjne żądanie na brzegu, a na `workers.dev`
+Access nie działa wcale, więc nie ma skąd wziąć prawdziwego tokenu. `test-access.mjs`
+(14/14) sprawdza logikę weryfikacji na **podstawionych** kluczach — to nie to samo
+co prawdziwy token → prawdziwe JWKS → wdrożony Worker. Dwa sposoby zamknięcia
+(ciasteczko `CF_Authorization` z przeglądarki — jedyny pokrywa `email`/`domena`;
+token serwisowy Access — powtarzalny, ale bez e-maila) opisane w `ZERO-TRUST.md`,
+krok 8. **Do czasu wykonania jednego z nich „tryb wewnętrzny działa" znaczy
+„odmawia poprawnie".**
 
 **Trzy rzeczy, które łatwo popsuć nieświadomie:**
 1. Wyłączenie `workers_dev` zerwie widget i panel — mają stary adres wpisany
@@ -553,6 +585,9 @@ też poprawne parafrazy.
   zostaje nierozwiązany dla klienta
 - `INTERNAL_CHUNKS` to 3 fragmenty testowe, nie dokumentacja. Bot dla pracowników
   ma działającą infrastrukturę i pustą treść
+- **Pozytywna ścieżka `/internal` niesprawdzona na żywo** — patrz „Luka w testach"
+  w sekcji „Stan na 18.08.2026". Nie wiadomo z pierwszej ręki, czy `zalogowany`
+  niesie e-mail i domenę ani czy odpowiedź faktycznie sięga do `INTERNAL_CHUNKS`
 
 ## Następne kroki
 

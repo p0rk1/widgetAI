@@ -14,6 +14,13 @@ użytkownika, ale nie jest docelowe dla zespołu klienta.
 Reszta pliku jest instrukcją do powtórzenia przy kolejnym kliencie — kroki
 odhaczone opisują, co i gdzie faktycznie kliknięto.
 
+**Dwie rzeczy, które warto przeczytać, zanim się tu coś ruszy:**
+- **Domena zespołu to `knowbase.cloudflareaccess.com`**, mimo że ekran logowania
+  pokazuje `late-darkness-273f.cloudflareaccess.com` — to drugie jest napisem,
+  nie adresem. Rozstrzygnięte i udowodnione w kroku 1.
+- **Ścieżka z ważnym tokenem nie była sprawdzona na żywo** — przetestowano same
+  odmowy. Opis luki i dwa sposoby jej zamknięcia są w kroku 8.
+
 Gdyby `ACCESS_TEAM_DOMAIN` albo `ACCESS_AUD` kiedykolwiek wróciły do pustej
 wartości, `/internal` znów zwróci **503 z wyjaśnieniem, czego brakuje** —
 to celowe, nie awaria.
@@ -62,11 +69,60 @@ publicznego, co dałoby się zepsuć.
 ➡️ To jest wartość **`ACCESS_TEAM_DOMAIN`** — u nas `knowbase.cloudflareaccess.com`,
 wpisana w `wrangler.toml`.
 
-Sprawdzenie z terminala, że zespół istnieje i wystawia klucze (musi być `200`):
+### Ekran logowania pokazuje inną nazwę niż domena zespołu — sprawdzone 18.08.2026
+
+Na karcie logowania widnieje **`late-darkness-273f.cloudflareaccess.com`**, mimo że
+adres w pasku przeglądarki i cała konfiguracja mówią `knowbase`. To wygląda na
+rozjazd, ale **kanoniczna jest `knowbase`** i nie ma tu nic do poprawiania
+w Workerze. Dowody, w kolejności rozstrzygalności:
+
+| Sprawdzenie | `knowbase` | `late-darkness-273f` |
+|---|---|---|
+| `/.well-known/openid-configuration` → `issuer` | `200`, **`https://knowbase.cloudflareaccess.com`** | `404` |
+| `/cdn-cgi/access/certs` (JWKS) | `200`, klucze publiczne | `404` |
+| `/cdn-cgi/access/login/<nasza-aplikacja>?kid=…` | `302` → ekran logowania | `404` |
+| dokąd przekierowuje sam Access z chronionego hosta | tutaj | — |
+
+Nazwa nieistniejącego zespołu (`zzz-nie-ma-takiego-9x`) daje **te same `404`** —
+czyli `late-darkness-273f` nie jest działającym aliasem, tylko napisem. Siedzi
+w HTML strony logowania jako `OrgAvatarLink-title`, czyli **pole wyświetlane**
+(Zero Trust → *Custom pages* → nazwa organizacji), nie domena uwierzytelniania.
+
+**Dlaczego to w ogóle ma znaczenie:** Worker porównuje `iss` tokenu z
+`https://${ACCESS_TEAM_DOMAIN}` **dosłownie**. Wpisanie tam nazwy wyświetlanej
+zamiast kanonicznej zerwałoby logowanie na dwa sposoby naraz — JWKS by się nie
+pobrał (`502 Nie udało się pobrać kluczy`), a gdyby się pobrał, każdy token
+odpadłby na `iss`.
+
+Rozstrzygające polecenie — **pytaj o `issuer`, nie o to, co widać na ekranie**:
 
 ```bash
-curl -s -o /dev/null -w "%{http_code}\n" https://knowbase.cloudflareaccess.com/cdn-cgi/access/certs
+curl -s https://knowbase.cloudflareaccess.com/.well-known/openid-configuration \
+  | grep -o '"issuer":"[^"]*"'
+# "issuer":"https://knowbase.cloudflareaccess.com"
 ```
+
+### Czy da się zmienić nazwę zespołu na czytelną
+
+Można, ale **w tym wypadku nie ma czego zmieniać** — funkcjonalnie zespół nazywa
+się już `knowbase` i to ten adres widzi pracownik w pasku przeglądarki. Brzydki
+jest wyłącznie **napis na karcie logowania**, a to osobne pole: Zero Trust →
+*Custom pages* → *Team name and domain* → *Your Organization's name* (sekcja
+strony logowania Access). Zmiana tego pola nie rusza domeny, tokenów ani aplikacji.
+
+Gdyby jednak przyszło zmieniać **prawdziwą nazwę zespołu**, pociąga to za sobą:
+
+| Skutek | Co trzeba zrobić |
+|---|---|
+| zmienia się `iss` tokenów i adres JWKS | `ACCESS_TEAM_DOMAIN` w `wrangler.toml` + `wrangler deploy` — inaczej **wszystkie** tokeny odpadają na `iss` |
+| zmienia się adres przekierowania OAuth | poprawić `…/cdn-cgi/access/callback` u **każdego** dostawcy tożsamości (Google, Microsoft) |
+| sesje wystawione na starą nazwę | zakładać, że wszyscy logują się ponownie |
+| stara nazwa | wraca do puli i **może ją zająć ktoś obcy** |
+| AUD aplikacji | powinien zostać (jest per aplikacja, nie per zespół) — ale **sprawdzić** sposobem z kroku 7, nie zakładać |
+| Cloudflare dashboard SSO | jeśli włączone, trzeba je najpierw wyłączyć |
+
+**Kolejność ma znaczenie:** ewentualną zmianę nazwy robi się **przed** krokami 2–3,
+bo inaczej adresy przekierowania u Google i Microsoftu trzeba przeklikać drugi raz.
 
 ---
 
@@ -247,6 +303,13 @@ pojedyncze adresy osób, które mają testować. Regułę domenową włączysz p
    `/cdn-cgi/access/certs` zespołu. Zgodność obu potwierdza za jednym razem
    **i AUD, i nazwę zespołu**, więc nie trzeba ufać przepisaniu z ekranu.
 
+   **Weryfikacja AUD zrobiona 18.08.2026 (kryptograficznie, nie na oko):** podpis
+   RS256 meta-JWT sprawdzony kluczem o jego `kid` pobranym z JWKS zespołu
+   `knowbase` — **poprawny**. Czyli token niosący `aud = 31995d69…` dla hosta
+   `budmax-wewnetrzny.know-base.app` jest podpisany kluczem tego zespołu, a nie
+   przepisany z przypadkowego ekranu. `kid` z adresu, `aud` z meta-JWT i
+   `ACCESS_AUD` w `wrangler.toml` są identyczne.
+
    > **Czego nie da się użyć:** API `GET /accounts/{id}/access/apps` zwraca na
    > tokenie OAuth wranglera pustą listę, a `/access/organizations` — błąd
    > uwierzytelnienia, bo token z `wrangler login` nie ma zakresów Zero Trust.
@@ -269,7 +332,11 @@ ustawione w dashboardzie zniknęłyby przy najbliższym `wrangler deploy`.
 
 ---
 
-## Krok 8. Sprawdź, że działa — ✅ sprawdzone 18.08.2026
+## Krok 8. Sprawdź, że działa — ✅ odmowy sprawdzone 18.08.2026
+
+> **Sprawdzone są wyłącznie odmowy.** Ścieżka „ważny token → odpowiedź z wiedzy
+> wewnętrznej" nie była nigdy uruchomiona na żywo — dlaczego i jak to zamknąć,
+> patrz „⚠️ Luka w testach" na końcu tego kroku.
 
 **Dwa hosty odpowiadają na `/internal` inaczej i tak ma być.** Na
 `budmax-wewnetrzny.know-base.app` żądanie bez ważnej sesji **nie dociera do
@@ -321,18 +388,71 @@ curl -s -o /dev/null -w "%{http_code}\n" -X POST https://budmax.know-base.app/ \
   -H "Content-Type: application/json" -d '{"question":"Jakie sa terminy platnosci?"}'
 ```
 
-**Z ważnym tokenem** — zaloguj się w przeglądarce, skopiuj z DevTools
-ciasteczko `CF_Authorization` i:
+### ⚠️ Luka w testach: ścieżka z **ważnym** tokenem nie była sprawdzona na żywo
 
-```bash
-curl -s -X POST https://budmax-wewnetrzny.know-base.app/internal \
-  -H "Content-Type: application/json" \
-  -H "Cookie: CF_Authorization=WKLEJ_TU" \
-  -d '{"question":"Jaka jest standardowa marza na robocizne?"}'
-```
+Wszystko, co przetestowano do 18.08.2026, to **odmowy**. Nikt nie potwierdził na
+działającej instalacji, że token, który *przechodzi*, faktycznie przechodzi.
+Bierze się to z układu adresów, nie z zaniedbania:
 
-Odpowiedź powinna zawierać treść z `INTERNAL_CHUNKS` oraz pole
-`zalogowany` z Twoim adresem e-mail i domeną.
+- na `budmax-wewnetrzny.know-base.app` Access zatrzymuje żądanie bez sesji na
+  brzegu (302) — do Workera nic nie dociera,
+- na `workers.dev` Access nie działa w ogóle, więc nigdy nie postawi tam tokenu.
+
+`node test-access.mjs` (14/14) sprawdza tę ścieżkę **na własnej parze kluczy
+podstawionej w miejsce kluczy zespołu** — czyli logikę weryfikacji, ale nie
+zestawienie: prawdziwy token Access → prawdziwe JWKS → wdrożony Worker.
+Zdanie „14/14" nie zastępuje tego testu.
+
+Co jest jeszcze niesprawdzone poza samym `ok`: czy `zalogowany` niesie e-mail
+i domenę, czy `/internal` faktycznie sięga do `INTERNAL_CHUNKS`, i czy sesja
+z przeglądarki działa dla żądania `POST` z `Content-Type: application/json`.
+
+#### Sposób A — ciasteczko z przeglądarki (pokrywa ścieżkę człowieka)
+
+Jednorazowo, ręcznie, ale jako jedyny sprawdza **tożsamość osoby** (`email`,
+`domena` w polu `zalogowany`):
+
+1. Zaloguj się na `https://budmax-wewnetrzny.know-base.app/internal`
+   (dziś: One-time PIN na adres z reguły z kroku 6).
+2. DevTools → *Application* → *Cookies* → skopiuj **`CF_Authorization`**.
+3. ```bash
+   curl -s -X POST https://budmax-wewnetrzny.know-base.app/internal \
+     -H "Content-Type: application/json" \
+     -H "Cookie: CF_Authorization=WKLEJ_TU" \
+     -d '{"question":"Jaka jest standardowa marza na robocizne?"}'
+   ```
+
+Odpowiedź musi zawierać treść z `INTERNAL_CHUNKS` **oraz** pole `zalogowany`
+z Twoim adresem e-mail i domeną. To ciasteczko jest **poświadczeniem** — ważnym
+tyle, ile *Session Duration* (24 h). Nie wkleja się go do repo ani do zapisu rozmowy.
+
+#### Sposób B — token serwisowy (powtarzalny, bez przeglądarki)
+
+Do testu dymnego po każdym deployu, bo daje się uruchomić ze skryptu:
+
+1. Zero Trust → **Access controls → Service auth → Create service token**
+   (nazwa np. `budmax-smoke-test`). Sekret widać **raz**.
+2. W aplikacji `BudMax — tryb wewnętrzny` dodaj **drugą** politykę:
+   `Action: Service Auth`, `Include → Service Token → budmax-smoke-test`.
+   Polityka `Allow` dla ludzi zostaje bez zmian.
+3. ```bash
+   curl -s -X POST https://budmax-wewnetrzny.know-base.app/internal \
+     -H "CF-Access-Client-Id: $CF_ID" -H "CF-Access-Client-Secret: $CF_SECRET" \
+     -H "Content-Type: application/json" \
+     -d '{"question":"Jaka jest standardowa marza na robocizne?"}'
+   ```
+
+Access sam wystawia wtedy JWT i podaje go Workerowi w `Cf-Access-Jwt-Assertion`,
+więc **cała ścieżka jest prawdziwa**: podpis, `iss`, `aud`, ważność, pobranie JWKS.
+
+Czego sposób B **nie** pokrywa: token serwisowy nie niesie `email` (ma `common_name`),
+więc `zalogowany.email` będzie `null`. Ścieżkę tożsamości człowieka sprawdza tylko
+sposób A. Poza tym `Service Auth` **omija logowanie** — to poświadczenie maszynowe,
+trzyma się je w zmiennych środowiskowych, nie w repo, i kasuje, gdy przestaje być
+potrzebne.
+
+**Zalecenie:** sposób A raz, teraz, żeby zamknąć lukę; sposób B, gdy `/internal`
+zacznie mieć prawdziwą treść i test dymny po deployu zacznie się opłacać.
 
 ---
 
@@ -344,6 +464,8 @@ Odpowiedź powinna zawierać treść z `INTERNAL_CHUNKS` oraz pole
 | `302` zamiast `401` na hoście wewnętrznym | **tak ma być** — Access odsyła na logowanie zanim żądanie dojdzie do Workera | nic; kody Workera testuj na `workers.dev` (krok 8) |
 | `401 Brak tokenu` mimo zalogowania | Access nie obejmuje tego hosta | Sprawdź *Application domain* — subdomena ma być `budmax-wewnetrzny`, `Path` puste (krok 5) |
 | `401 Brak tokenu` na `workers.dev` | **tak ma być** — Access nie działa na `*.workers.dev` i nigdy nie postawi tam tokenu | tryb wewnętrzny ma jeden adres: `budmax-wewnetrzny.know-base.app` |
+| `401 Token podpisano kluczem nieznanym dla tego zespołu` | JWKS pobrane, ale token nie pochodzi z tego zespołu | jeśli to token z prawdziwego logowania — sprawdź `ACCESS_TEAM_DOMAIN` przez `issuer` z `/.well-known/openid-configuration` (krok 1) |
+| ekran logowania pokazuje inną nazwę niż `ACCESS_TEAM_DOMAIN` | to pole **wyświetlane** (*Custom pages*), nie domena uwierzytelniania | nic w kodzie; rozstrzyga `issuer`, nie napis — krok 1 |
 | Publiczny host prosi o logowanie | Aplikacja Access zbudowana na `budmax` zamiast `budmax-wewnetrzny` | Popraw *Application domain* (krok 5) |
 | `401 Token wystawiony dla innej aplikacji` | AUD z innej aplikacji Access | Przepisz AUD z właściwej aplikacji (krok 7) |
 | `401 Token wystawiony przez inny zespół` | Literówka w `ACCESS_TEAM_DOMAIN` | Ma być pełny host `nazwa.cloudflareaccess.com`, bez `https://` |

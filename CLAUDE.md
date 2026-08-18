@@ -19,7 +19,9 @@ w sekcjach niżej — tu jest tylko to, gdzie jesteśmy i co jest następne.
 - Trzy adresy: `budmax.know-base.app`, `budmax-wewnetrzny.know-base.app`,
   stary `knowbase-budmax.rezi7608.workers.dev` (wszystkie odpowiadają)
 - Separacja przestrzeni `public` / `internal` w Vectorize, szczelność przetestowana
-- Weryfikacja tokenu Zero Trust Access na `/internal` (kod gotowy, 14/14 testów)
+- **Tryb wewnętrzny działa** — aplikacja Access na `budmax-wewnetrzny.know-base.app`
+  utworzona 18.08.2026, `ACCESS_TEAM_DOMAIN` i `ACCESS_AUD` w `wrangler.toml`,
+  wdrożone (wersja `e2544cf1`). `/internal` **nie zwraca już 503**
 
 **Co zrobiono 16–17.08.2026, w kolejności:**
 
@@ -31,11 +33,25 @@ w sekcjach niżej — tu jest tylko to, gdzie jesteśmy i co jest następne.
 | `51a5da6` | Tryb wewnętrzny na tożsamości z Access, sekret na `/internal` unieważniony |
 | `f2d8a78` | Domena `know-base.app`, dwa hosty na klienta, `ALLOWED_ORIGINS` jako lista |
 
-**Następny ruch — po stronie właściciela, nie kodu:** wyklikać kroki 1–3 i 5–7
-z `ZERO-TRUST.md` (zespół Zero Trust `knowbase`, Google, Microsoft, aplikacja
-Access na `budmax-wewnetrzny.know-base.app`, przepisanie AUD do `wrangler.toml`).
-Krok 4 jest odhaczony. Do tego czasu `/internal` zwraca 503 z listą braków —
-**to jest stan oczekiwany, nie awaria.**
+**Co zrobiono 18.08.2026:** aplikacja Access utworzona w dashboardzie (cały host
+`budmax-wewnetrzny.know-base.app`, `Path` pusty, reguła Allow na adres właściciela),
+AUD i domena zespołu wpisane do `[vars]`, deploy, przetestowane. Kroki 1 i 4–8
+z `ZERO-TRUST.md` odhaczone.
+
+**Zostało — po stronie właściciela, nie kodu:** kroki **2 i 3** z `ZERO-TRUST.md`
+(Google i Microsoft jako metody logowania). Dziś jedyną działającą metodą jest
+**One-time PIN** — Cloudflare wysyła kod na adres e-mail. Wystarcza do testów
+i jednego użytkownika, nie wystarcza dla zespołu klienta. Po ich dodaniu trzeba
+też odznaczyć *Accept all available identity providers* w aplikacji, inaczej PIN
+zostaje jako obejście Workspace.
+
+**AUD odczytuje się bez dashboardu i bez API.** Access dopisuje go jako parametr
+`kid` do adresu logowania, na który przekierowuje niezalogowanego (`curl -D -` na
+`/internal` hosta wewnętrznego, nagłówek `Location`), a towarzyszący `meta` JWT
+powtarza tę wartość w polu `aud`. API `GET /accounts/{id}/access/apps` **odpada** —
+token OAuth z `wrangler login` nie ma zakresów Zero Trust i zwraca pustą listę
+(a `/access/organizations` błąd uwierzytelnienia), nie błąd uprawnień, więc łatwo
+wziąć to za „aplikacji nie ma".
 
 **Trzy rzeczy, które łatwo popsuć nieświadomie:**
 1. Wyłączenie `workers_dev` zerwie widget i panel — mają stary adres wpisany
@@ -167,7 +183,8 @@ trafi do Workera z pominięciem Access, choćby przez adres `workers.dev`:
 Podpis jest sprawdzany **przed** zaufaniem czemukolwiek z ładunku. Token z `alg: none`
 odpada na sprawdzeniu algorytmu.
 
-**Konfiguracja.** `ACCESS_TEAM_DOMAIN` i `ACCESS_AUD` w `[vars]` w `wrangler.toml`.
+**Konfiguracja.** `ACCESS_TEAM_DOMAIN = "knowbase.cloudflareaccess.com"` i `ACCESS_AUD`
+(aplikacja „BudMax — tryb wewnętrzny") w `[vars]` w `wrangler.toml` — wypełnione 18.08.2026.
 To **nie są sekrety** — bezpieczeństwo daje weryfikacja podpisu, nie tajność tych
 wartości. Muszą być w pliku, a nie w dashboardzie, bo `wrangler deploy` skasowałby
 zmienną, której w pliku nie ma. Krok po kroku: **`ZERO-TRUST.md`**.
@@ -180,11 +197,19 @@ Odmowa dostępu i brak konfiguracji to dwie różne sytuacje i mają różne kod
 z domen w koncie Cloudflare. Dlatego 17.08.2026 doszła domena `know-base.app`
 i host `budmax-wewnetrzny.know-base.app` (patrz „Adresy i domeny"). Custom domain
 musi być także w `wrangler.toml` (`[[routes]]` z `custom_domain = true`), inaczej
-deploy ją zdejmie. Zostaje wyklikanie konfiguracji — `ZERO-TRUST.md`.
+deploy ją zdejmie. Aplikacja Access na tym hoście istnieje od 18.08.2026 —
+`ZERO-TRUST.md`.
 
 Konsekwencja dla starego adresu: `/internal` na `workers.dev` **nigdy nie zadziała**,
 bo Access nie postawi tam tokenu. To poprawne zachowanie fail-closed, nie usterka —
 tryb wewnętrzny ma jeden adres i jest nim host wewnętrzny.
+
+**Dwa hosty zwracają na `/internal` różne kody i tak ma być.** Na
+`budmax-wewnetrzny.know-base.app` żądanie bez sesji **nie dociera do Workera** —
+Access zatrzymuje je na brzegu i odsyła **302** na ekran logowania. Kody Workera
+(401 z powodem) widać tylko na `workers.dev` albo po przejściu przez Access.
+Dlatego weryfikację tokenu testuje się na `workers.dev`, a samo Access — na hoście
+wewnętrznym. Oczekiwanie „401 bez tokenu na hoście wewnętrznym" było błędne.
 
 **`identity` z tokenu** — `email` i `domena` są odczytywane i przekazywane do
 `handleAsk()`, które odsyła je w polu `zalogowany`. **Nic po nich jeszcze nie
@@ -543,10 +568,12 @@ Kolejność jest celowa — uzasadnienie jest częścią decyzji, nie ozdobnikie
    - ~~**Etap 1: separacja przestrzeni wiedzy**~~ — ✅ **wykonane 17.08.2026.**
      Namespaces `public`/`internal`, rozdzielone endpointy, `INTERNAL_CHUNKS`,
      pole `role`. Szczelność potwierdzona testem — patrz „Separacja przestrzeni wiedzy".
-   - ~~**Etap 2: prawdziwe logowanie**~~ — ✅ **kod gotowy i wdrożony 17.08.2026,**
-     wraz z domeną i hostami (`f2d8a78`). Weryfikacja JWT z Zero Trust Access,
-     sekret na `/internal` unieważniony. **Pozostaje wyklikanie konfiguracji**
-     (`ZERO-TRUST.md`, kroki 1–3 i 5–7). Do tego czasu `/internal` zwraca 503.
+   - ~~**Etap 2: prawdziwe logowanie**~~ — ✅ **zamknięte 18.08.2026.** Kod
+     z 17.08.2026 (`f2d8a78`), aplikacja Access i `[vars]` z 18.08.2026.
+     Sekret na `/internal` unieważniony, potwierdzone testem na żywo.
+     Zostało tylko podpięcie Google i Microsoft obok One-time PIN
+     (`ZERO-TRUST.md`, kroki 2–3) — to konfiguracja dostawców tożsamości,
+     nie zmiana w produkcie.
    - **Etap 3: ton instruktażowy** — `buildSystemPrompt()` jest wspólny dla obu
      endpointów i mówi o „stronie firmy". Świadomie nie ruszony w etapie 1,
      żeby zmiana pozostała czysto strukturalna.

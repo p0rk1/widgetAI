@@ -1,10 +1,21 @@
 # Konfiguracja Cloudflare Zero Trust Access dla trybu wewnętrznego
 
-Instrukcja do wyklikania w panelu. Kod Workera jest już gotowy i wdrożony —
-brakuje mu tylko dwóch wartości (`ACCESS_TEAM_DOMAIN`, `ACCESS_AUD`), które
-powstają dopiero przy tworzeniu aplikacji w Zero Trust.
+## Stan: ✅ skonfigurowane i wdrożone 18.08.2026
 
-Dopóki ich nie ma, `/internal` zwraca **503 z wyjaśnieniem, czego brakuje** —
+Aplikacja Access istnieje, `ACCESS_TEAM_DOMAIN` i `ACCESS_AUD` są w `wrangler.toml`,
+Worker wdrożony (wersja `e2544cf1-61ee-468b-ab08-c70447056701`). **`/internal` nie
+zwraca już 503** — patrz „Krok 8" z wynikami z 18.08.2026.
+
+Zrobione: kroki **1, 4, 5, 6, 7, 8**. Zostało: kroki **2 i 3** (Google i Microsoft
+jako metody logowania) — dziś jedyną działającą metodą jest **One-time PIN**,
+czyli kod wysyłany na adres e-mail. To wystarcza do testów i do pojedynczego
+użytkownika, ale nie jest docelowe dla zespołu klienta.
+
+Reszta pliku jest instrukcją do powtórzenia przy kolejnym kliencie — kroki
+odhaczone opisują, co i gdzie faktycznie kliknięto.
+
+Gdyby `ACCESS_TEAM_DOMAIN` albo `ACCESS_AUD` kiedykolwiek wróciły do pustej
+wartości, `/internal` znów zwróci **503 z wyjaśnieniem, czego brakuje** —
 to celowe, nie awaria.
 
 ---
@@ -17,7 +28,7 @@ Domena `know-base.app` jest w koncie Cloudflare, a Worker ma dwa własne adresy
 | Adres | Do czego | Stan |
 |---|---|---|
 | `budmax.know-base.app` | publiczny endpoint widgetu | działa, odpowiada |
-| `budmax-wewnetrzny.know-base.app` | bot dla pracowników | działa, zwraca 503 do czasu konfiguracji Access |
+| `budmax-wewnetrzny.know-base.app` | bot dla pracowników | działa, za Access — niezalogowany dostaje 302 na ekran logowania |
 | `knowbase-budmax.rezi7608.workers.dev` | stary adres, nadal używany przez widget i panel | działa, zostaje |
 
 **Rozdzielenie na dwa hosty jest sednem tej konfiguracji.** Aplikacja Access
@@ -33,7 +44,7 @@ publicznego, co dałoby się zepsuć.
 
 ---
 
-## Krok 1. Włącz Zero Trust i ustal nazwę zespołu
+## Krok 1. Włącz Zero Trust i ustal nazwę zespołu — ✅ zrobione
 
 1. Panel Cloudflare → **Zero Trust** (lewa kolumna).
 2. Przy pierwszym wejściu kreator poprosi o **nazwę zespołu** (*team name*).
@@ -48,11 +59,24 @@ publicznego, co dałoby się zepsuć.
    klientów, warto to śledzić przy trzecim i kolejnych).
 4. Zanotuj powstały adres zespołu: `knowbase.cloudflareaccess.com`.
 
-➡️ To jest przyszła wartość **`ACCESS_TEAM_DOMAIN`**.
+➡️ To jest wartość **`ACCESS_TEAM_DOMAIN`** — u nas `knowbase.cloudflareaccess.com`,
+wpisana w `wrangler.toml`.
+
+Sprawdzenie z terminala, że zespół istnieje i wystawia klucze (musi być `200`):
+
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" https://knowbase.cloudflareaccess.com/cdn-cgi/access/certs
+```
 
 ---
 
-## Krok 2. Podepnij Google Workspace
+## Krok 2. Podepnij Google Workspace — ⬜ do zrobienia
+
+> **Stan na 18.08.2026:** nie zrobione. Aplikacja przepuszcza wszystkie dostępne
+> metody logowania, a jedyną skonfigurowaną jest wbudowany **One-time PIN** —
+> Cloudflare wysyła kod na adres e-mail i to wystarcza, żeby reguła z kroku 6
+> zadziałała. Google i Microsoft dokłada się bez zmian w Workerze: weryfikowany
+> jest podpis i `aud` tokenu, nie to, który dostawca go wystawił.
 
 Najpierw po stronie Google:
 
@@ -83,7 +107,7 @@ Teraz po stronie Cloudflare:
 
 ---
 
-## Krok 3. Podepnij Microsoft Entra ID
+## Krok 3. Podepnij Microsoft Entra ID — ⬜ do zrobienia
 
 Najpierw po stronie Microsoftu:
 
@@ -128,7 +152,7 @@ curl -s -o /dev/null -w "%{http_code}\n" -X POST https://budmax.know-base.app/ \
   -H "Content-Type: application/json" -d '{"question":"test"}'          # 200
 
 curl -s -o /dev/null -w "%{http_code}\n" -X POST https://budmax-wewnetrzny.know-base.app/internal \
-  -H "Content-Type: application/json" -d '{"question":"test"}'          # 503 teraz, 401 po konfiguracji
+  -H "Content-Type: application/json" -d '{"question":"test"}'          # 302 (Access przechwytuje przed Workerem)
 ```
 
 Widget i panel nadal wołają stary adres `workers.dev` i tak zostaje —
@@ -136,18 +160,24 @@ przeniesienie ich na `budmax.know-base.app` to osobna, świadoma zmiana.
 
 ---
 
-## Krok 5. Utwórz aplikację Access
+## Krok 5. Utwórz aplikację Access — ✅ zrobione
 
-1. Zero Trust → **Access → Applications → Add an application → Self-hosted**.
+1. Zero Trust → **Access controls → Applications → Add an application → Self-hosted**.
+
+   > Menu zmieniło nazwę: dawniej **Access → Applications**, dziś
+   > **Access controls → Applications**. Jeśli szukasz w panelu i nie widzisz
+   > pozycji „Access", to jest ta sama rzecz pod nową etykietą.
+
 2. **Application name**: `BudMax — tryb wewnętrzny`.
    (Nazwa per klient, bo aplikacji będzie tyle, ilu klientów.)
 3. **Session Duration**: `24 hours` (pracownik loguje się raz dziennie).
-4. **Application domain**:
+4. **Application domain** — formularz ma **trzy osobne pola**, nie jedno pole
+   na cały adres:
 
    | Pole | Wartość |
    |---|---|
    | Subdomain | `budmax-wewnetrzny` |
-   | Domain | `know-base.app` |
+   | Domain | `know-base.app` (wybór z listy domen w koncie) |
    | Path | **zostaw puste** |
 
    **Ścieżki celowo nie ustawiamy** — aplikacja ma objąć cały host. Na
@@ -158,12 +188,21 @@ przeniesienie ich na `budmax.know-base.app` to osobna, świadoma zmiana.
    > jeden host, a Access ograniczał się do ścieżki `/internal`. Rozdzielenie
    > hostów usuwa cały ten rodzaj błędu — dlatego pole `Path` ma zostać puste.
 
-5. **Identity providers**: zaznacz Google i Microsoft. Odznacz
-   *Accept all available identity providers*, jeśli mają działać tylko te dwa.
+5. **Identity providers**: docelowo zaznacz Google i Microsoft i odznacz
+   *Accept all available identity providers*.
+
+   **Dziś zostawione na „wszystkie dostępne", łącznie z One-time PIN** — bo poza
+   PIN-em nie ma jeszcze czego zaznaczać (kroki 2–3). Po ich wykonaniu wróć tutaj
+   i zawęź listę: dopóki PIN jest dozwolony, dostęp ma każdy, kto odbiera pocztę
+   pod adresem z reguły, bez przechodzenia przez Workspace ani Entra.
 
 ---
 
-## Krok 6. Ustaw regułę dostępu
+## Krok 6. Ustaw regułę dostępu — ✅ zrobione
+
+**Co faktycznie ustawiono 18.08.2026:** `Action: Allow`, `Include → Emails`
+z pojedynczym adresem właściciela — czyli wariant ostrożniejszy opisany pod
+tabelką. Reguła domenowa `@budmax.pl` czeka na prawdziwych pracowników.
 
 W kreatorze aplikacji, sekcja **Policies**:
 
@@ -181,18 +220,38 @@ pojedyncze adresy osób, które mają testować. Regułę domenową włączysz p
 
 ---
 
-## Krok 7. Przepisz AUD do konfiguracji Workera
+## Krok 7. Przepisz AUD do konfiguracji Workera — ✅ zrobione
 
-1. Zero Trust → **Access → Applications** → otwórz utworzoną aplikację →
+1. Zero Trust → **Access controls → Applications** → otwórz utworzoną aplikację →
    zakładka **Overview**.
 2. Skopiuj **Application Audience (AUD) Tag** — długi ciąg szesnastkowy.
-3. Uzupełnij `wrangler.toml`:
+3. Uzupełnij `wrangler.toml` (stan wpisany 18.08.2026):
 
    ```toml
    [vars]
    ACCESS_TEAM_DOMAIN = "knowbase.cloudflareaccess.com"
-   ACCESS_AUD = "tu-wklej-aud-tag"
+   ACCESS_AUD = "31995d69e22347f8708921b157570232f11113d68beb57edb35b2773f782c1c0"
    ```
+
+   **AUD da się odczytać bez klikania w dashboardzie.** Access dopisuje go jako
+   parametr `kid` do adresu logowania, na który przekierowuje niezalogowanego:
+
+   ```bash
+   curl -s -o /dev/null -D - https://budmax-wewnetrzny.know-base.app/internal \
+     | grep -i "^location:"
+   # …/cdn-cgi/access/login/budmax-wewnetrzny.know-base.app?kid=<AUD>&meta=…
+   ```
+
+   Ten sam adres niesie parametr `meta` — podpisany JWT, którego pole `aud`
+   powtarza tę wartość, a `kid` w nagłówku wskazuje klucz z
+   `/cdn-cgi/access/certs` zespołu. Zgodność obu potwierdza za jednym razem
+   **i AUD, i nazwę zespołu**, więc nie trzeba ufać przepisaniu z ekranu.
+
+   > **Czego nie da się użyć:** API `GET /accounts/{id}/access/apps` zwraca na
+   > tokenie OAuth wranglera pustą listę, a `/access/organizations` — błąd
+   > uwierzytelnienia, bo token z `wrangler login` nie ma zakresów Zero Trust.
+   > Odczyt z API wymagałby osobnego API tokenu z uprawnieniami *Access: Apps
+   > and Policies — Read*. Sposób z `kid` powyżej działa bez żadnego tokenu.
 
 4. Wdróż:
 
@@ -210,33 +269,56 @@ ustawione w dashboardzie zniknęłyby przy najbliższym `wrangler deploy`.
 
 ---
 
-## Krok 8. Sprawdź, że działa
+## Krok 8. Sprawdź, że działa — ✅ sprawdzone 18.08.2026
+
+**Dwa hosty odpowiadają na `/internal` inaczej i tak ma być.** Na
+`budmax-wewnetrzny.know-base.app` żądanie bez ważnej sesji **nie dociera do
+Workera** — zatrzymuje je Access na brzegu i odsyła `302` na ekran logowania.
+Kody Workera (`401` z opisem powodu) widać dopiero po przejściu przez Access
+albo na starym adresie `workers.dev`, którego Access nie obejmuje.
+
+Dlatego weryfikacja tokenu w Workerze testuje się na `workers.dev`, a działanie
+samego Access — na hoście wewnętrznym.
 
 **Z przeglądarki** — wejdź na `https://budmax-wewnetrzny.know-base.app/internal`.
-Powinno przekierować na ekran logowania Cloudflare z wyborem Google / Microsoft.
-Po zalogowaniu zobaczysz odpowiedź Workera (dla GET będzie to `405 Method not
-allowed` — to dobrze, znaczy że Access przepuścił i zadziałał Worker).
+Powinno przekierować na ekran logowania Cloudflare (dziś: One-time PIN, po
+krokach 2–3 także Google / Microsoft). Po zalogowaniu zobaczysz odpowiedź Workera
+(dla GET będzie to `405 Method not allowed` — to dobrze, znaczy że Access
+przepuścił i zadziałał Worker).
 
 Sprawdź też **hosta publicznego**: `https://budmax.know-base.app/` **nie może**
 poprosić o logowanie. Jeśli prosi, aplikacja Access została zbudowana na złej
 subdomenie.
 
-**Z terminala** — trzy przypadki, które muszą wypaść dokładnie tak:
+**Z terminala** — wyniki z 18.08.2026, wersja Workera `e2544cf1`:
 
 ```bash
-# 1. bez tokenu → 401
-curl -s -o /dev/null -w "%{http_code}\n" -X POST https://budmax-wewnetrzny.know-base.app/internal \
-  -H "Content-Type: application/json" -d '{"question":"Jaka jest marza?"}'
+# 1. host za Access, bez sesji → 302 na ekran logowania (Access, nie Worker)
+curl -s -o /dev/null -D - -X POST https://budmax-wewnetrzny.know-base.app/internal \
+  -H "Content-Type: application/json" -d '{"question":"Jaka jest marza?"}' | grep -i "^location:"
+# HTTP/1.1 302 Found
+# Location: https://knowbase.cloudflareaccess.com/cdn-cgi/access/login/budmax-wewnetrzny.know-base.app?kid=…
 
-# 2. z podrobionym tokenem → 401
-curl -s -X POST https://budmax-wewnetrzny.know-base.app/internal \
+# 2. workers.dev, bez tokenu → 401 (a NIE 503 — to jest dowód, że vars doszły)
+curl -s -X POST https://knowbase-budmax.rezi7608.workers.dev/internal \
+  -H "Content-Type: application/json" -d '{"question":"Jaka jest marza?"}'
+# {"error":"Brak tokenu tożsamości Cloudflare Access.", …}
+
+# 3. workers.dev, podrobiony token → 401
+curl -s -X POST https://knowbase-budmax.rezi7608.workers.dev/internal \
   -H "Content-Type: application/json" \
   -H "Cf-Access-Jwt-Assertion: aaa.bbb.ccc" \
   -d '{"question":"Jaka jest marza?"}'
+# {"error":"Nie udało się odczytać tokenu tożsamości."}
 
-# 3. dawny sekret administracyjny → 401 (ma już NIE działać)
-curl -s -X POST "https://budmax-wewnetrzny.know-base.app/internal?key=TWOJ_SEKRET" \
+# 4. dawny sekret administracyjny → 401 (ma już NIE działać)
+curl -s -X POST "https://knowbase-budmax.rezi7608.workers.dev/internal?key=TWOJ_SEKRET" \
   -H "Content-Type: application/json" -d '{"question":"Jaka jest marza?"}'
+# {"error":"Brak tokenu tożsamości…","szczegoly":{…"Klucz administracyjny (?key=) NIE otwiera już trybu wewnętrznego."}}
+
+# 5. publiczny host nie zmienił zachowania → 200
+curl -s -o /dev/null -w "%{http_code}\n" -X POST https://budmax.know-base.app/ \
+  -H "Content-Type: application/json" -d '{"question":"Jakie sa terminy platnosci?"}'
 ```
 
 **Z ważnym tokenem** — zaloguj się w przeglądarce, skopiuj z DevTools
@@ -259,7 +341,9 @@ Odpowiedź powinna zawierać treść z `INTERNAL_CHUNKS` oraz pole
 | Objaw | Przyczyna | Co zrobić |
 |---|---|---|
 | `503` i lista brakujących zmiennych | `ACCESS_TEAM_DOMAIN` / `ACCESS_AUD` puste | Krok 7 |
+| `302` zamiast `401` na hoście wewnętrznym | **tak ma być** — Access odsyła na logowanie zanim żądanie dojdzie do Workera | nic; kody Workera testuj na `workers.dev` (krok 8) |
 | `401 Brak tokenu` mimo zalogowania | Access nie obejmuje tego hosta | Sprawdź *Application domain* — subdomena ma być `budmax-wewnetrzny`, `Path` puste (krok 5) |
+| `401 Brak tokenu` na `workers.dev` | **tak ma być** — Access nie działa na `*.workers.dev` i nigdy nie postawi tam tokenu | tryb wewnętrzny ma jeden adres: `budmax-wewnetrzny.know-base.app` |
 | Publiczny host prosi o logowanie | Aplikacja Access zbudowana na `budmax` zamiast `budmax-wewnetrzny` | Popraw *Application domain* (krok 5) |
 | `401 Token wystawiony dla innej aplikacji` | AUD z innej aplikacji Access | Przepisz AUD z właściwej aplikacji (krok 7) |
 | `401 Token wystawiony przez inny zespół` | Literówka w `ACCESS_TEAM_DOMAIN` | Ma być pełny host `nazwa.cloudflareaccess.com`, bez `https://` |

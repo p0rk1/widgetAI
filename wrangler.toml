@@ -39,8 +39,8 @@ preview_urls = false
 # z wyjaśnieniem, czego brakuje (nie milczące 403). Wypełnij po utworzeniu
 # aplikacji w Zero Trust — instrukcja krok po kroku w ZERO-TRUST.md.
 [vars]
-ACCESS_TEAM_DOMAIN = ""   # np. "budmax.cloudflareaccess.com"
-ACCESS_AUD = ""           # Application Audience (AUD) Tag z zakładki Overview aplikacji
+ACCESS_TEAM_DOMAIN = "knowbase.cloudflareaccess.com"
+ACCESS_AUD = "31995d69e22347f8708921b157570232f11113d68beb57edb35b2773f782c1c0"  # aplikacja "BudMax — tryb wewnętrzny"
 
 [ai]
 binding = "AI"

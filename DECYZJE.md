@@ -24,6 +24,7 @@ zapis wraca jako ten sam błąd za trzy sesje.
 - [Treść wewnętrzna i mapa problemów](#treść-wewnętrzna--41-fragmentów-i-mapa-problemów)
 - [Progi zależne od długości, cytat dosłowny, warstwy znające tryb](#progi-zależne-od-długości-cytat-dosłowny-i-warstwy-znające-tryb)
 - [Eskalacja — dlaczego wzorce, a nie ocena modelu](#eskalacja--dlaczego-wzorce-a-nie-ocena-modelu)
+- [Deduplikacja: rozwinięcie to nie powtórzenie](#deduplikacja-rozwinięcie-to-nie-powtórzenie)
 - [Granica dostawcy](#granica-dostawcy--model-i-baza-wektorowa-są-wymienne)
 - [Dokumentacja BudMax](#dokumentacja-budmax)
 
@@ -709,6 +710,80 @@ usterka co przy krokach `i23`, ale trafia w główną ścieżkę i pojawiła si�
 Proponowana poprawka (niewykonana, bo dotyka też trybu publicznego): nie uznawać
 za duplikat zdania **istotnie dłuższego** od tego, z którym się pokrywa —
 dłuższe zdanie jest rozwinięciem, nie powtórzeniem.
+
+## Deduplikacja: rozwinięcie to nie powtórzenie
+
+Naprawa 20.08.2026 usterki opisanej dzień wcześniej w „Eskalacja".
+
+### Najpierw pomiar na trybie publicznym
+
+Warstwa dotyczy obu trybów, a sprawdzana była tylko na wewnętrznym — więc zanim
+cokolwiek zmieniliśmy, poszedł zestaw **20 pytań klienta** (w tym cztery długie,
+wielowątkowe, bo te generują najdłuższe odpowiedzi i najwięcej okazji do
+fałszywej deduplikacji) przez `/debug?space=public`.
+
+| Tryb | Zdań | Zdania stracone na `isDuplicate()` |
+|---|---|---|
+| publiczny, przed | 66 | **0** |
+| wewnętrzny, przed | 73 | 1 |
+
+**Defekt nigdy nie dotykał obecnych klientów.** Powód jest strukturalny, nie
+przypadkowy: odpowiedzi publiczne to proza o zmiennym słownictwie, a wewnętrzne
+to listy kroków, w których te same rzeczowniki („zbrojenie", „kierownik budowy")
+wracają w co drugim zdaniu. Do tego doszło zdanie sprostowujące adresata, które
+sami dodaliśmy — i to ono kasowało treść merytoryczną.
+
+To jest też odpowiedź na pytanie, dlaczego usterka przeżyła tyle sesji: **żaden
+pomiar publiczny nie mógł jej pokazać, bo tam jej nie ma.**
+
+### Na czym polega poprawka
+
+Pokrycie liczone jest wobec **krótszego** zdania, więc zdanie zawierające
+wszystkie słowa krótszego ma pokrycie 1.0 — nawet gdy dokłada dwa razy tyle
+treści. Sam próg pokrycia nie odróżnia powtórzenia od rozwinięcia, bo mierzy
+tylko to, co się powtarza, a nie to, co dochodzi.
+
+Stąd **drugi warunek**: zdanie wnoszące co najmniej `DUPLIKAT_NOWE_SLOWA` (4)
+nowych słów treściowych jest rozwinięciem i zostaje, choćby powtarzało wszystko
+z poprzedniego. Progu pokrycia 0.6 **nie ruszano** — nie on był źle dobrany.
+
+Świadomie przyjęty koszt: rozwlekła parafraza, która dorzuca cztery nowe słowa
+nic nie wnosząc, przejdzie. Wybór jest między utratą treści a powtórzeniem,
+a przy instrukcji BHP powtórzenie jest tańsze.
+
+### Wynik
+
+| Tryb | Przed | Po |
+|---|---|---|
+| publiczny | 0 / 66 | **0 / 69** |
+| wewnętrzny | 1 / 73 | **0 / 72** |
+
+Odpowiedź na `i25` zawiera teraz komplet: sprostowanie adresata **oraz** zdanie
+o uprawnieniach inspektora, które wcześniej znikało.
+
+Prawdziwe powtórzenia nadal wypadają — sprawdza to `test-weryfikacja.mjs`
+na parafrazach, zmienionym szyku i powtórzeniu z jednym dodatkowym słowem.
+Test powstał właśnie przy tej poprawce: warstwa usuwająca treść bez licznika
+zasługuje na własny zestaw przypadków, bo jej regresji nie widać w pomiarze.
+
+### Ślad w metrykach — żeby następny taki defekt nie był niewidoczny
+
+Usterka przeżyła tyle sesji dlatego, że `isDuplicate()` i `leaksInstructions()`
+usuwają zdanie **bez zwiększania licznika `trimmed`**. To była świadoma decyzja
+(defekt formy, nie brak pokrycia — pytającego nie interesuje) i zostaje, ale
+„po cichu dla pytającego" nie może znaczyć „bez śladu nigdzie".
+
+Rozwiązanie w trzech krokach, **bez zmiany kształtu odpowiedzi dla widgetu**:
+
+1. `verifyClaims()` zwraca `cicho: {duplikat, instrukcje}`;
+2. `logQuestion()` zapisuje to pole do logu w KV — tylko gdy niezerowe, żeby nie
+   puchł każdy wpis;
+3. `/stats` sumuje je w bloku `diagnostyka`, liczonym po **wszystkich** wpisach,
+   także wewnętrznych. To **same liczby, bez treści pytań**, więc nie narusza
+   zasady, że panel właściciela firmy nie pokazuje pytań pracowników.
+
+Odpowiedź `POST /` nie zmienia się o ani jedno pole. Panel nowego bloku nie zna
+i nie musi — jest dla nas.
 
 ## Granica dostawcy — model i baza wektorowa są wymienne
 

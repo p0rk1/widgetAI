@@ -43,6 +43,12 @@ const CITATION_THRESHOLD = 0.48; // podniesione z 0.42 — przy długich odpowie
 // przeciwko sobie.
 const CITATION_THRESHOLD_KROTKIE = 0.45;
 const KROTKIE_ZDANIE_SLOW = 3; // do tylu słów zdanie liczy się jako krótkie
+
+// Deduplikacja: dwa warunki naraz, nie jeden. Pokrycie mówi, ile zdanie
+// POWTARZA, a druga stała — ile wnosi NOWEGO. Zdanie wnoszące tyle nowych słów
+// treściowych jest rozwinięciem i zostaje, choćby powtarzało wszystko z poprzedniego.
+const DUPLIKAT_POKRYCIE = 0.6;
+const DUPLIKAT_NOWE_SLOWA = 4;
 const HISTORY_TURNS = 6;
 const MAX_QUESTION_LENGTH = 3000; // realni klienci piszą długie, opisowe wiadomości
 const TOP_K_LONG = 10; // przy długich, wielowątkowych pytaniach pobierz więcej fragmentów
@@ -697,7 +703,19 @@ function isDuplicate(sentence, alreadyKept) {
     let common = 0;
     for (const w of a) if (b.has(w)) common++;
     const overlap = common / Math.min(a.size, b.size);
-    if (overlap >= 0.6) return true;
+    if (overlap < DUPLIKAT_POKRYCIE) continue;
+
+    // ZDANIE DŁUŻSZE JEST ROZWINIĘCIEM, NIE POWTÓRZENIEM. Samo pokrycie liczone
+    // wobec KRÓTSZEGO zdania sprawia, że zdanie zawierające wszystkie słowa
+    // krótszego ma pokrycie 1.0 — nawet gdy dokłada dwa razy tyle treści.
+    // Zmierzone 19.08.2026 na i25: zdanie o uprawnieniach inspektora
+    // (podobieństwo 0.775, kilkanaście nowych słów) znikało jako „duplikat"
+    // zdania sprostowującego adresata, które sami dodaliśmy regułą promptu.
+    // Dlatego liczy się nie samo pokrycie, ale ile NOWEGO zdanie wnosi.
+    const nowe = a.size - common;
+    if (nowe >= DUPLIKAT_NOWE_SLOWA) continue;
+
+    return true;
   }
   return false;
 }
@@ -710,6 +728,7 @@ async function verifyClaims(fullText, filtered, env, tryb = PROMPT_PUBLICZNY) {
   const usedSources = new Set();
   const kept = [];
   let removed = 0;
+  const cicho = { duplikat: 0, instrukcje: 0 };
 
   for (let i = 0; i < toCheck.length; i++) {
     const claimVector = claimVectors[i];
@@ -725,9 +744,13 @@ async function verifyClaims(fullText, filtered, env, tryb = PROMPT_PUBLICZNY) {
     // Zdania zdradzające instrukcje lub powtarzające już powiedzianą treść
     // usuwamy po cichu — to defekt formy, nie brak pokrycia w dokumentacji,
     // więc nie zwiększamy licznika "niepotwierdzonych" pokazywanego klientowi.
-    if (leaksInstructions(toCheck[i], tryb) || isDuplicate(toCheck[i], kept)) {
-      continue;
-    }
+    // Te dwie warstwy usuwają zdanie PO CICHU — nie zwiększają licznika
+    // `trimmed` pokazywanego pytającemu, bo to defekt formy, nie brak pokrycia.
+    // Ale „po cichu dla pytającego" nie znaczy „bez śladu": oba przypadki są
+    // liczone i trafiają do logu, a stamtąd do /stats. Bez tego licznika
+    // deduplikacja przez pół roku kasowała treść niewidocznie.
+    if (leaksInstructions(toCheck[i], tryb)) { cicho.instrukcje++; continue; }
+    if (isDuplicate(toCheck[i], kept)) { cicho.duplikat++; continue; }
 
     // Pokrycie ma dwie drogi: podobieństwo powyżej progu ZALEŻNEGO OD DŁUGOŚCI
     // albo dosłowne wystąpienie zdania we fragmencie. Druga droga zastępuje
@@ -755,7 +778,7 @@ async function verifyClaims(fullText, filtered, env, tryb = PROMPT_PUBLICZNY) {
   // Jeśli po wycięciu nie zostało żadne twierdzenie oparte na dokumentacji,
   // odpowiedź jest pusta merytorycznie — lepiej odesłać do biura.
   if (factualKept === 0) {
-    return { ok: false, fallback: FALLBACK_MESSAGE };
+    return { ok: false, fallback: FALLBACK_MESSAGE, cicho };
   }
 
   let text = kept.join(" ");
@@ -763,7 +786,7 @@ async function verifyClaims(fullText, filtered, env, tryb = PROMPT_PUBLICZNY) {
     text += "\n\nW pozostałych kwestiach nie mam potwierdzonych informacji w dokumentacji — te szczegóły potwierdzi biuro.";
   }
 
-  return { ok: true, text, source: [...usedSources].slice(0, 4).join(", "), removed };
+  return { ok: true, text, source: [...usedSources].slice(0, 4).join(", "), removed, cicho };
 }
 
 // Rozpoznaje zdania, które nie zawierają twierdzeń faktycznych o firmie —
@@ -1087,7 +1110,7 @@ function sanitizeHistory(rawHistory) {
 // `space` mówi, z którego endpointu przyszło pytanie. Panel właściciela firmy
 // pokazuje analitykę publicznego widgetu — pytania pracowników nie mają się tam
 // mieszać, nawet zanim bot wewnętrzny dostanie własny panel.
-async function logQuestion(env, question, gap, source, space = SPACE_PUBLIC) {
+async function logQuestion(env, question, gap, source, space = SPACE_PUBLIC, cicho = null) {
   if (!env.RATE_LIMIT_KV) return;
   try {
     const key = `log:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
@@ -1096,6 +1119,10 @@ async function logQuestion(env, question, gap, source, space = SPACE_PUBLIC) {
       gap,
       source: source || null,
       space,
+      // Ślad po warstwach usuwających zdania bez informowania pytającego.
+      // Zapisujemy tylko wtedy, gdy coś faktycznie zniknęło — pusty obiekt
+      // w każdym wpisie logu to koszt bez wartości.
+      ...(cicho && (cicho.duplikat || cicho.instrukcje) ? { cicho } : {}),
       ts: Date.now(),
     });
     await env.RATE_LIMIT_KV.put(key, entry, { expirationTtl: LOG_RETENTION_DAYS * 86400 });
@@ -1150,7 +1177,21 @@ export default {
         // Panel należy do właściciela firmy i dotyczy publicznego widgetu.
         // Pytania pracowników z /internal odfiltrowujemy — wpisy sprzed
         // separacji nie mają pola `space` i liczą się jako publiczne.
-        const entries = (await readLog(env)).filter((e) => (e.space || SPACE_PUBLIC) !== SPACE_INTERNAL);
+        const wszystkie = await readLog(env);
+        const entries = wszystkie.filter((e) => (e.space || SPACE_PUBLIC) !== SPACE_INTERNAL);
+
+        // Diagnostyka warstw usuwających zdania po cichu — SAME LICZBY, bez
+        // treści pytań, więc liczona po WSZYSTKICH wpisach, także wewnętrznych.
+        // Właściciel firmy nie zobaczy tu pytań pracowników, a my zobaczymy,
+        // gdy któraś warstwa znowu zacznie zjadać odpowiedzi niewidocznie.
+        const cichoSuma = { duplikat: 0, instrukcje: 0 };
+        let odpowiedziZUbytkiem = 0;
+        for (const e of wszystkie) {
+          if (!e.cicho) continue;
+          odpowiedziZUbytkiem++;
+          cichoSuma.duplikat += e.cicho.duplikat || 0;
+          cichoSuma.instrukcje += e.cicho.instrukcje || 0;
+        }
         const total = entries.length;
         const gaps = entries.filter((e) => e.gap);
         const answered = entries.filter((e) => !e.gap);
@@ -1183,6 +1224,12 @@ export default {
           gapRate: total ? Math.round((gaps.length / total) * 100) : 0,
           gapQuestions: gaps.slice(0, 50).map((e) => ({ q: e.q, ts: e.ts })),
           recentQuestions: entries.slice(0, 50).map((e) => ({ q: e.q, gap: e.gap, source: e.source, ts: e.ts })),
+          // Nowe pole. Panel go nie zna i nie musi — jest dla nas.
+          diagnostyka: {
+            odpowiedzi_z_cichym_usunieciem: odpowiedziZUbytkiem,
+            zdania_usuniete_po_cichu: cichoSuma,
+            wpisow_w_logu: wszystkie.length,
+          },
           topSources,
           timeline,
         }, corsHeaders(request));
@@ -1407,7 +1454,7 @@ async function handleAsk(request, env, spaces, askedFrom, identity = null) {
       return jsonResponse({ answer: zlozZEskalacja(verdict.fallback, eskalacja), source: null, gap: true, ...poleEskalacji }, corsHeaders(request));
     }
 
-    await logQuestion(env, question, false, verdict.source, askedFrom);
+    await logQuestion(env, question, false, verdict.source, askedFrom, verdict.cicho);
     return jsonResponse({
       answer: zlozZEskalacja(verdict.text, eskalacja),
       source: verdict.source,

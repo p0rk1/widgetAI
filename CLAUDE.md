@@ -71,6 +71,7 @@ wystarcza do testów i jednego użytkownika, nie wystarcza dla zespołu klienta.
 | `ZERO-TRUST.md` | Instrukcja konfiguracji logowania do trybu wewnętrznego | repo |
 | `test-access.mjs` | Test weryfikacji tokenu Access (`node test-access.mjs`) | repo |
 | `test-eskalacja.mjs` | Test warstwy eskalacji (`node test-eskalacja.mjs`) | repo |
+| `test-weryfikacja.mjs` | Test deduplikacji, progów i cytatu dosłownego | repo |
 
 **Treść jest w osobnych plikach od 19.08.2026** — stanowiła ponad połowę wagi
 `worker.js`, a zadanie dotyczące logiki nigdy jej nie potrzebuje. Bundler
@@ -359,9 +360,19 @@ Kolejno w `verifyClaims()` i funkcjach pomocniczych:
   („zgodnie z dokumentacją") wycinane **tylko publicznie** — klient nie wie o jej
   istnieniu, pracownik wie i sam dostaje linię `Podstawa:`.
 - **`isDuplicate()`** — deduplikacja z przycinaniem polskich końcówek fleksyjnych
-  ("wstępny kosztorys" ≈ "wstępna wycena"). **Linia `Podstawa:` jest wyłączona**
-  z deduplikacji — kasowała ją, bo tytuł fragmentu z definicji dzieli słowa
+  ("wstępny kosztorys" ≈ "wstępna wycena"). **Dwa warunki naraz, nie jeden:**
+  pokrycie ≥ `DUPLIKAT_POKRYCIE` (0.6) mówi, ile zdanie powtarza, a próg
+  `DUPLIKAT_NOWE_SLOWA` (4) — ile wnosi nowego. Zdanie wnoszące 4 lub więcej
+  nowych słów treściowych jest **rozwinięciem, nie powtórzeniem**, i zostaje.
+  Bez tego drugiego warunku zdanie dłuższe miało pokrycie 1.0 wobec krótszego
+  i znikało, choć dokładało dwa razy tyle treści. **Linia `Podstawa:` jest
+  wyłączona** z deduplikacji osobno — tytuł fragmentu z definicji dzieli słowa
   ze zdaniem opartym na jego treści.
+- **Ślad w metrykach.** `isDuplicate()` i `leaksInstructions()` usuwają zdania
+  bez zwiększania licznika `trimmed` (to defekt formy, nie brak pokrycia). Są
+  jednak liczone i zapisywane w logu jako `cicho: {duplikat, instrukcje}`,
+  a `/stats` sumuje je w polu `diagnostyka`. **Nie usuwać tego licznika** —
+  bez niego deduplikacja kasowała treść niewidocznie przez wiele sesji.
 - **`wystepujeDoslownie()`** — druga, niezależna droga pokrycia: zdanie występujące
   **dosłownie** w pobranym fragmencie przechodzi bez względu na cosinus. Ma guard
   na zgubione zaprzeczenie — „zakrywaj zbrojenia" jest podciągiem „nie zakrywaj
@@ -458,21 +469,12 @@ też poprawne parafrazy.
   nie zna trybu**~~ — **naprawione 19.08.2026** (próg zależny od długości, cytat
   dosłowny, warstwy znające tryb). Pomiar kontrolny: 8 zdań traconych na 89 przed,
   **0 na 71 po**
-- **`isDuplicate()` kasuje odrębne zdanie, gdy dzieli słownictwo z poprzednim** —
-  **najpoważniejszy z otwartych problemów.** Próg 60% wspólnych słów liczony wobec
-  krótszego zdania łapie: dwa różne kroki procedury (`i23`: „nie zakrywaj zbrojenia
-  przed odbiorem" i „przed zakryciem wykonaj dokumentację zdjęciową") oraz —
-  co gorsza — **zdanie merytoryczne skasowane przez zdanie sprostowujące**.
-  Zmierzone 19.08.2026 na `i25`: po dodaniu reguły adresata odpowiedź zaczyna się
-  od „Inspektor nie wydaje poleceń bezpośrednio Tobie, ale kierownikowi budowy",
-  a właściwa treść („ma prawo żądać poprawek, ponownego wykonania, wstrzymania
-  robót", podobieństwo **0.775**) znika jako duplikat. Wszystko **po cichu** —
-  deduplikacja nie zwiększa licznika `trimmed`.
-  Naprawiony jest wyłącznie wyjątek dla linii `Podstawa:`. Proponowana poprawka:
-  nie uznawać za duplikat zdania **istotnie dłuższego** od tego, z którym się
-  pokrywa — dłuższe zdanie jest rozwinięciem, nie powtórzeniem. Progu 0.6 nie
-  ruszano, bo dotyczy też trybu publicznego. **Nienaprawione, decyzja po stronie
-  właściciela**
+- ~~**`isDuplicate()` kasuje odrębne zdanie, gdy dzieli słownictwo z poprzednim**~~ —
+  **naprawione 20.08.2026** warunkiem „4 nowe słowa treściowe = rozwinięcie".
+  Pomiar: tryb wewnętrzny 1 zdanie tracone na 73 przed, **0 na 72 po**; tryb
+  publiczny **0 na 66 przed i po** — defekt nigdy nie dotykał obecnych klientów,
+  bo odpowiedzi dla nich są prozą o zmiennym słownictwie, a nie listą kroków
+  powtarzających te same rzeczowniki
 - **`numbersAreGrounded()` nie odróżnia liczby zmyślonej od zacytowanej z pytania** —
   „przy pojemności 1600 cm3" wycina całe zdanie, bo `1600` przyszło z pytania,
   a w dokumentacji jest tylko próg 900. Zachowanie jest bezpieczne, ale kosztuje
@@ -566,7 +568,8 @@ Kolejność jest celowa — uzasadnienie jest częścią decyzji, nie ozdobnikie
 - Przy zmianie progów → najpierw `/debug`, potem decyzja
 - Przed commitem → `node --check` na **wszystkich** plikach źródłowych plus
   `wrangler deploy --dry-run`; przy zmianach w weryfikacji tokenu także
-  `node test-access.mjs`, a przy zmianach w eskalacji `node test-eskalacja.mjs`
+  `node test-access.mjs`, przy zmianach w eskalacji `node test-eskalacja.mjs`,
+  a przy zmianach w warstwach weryfikacji `node test-weryfikacja.mjs`
 - `ALLOWED_ORIGINS` to lista samych domen bez ścieżek. Nowy klient = nowe wpisy
 - Nie dodawać warstw zabezpieczeń bez zmierzenia problemu na `/debug` —
   projekt ma za sobą kilka rund łatania objawów zamiast przyczyn

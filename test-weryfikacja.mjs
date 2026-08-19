@@ -1,0 +1,115 @@
+// Test warstw weryfikacji: deduplikacja, próg zależny od długości, cytat dosłowny.
+//
+// Uruchomienie:  node test-weryfikacja.mjs
+//
+// Powstał przy naprawie isDuplicate() 20.08.2026. Ta warstwa usuwała zdania
+// PO CICHU — bez licznika `trimmed` — więc jej defekt był niewidoczny w każdym
+// pomiarze przez wiele sesji. Test istnieje po to, żeby zmiana progów albo
+// stemmera nie przywróciła tego stanu niezauważenie.
+
+import { isDuplicate, progCytowania, wystepujeDoslownie } from "./worker.js";
+
+let zdane = 0;
+const oblane = [];
+
+function sprawdz(nazwa, wynik, oczekiwane) {
+  const ok = wynik === oczekiwane;
+  if (ok) zdane++;
+  else oblane.push(`${nazwa} — oczekiwano ${oczekiwane}, dostano ${wynik}`);
+  console.log(`${ok ? "OK  " : "BŁĄD"} ${nazwa}`);
+}
+
+// ---------------------------------------------------------------
+// isDuplicate — PRAWDZIWE powtórzenia muszą nadal wypadać
+// ---------------------------------------------------------------
+console.log("--- prawdziwe powtórzenia (mają być łapane) ---");
+
+sprawdz(
+  "parafraza tej samej treści",
+  isDuplicate("Wstępną wycenę przygotowuje biuro po wizji lokalnej.",
+    ["Wstępny kosztorys przygotowuje biuro po wizji lokalnej."]),
+  true
+);
+sprawdz(
+  "to samo zdanie innym szykiem",
+  isDuplicate("Reklamację rozpatrujemy w terminie czternastu dni roboczych.",
+    ["Reklamacje rozpatrywane są w terminie czternastu dni roboczych."]),
+  true
+);
+sprawdz(
+  "powtórzenie z jednym dodatkowym słowem",
+  isDuplicate("Zgłoś uszkodzenie sprzętu brygadziście tego samego dnia.",
+    ["Zgłoś uszkodzenie brygadziście tego samego dnia."]),
+  true
+);
+sprawdz(
+  "powtórzenie po kilku innych zdaniach",
+  isDuplicate("Wycenę przygotowuje biuro po wizji lokalnej.",
+    ["Budowa domu trwa 6-9 miesięcy.", "Wycenę przygotowuje biuro po wizji lokalnej u klienta."]),
+  true
+);
+
+// ---------------------------------------------------------------
+// isDuplicate — ROZWINIĘCIA muszą zostać
+// ---------------------------------------------------------------
+console.log("\n--- rozwinięcia (mają zostać) ---");
+
+// Przypadek, który wywołał tę poprawkę: zdanie merytoryczne o uprawnieniach
+// inspektora znikało jako „duplikat" zdania sprostowującego adresata.
+sprawdz(
+  "i25: treść merytoryczna po zdaniu sprostowującym",
+  isDuplicate(
+    "Inspektor ma prawo wydawać kierownikowi budowy polecenia wpisem do dziennika budowy, żądać poprawek albo ponownego wykonania wadliwie wykonanych robót, a także żądać wstrzymania dalszych robót, gdyby ich kontynuacja groziła wypadkiem albo niezgodnością z projektem.",
+    ["Inspektor nadzoru inwestorskiego nie wydaje poleceń bezpośrednio Tobie, ale kierownikowi budowy."]
+  ),
+  false
+);
+// i23: dwa różne kroki tej samej procedury, wspólne słownictwo.
+sprawdz(
+  "i23: odrębny krok procedury",
+  isDuplicate(
+    "Przed zakryciem wykonaj dokumentację zdjęciową z widoczną miarą i datą i zapisz ją w folderze budowy.",
+    ["Nie zakrywaj zbrojenia przed odbiorem — zakrycie bez odbioru oznacza odkrywkę na nasz koszt."]
+  ),
+  false
+);
+sprawdz(
+  "linia źródła nigdy nie jest duplikatem",
+  isDuplicate("Podstawa: Dziennik budowy — kto i co wpisuje",
+    ["Prawo wpisu do dziennika budowy mają wyłącznie kierownik budowy, inspektor nadzoru inwestorskiego i inwestor."]),
+  false
+);
+sprawdz(
+  "zdanie o czym innym",
+  isDuplicate("Stan surowy zamknięty wymaga kolejnych 3-4 tygodni.",
+    ["Wycenę przygotowuje biuro po wizji lokalnej."]),
+  false
+);
+
+// ---------------------------------------------------------------
+// progCytowania i cytat dosłowny
+// ---------------------------------------------------------------
+console.log("\n--- próg zależny od długości i cytat dosłowny ---");
+
+sprawdz("zdanie 2-słowowe ma próg obniżony", progCytowania("okulary ochronne"), 0.45);
+sprawdz("zdanie 3-słowowe ma próg obniżony", progCytowania("Zatwierdza to zarząd."), 0.45);
+sprawdz("zdanie dłuższe ma próg pełny",
+  progCytowania("Nie uznawaj roszczenia i nie obiecuj naprawy ani odszkodowania."), 0.48);
+
+const fragmenty = [{
+  metadata: {
+    title: "Roboty zanikające",
+    text: "Nie zakrywaj zbrojenia, izolacji przeciwwilgociowej ani przyłączy przed odbiorem.",
+  },
+}];
+sprawdz("cytat dosłowny rozpoznany",
+  wystepujeDoslownie("nie zakrywaj zbrojenia", fragmenty), true);
+sprawdz("zgubione zaprzeczenie NIE jest cytatem",
+  wystepujeDoslownie("zakrywaj zbrojenia, izolacji", fragmenty), false);
+sprawdz("zdanie spoza fragmentu nie jest cytatem",
+  wystepujeDoslownie("zakrywaj wszystko bez odbioru", fragmenty), false);
+
+console.log("\n---");
+for (const o of oblane) console.log(`BŁĄD: ${o}`);
+console.log(`zdane: ${zdane}, oblane: ${oblane.length}`);
+if (oblane.length) process.exitCode = 1;

@@ -41,6 +41,13 @@ rozdzielaczem na wariant publiczny (bez zmian, sprawdzone bajt w bajt) i wewnęt
 `PROMPT_RDZEN` trzyma reguły rzetelności. Skalibrowane na trzech fragmentach
 testowych — szczegóły w „Prompty — dwa tryby". Wersja `821136dd`.
 
+**Co zrobiono 19.08.2026, drugie podejście:** napisana **treść wewnętrzna —
+41 fragmentów** w sześciu obszarach, wdrożona (wersja `7bbe9bf3`), przestrzeń
+`internal` przeindeksowana. Zbiorczy przebieg diagnostyczny na 20 pytaniach
+wykazał **pięć problemów, żaden jeszcze nie naprawiony** — szczegóły i liczby
+w „Treść wewnętrzna — 41 fragmentów i mapa problemów". To jest miejsce, od
+którego zaczyna kolejna sesja.
+
 **Co zrobiono 18.08.2026:** aplikacja Access utworzona w dashboardzie (cały host
 `budmax-wewnetrzny.know-base.app`, `Path` pusty, reguła Allow na adres właściciela),
 AUD i domena zespołu wpisane do `[vars]`, deploy, przetestowane. Kroki 1 i 4–8
@@ -438,6 +445,84 @@ skalibrowany na treści, którą sami napisaliśmy pod test — dopiero prawdziw
 (etap 4) pokaże, czy reguła „kroki w kolejności" nie łamie się na fragmentach
 opisowych, które żadnej procedury nie zawierają.
 
+## Treść wewnętrzna — 41 fragmentów i mapa problemów
+
+Napisana 19.08.2026 w jednym podejściu, wszystkie obszary naraz — świadomie,
+zamiast łatania po jednym. Powód: prompt był już skalibrowany, więc jedyną
+zmienną zostawała treść, a problemy dało się zobaczyć zbiorczo, nim którykolwiek
+zostanie „naprawiony" kosztem innego.
+
+| Obszar | Fragmenty |
+|---|---|
+| BHP i wypadki | 11 (`i02`, `i04`–`i13`) |
+| Kadry | 8 (`i03`, `i14`–`i20`) |
+| Procedury na budowie | 7 (`i21`–`i27`) |
+| Kontakt z klientem | 6 (`i28`–`i33`) |
+| Sprzęt i materiały | 5 (`i34`–`i38`) |
+| Finanse i negocjacje | 4 (`i01`, `i39`–`i41`) |
+
+`i01`, `i02` i `i03` **zostały przy swoich identyfikatorach** — reindeks jest
+idempotentny po ID, więc przenumerowanie zostawiłoby w indeksie sieroty po starych.
+Dopisano im wyłącznie odsyłacze, treść merytoryczna bez zmian, więc kalibracja
+promptu z 19.08 nadal obowiązuje.
+
+Zasady pisania są te same co przy `CHUNKS` (otwarcie sformułowaniem pytającym,
+odsyłacze w obie strony na stykach, liczby oparte o Kodeks pracy, przepisy BHP
+i prawo budowlane) i są wypisane w komentarzu nad `INTERNAL_CHUNKS`. 42 odsyłacze,
+wszystkie rozwiązują się do istniejących tytułów — sprawdzane skryptem, bo literówka
+w tytule zamienia rozgraniczenie w martwy tekst.
+
+### Wynik pomiaru zbiorczego (20 pytań, `/debug?space=obie`, wersja `7bbe9bf3`)
+
+**Co wyszło dobrze:** 20/20 pytań ma lidera z przestrzeni `internal`, 20/20 kończy
+się linią `Podstawa:`, żadnej luki dokumentacyjnej, żadnej liczby spoza fragmentów.
+Odpowiedzi wieloczęściowe zwykle kompletne (nadgodziny 100% + limit 150 h, urlop
+26 dni + 30 września, choroba + badanie kontrolne przez granicę kadry↔BHP).
+
+**Pięć problemów — żaden nie dotyczy treści:**
+
+1. **Próg 0.48 wycina krótkie zdania wyliczeń.** Wszystkie 4 wycięcia na 88 zdań
+   są tej klasy: „okulary ochronne" (0.359 — i to była właśnie odpowiedź na pytanie),
+   „Zatwierdza to zarząd." (0.466), „Ponownego wykonania wadliwie wykonanych robót."
+   (0.461), „Nie uznawaj roszczenia i nie obiecuj naprawy ani odszkodowania." (0.467 —
+   zdanie **dosłowne** z `i33`). Przyczyna nie leży w pokryciu, tylko w długości:
+   krótkie zdanie ma niskie cosinus wobec długiego fragmentu. Ton instruktażowy
+   („każdy krok w osobnej linii") produkuje takie zdania seryjnie, więc prompt
+   wewnętrzny i weryfikacja pracują tu przeciwko sobie.
+2. **`isUnsupportablePromise()` nie zna trybu.** Wzorzec
+   `(oferujemy|udzielamy|mamy|przysługuj|…)…(rabat|zniżk|upust)` wycina „Przysługuje
+   ci rabat do 3 procent" — dokładnie to, po co istnieje `i39`. Warstwa powstała dla
+   bota publicznego. **`/debug` tego nie pokaże**: uruchamia samą warstwę semantyczną,
+   bez `numbersAreGrounded()`, `isUnsupportablePromise()`, `leaksInstructions()`
+   i `isDuplicate()`. Liczba wycięć z `/debug` jest więc **dolnym oszacowaniem**.
+3. **Ściśnięte grupy na stykach obszarów.** Rękawice: `i08` i `i05` po 0.527,
+   odskok **0.000**. Marża przy 500 tys.: `i01` 0.655 i `i39` 0.650, odskok 0.005.
+   Upadek z rusztowania: liderem `i02` (0.592), a właściwy `i04` dopiero trzeci
+   (0.572), z `i35` „Uszkodzenie sprzętu" pomiędzy nimi. Uwaga interpretacyjna:
+   **to nie jest sygnatura z „Procedury łatania luk"** — tam ściśnięta grupa znaczy
+   brak fragmentu, tu znaczy nadmiar fragmentów bliskich sobie. Odpowiedzi mimo to
+   trafne, bo model wybiera z kontekstu poprawny fragment.
+4. **Pytanie wieloczęściowe dostało pół odpowiedzi — mimo obu fragmentów w kontekście.**
+   „Jaką marżę mogę zejść przy 500 tys. i kto zatwierdza": padło samo 12% po
+   akceptacji zarządu, bez 22% i 14% i bez progów z `i39`, choć oba fragmenty były
+   w kontekście z niemal równym wynikiem. To **nawrót wpadki z 18.08.2026** w innej
+   postaci: wtedy prompt zatajał, teraz nie łączy dwóch fragmentów w jedną odpowiedź.
+5. **Ton rozkazujący narzucony fragmentowi opisowemu.** `i25` (uprawnienia inspektora
+   nadzoru) nie zawiera procedury, a model i tak wypisał listę wypunktowaną
+   („może od ciebie żądać: Poprawek…"), z której jedna pozycja wypadła na progu.
+   Przesunął też adresata: fragment mówi, że polecenia inspektora dostaje kierownik
+   budowy, odpowiedź mówiła „od ciebie". To potwierdzenie przewidywania z 19.08 —
+   reguła „kroki w kolejności wykonania" **łamie się na fragmentach opisowych**.
+
+**Dwa drobiazgi warte odnotowania, nie problemy:** przy pytaniu o szkolenia BHP
+model podał w `Podstawa:` także publiczny fragment `c34` (pracownik nie znajdzie go
+w dokumentacji wewnętrznej), a w odpowiedzi o gotówce napisał „Zgodnie z procedurą" —
+zwrot o włos od wzorców `leaksInstructions()`, których jeszcze nie rusza.
+
+**Czego pomiar nie sprawdził:** pełnej ścieżki `POST /internal` z prawdziwym
+tokenem. `/debug` omija Access i trzy z czterech warstw weryfikacji — po naprawach
+trzeba powtórzyć pomiar sposobem A z `ZERO-TRUST.md`, krok 8.
+
 ## Granica dostawcy — model i baza wektorowa są wymienne
 
 W `worker.js` jest sekcja **„GRANICA DOSTAWCY"**: obiekt `PROVIDER` (identyfikatory
@@ -713,8 +798,19 @@ też poprawne parafrazy.
   (Access), panel nie.** Właściciel firmy nadal dostaje klucz, który otwiera też
   `/purge` i `/reindex` — ten sam problem, który rozwiązaliśmy dla pracowników,
   zostaje nierozwiązany dla klienta
-- `INTERNAL_CHUNKS` to 3 fragmenty testowe, nie dokumentacja. Bot dla pracowników
-  ma działającą infrastrukturę i pustą treść
+- ~~`INTERNAL_CHUNKS` to 3 fragmenty testowe, nie dokumentacja~~ — **nieaktualne
+  od 19.08.2026**: 41 fragmentów w sześciu obszarach. Otwarte pozostają problemy
+  z pomiaru, nie brak treści — patrz „Treść wewnętrzna — 41 fragmentów i mapa
+  problemów"
+- **Weryfikacja zdanie po zdaniu wycina krótkie zdania wyliczeń** — próg
+  `CITATION_THRESHOLD = 0.48` odcina zdania w rodzaju „okulary ochronne" (0.359),
+  bo krótki tekst ma niskie podobieństwo do długiego fragmentu **niezależnie od
+  tego, czy jest w nim zawarty**. Dotyka trybu wewnętrznego mocniej, bo to jego
+  prompt każe wypisywać kroki w osobnych liniach. Zmierzone 19.08.2026, nienaprawione
+- **`isUnsupportablePromise()` nie zna trybu** — wzorzec od rabatów wycina zdania,
+  które w trybie wewnętrznym są poprawne („Przysługuje ci rabat do 3 procent").
+  Warstwa powstała dla bota publicznego i nie odróżnia obietnicy złożonej klientowi
+  od informacji podanej pracownikowi. Nienaprawione
 - ~~**Tryb wewnętrzny odpowiada ostrożnie jak klientowi**~~ — **nieaktualne
   od 19.08.2026**, rozwiązane osobnym promptem wewnętrznym (patrz „Prompty —
   dwa tryby"). Pomiar kontrolny: to samo pytanie zwraca teraz 22% **i** 14%
@@ -744,8 +840,16 @@ Kolejność jest celowa — uzasadnienie jest częścią decyzji, nie ozdobnikie
      19.08.2026.** Rozdzielacz `buildSystemPrompt(chunks, tryb)`, wspólny
      `PROMPT_RDZEN`, publiczny nietknięty (sprawdzone bajt w bajt).
      Skalibrowany na trzech fragmentach testowych — patrz „Prompty — dwa tryby".
-   - **Etap 4: treść wewnętrzna** — `INTERNAL_CHUNKS` ma teraz 3 fragmenty
-     testowe (marża, BHP, kadry), nie prawdziwą dokumentację.
+   - ~~**Etap 3, warstwa 2: treść wewnętrzna**~~ — ✅ **napisana 19.08.2026.**
+     41 fragmentów w sześciu obszarach, wdrożone i przeindeksowane. Treści
+     **nie brakuje już nigdzie** — pomiar na 20 pytaniach nie znalazł ani jednej
+     luki dokumentacyjnej.
+   - **Etap 4: domknięcie problemów z pomiaru** — pięć rzeczy, żadna nie dotyczy
+     treści: próg weryfikacji kontra krótkie zdania wyliczeń, `isUnsupportablePromise()`
+     nieznający trybu, ściśnięte grupy na stykach obszarów, niepełna odpowiedź na
+     pytanie wieloczęściowe mimo obu fragmentów w kontekście, oraz ton rozkazujący
+     narzucony fragmentowi opisowemu. Liczby i przypadki w „Treść wewnętrzna —
+     41 fragmentów i mapa problemów". **Kolejność napraw nierozstrzygnięta.**
 2. **Druga branża** — kancelaria albo gabinet. Sprawdzenie, ile zabezpieczeń jest
    uniwersalnych, a ile to protezy pod budowlankę (wzorce mówią o rabatach
    w hurtowniach — u kancelarii groźne będą terminy przedawnienia i szanse wygranej).

@@ -33,12 +33,15 @@ każdej sesji, a historia decyzji jest potrzebna kilka razy w miesiącu.
 | 18.08 | Aplikacja Access skonfigurowana, tryb wewnętrzny domknięty pomiarem | `DECYZJE.md` → Cloudflare Access |
 | 19.08 | Rozdzielony prompt, **41 fragmentów treści wewnętrznej**, rozdzielone pliki | `DECYZJE.md` → Prompty, Treść wewnętrzna |
 
-**Gdzie jesteśmy:** treści nie brakuje już nigdzie — pomiar na 20 pytaniach nie
-znalazł ani jednej luki dokumentacyjnej. Otwarte jest **pięć problemów z pomiaru**,
-żaden nie dotyczy treści (próg weryfikacji kontra krótkie zdania wyliczeń,
-`isUnsupportablePromise()` nieznający trybu, ściśnięte grupy na stykach obszarów,
-niepełna odpowiedź na pytanie wieloczęściowe, ton rozkazujący narzucony fragmentowi
-opisowemu). Liczby i przypadki: `DECYZJE.md` → „Treść wewnętrzna".
+**Gdzie jesteśmy:** treści nie brakuje nigdzie, a z pięciu problemów z pomiaru
+**trzy są naprawione** (próg zależny od długości zdania z cytatem dosłownym,
+warstwy weryfikacji znające tryb, prompt niewymuszający listy kroków przy
+fragmencie opisowym). Pomiar kontrolny na tych samych 20 pytaniach: **8 zdań
+traconych na 89 przed naprawami, 0 na 71 po**. Problem ściśniętych grup zostawiony
+świadomie. **Nadal otwarte:** synteza odpowiedzi wieloczęściowej (model nie łączy
+dwóch fragmentów, choć oba są w kontekście) oraz dwa defekty znalezione przy okazji —
+`isDuplicate()` kasujący odrębne kroki procedury i `numbersAreGrounded()` wycinający
+liczbę zacytowaną z pytania. Wszystko w „Znane ograniczenia" i `DECYZJE.md`.
 
 **Zostało po stronie właściciela, nie kodu:** kroki 2 i 3 z `ZERO-TRUST.md`
 (Google i Microsoft jako metody logowania). Dziś działa wyłącznie One-time PIN —
@@ -270,7 +273,12 @@ Uprawnienia są **rozdzielone na dwa niezależne mechanizmy** — patrz sekcja
 - `GET /debug?key=…&q=pytanie&space=public|internal|obie` — diagnostyka: co znalazło,
   z jakim wynikiem, **z której przestrzeni**, które zdania przechodzą weryfikację
   i **w polu `tryb_promptu`, który wariant promptu poszedł do modelu**
-  (`internal`/`obie` → wewnętrzny). Bez `space` sprawdza `public`
+  (`internal`/`obie` → wewnętrzny). Bez `space` sprawdza `public`.
+  **Od 19.08.2026 uruchamia wszystkie warstwy weryfikacji, nie samą semantyczną** —
+  przy każdym zdaniu podaje `prog`, `doslownie`, `liczby_ok`, `obietnica`,
+  `instrukcje`, `duplikat` i przyczynę w polu `akcja`. Wcześniej pokazywał sam
+  cosinus, więc jego liczba wycięć była **dolnym oszacowaniem**, a zdania usuwane
+  po cichu przez deduplikację nie były w nim widoczne w ogóle
 - `GET /purge?key=…&ids=c01,c02` — usuwa wpisy z indeksu (ID są globalne, niezależne od przestrzeni)
 
 ## Jak działa przepływ zapytania
@@ -291,13 +299,23 @@ Kolejno w `verifyClaims()` i funkcjach pomocniczych:
   w pobranych fragmentach. To najważniejsze zabezpieczenie: łapie zmyślone ceny
   ("1500–3000 zł/m²") i terminy ("3–4 miesiące"), których weryfikacja semantyczna
   nie widziała, bo zdanie brzmiało poprawnie.
-- **`isUnsupportablePromise()`** — obietnice, których dokumentacja nie może potwierdzić
-  (wolne terminy, rabaty, "postaramy się zdążyć", niższy VAT). Ma wbudowany wyjątek
-  dla zaprzeczeń i odesłań do biura — inaczej wycinało "nie oferujemy rabatów".
-- **`leaksInstructions()`** — model czasem przepisuje instrukcje zamiast je wykonać
-  ("Proszę mi powiedzieć, że…"). Wycinane.
+- **`isUnsupportablePromise(s, tryb)`** — **zna tryb od 19.08.2026.** W obu trybach
+  wycina deklaracje wolnych terminów i obietnice zdążenia. Wzorce rabatowe i cenowe
+  działają **tylko publicznie**: pracownikowi „przysługuje ci rabat do 3 procent"
+  trzeba podać, bo to treść `i39`. Wyjątek dla zaprzeczeń i odesłań do biura zostaje.
+- **`leaksInstructions(s, tryb)`** — **zna tryb od 19.08.2026.** „Proszę mi powiedzieć,
+  że…" i „jako asystent AI" wycinane w obu trybach. Odwołania do dokumentacji
+  („zgodnie z dokumentacją") wycinane **tylko publicznie** — klient nie wie o jej
+  istnieniu, pracownik wie i sam dostaje linię `Podstawa:`.
 - **`isDuplicate()`** — deduplikacja z przycinaniem polskich końcówek fleksyjnych
-  ("wstępny kosztorys" ≈ "wstępna wycena").
+  ("wstępny kosztorys" ≈ "wstępna wycena"). **Linia `Podstawa:` jest wyłączona**
+  z deduplikacji — kasowała ją, bo tytuł fragmentu z definicji dzieli słowa
+  ze zdaniem opartym na jego treści.
+- **`wystepujeDoslownie()`** — druga, niezależna droga pokrycia: zdanie występujące
+  **dosłownie** w pobranym fragmencie przechodzi bez względu na cosinus. Ma guard
+  na zgubione zaprzeczenie — „zakrywaj zbrojenia" jest podciągiem „nie zakrywaj
+  zbrojenia", więc trafienie poprzedzone partykułą przeczącą się nie liczy.
+- **`progCytowania()`** — próg zależny od długości zdania, patrz „Progi".
 - **`isConnectiveSentence()`** — zdania grzecznościowe przechodzą bez pokrycia,
   bo niczego nie obiecują.
 - **`splitSentences()`** — chroni skróty (`m.in.`, `np.`) przed rozbiciem zdania
@@ -309,10 +327,22 @@ Kolejno w `verifyClaims()` i funkcjach pomocniczych:
 TOP_K = 8              # 6 było za mało dla krótkich, ogólnych pytań
 TOP_K_LONG = 10        # dla pytań ≥400 znaków (wielowątkowych)
 MIN_SIMILARITY = 0.35
-CITATION_THRESHOLD = 0.48   # 0.42 przepuszczało za dużo, 0.5 odrzucało poprawne parafrazy
+CITATION_THRESHOLD = 0.48           # 0.42 przepuszczało za dużo, 0.5 odrzucało poprawne parafrazy
+CITATION_THRESHOLD_KROTKIE = 0.45   # zdania do 3 słów — patrz niżej
+KROTKIE_ZDANIE_SLOW = 3
 ```
 
-Zmieniając progi, użyj `/debug` — pokazuje dokładne wyniki podobieństwa zamiast zgadywania.
+**Próg zależy od długości zdania od 19.08.2026.** Cosinus krótkiego zdania wobec
+długiego fragmentu jest niski **niezależnie od tego, czy zdanie jest w nim zawarte**,
+a prompt wewnętrzny produkuje krótkie zdania seryjnie, bo każe wypisywać kroki
+w osobnych liniach. Podstawa liczbowa: na 89 zmierzonych zdaniach najniższe
+**przechodzące** zdanie 1–3-słowowe miało 0.520, a wycinane 0.458 i 0.466 — oba
+z pokryciem. Próg 0.45 domyka lukę i z definicji nie może wyrzucić niczego, co
+przechodziło wcześniej. Pełny rozkład: `DECYZJE.md` → „Progi zależne od długości".
+
+Zmieniając progi, użyj `/debug` — pokazuje dokładne wyniki podobieństwa zamiast
+zgadywania, a od 19.08.2026 **uruchamia wszystkie warstwy weryfikacji**, nie samą
+semantyczną, i podaje przy każdym zdaniu przyczynę usunięcia.
 
 ## Ślepe uliczki — nie otwierać ponownie
 
@@ -373,15 +403,28 @@ też poprawne parafrazy.
 - ~~`INTERNAL_CHUNKS` to 3 fragmenty testowe, nie dokumentacja~~ — **nieaktualne
   od 19.08.2026**: 41 fragmentów w sześciu obszarach. Otwarte pozostają problemy
   z pomiaru, nie brak treści — patrz `DECYZJE.md` → „Treść wewnętrzna"
-- **Weryfikacja zdanie po zdaniu wycina krótkie zdania wyliczeń** — próg
-  `CITATION_THRESHOLD = 0.48` odcina zdania w rodzaju „okulary ochronne" (0.359),
-  bo krótki tekst ma niskie podobieństwo do długiego fragmentu **niezależnie od
-  tego, czy jest w nim zawarty**. Dotyka trybu wewnętrznego mocniej, bo to jego
-  prompt każe wypisywać kroki w osobnych liniach. Zmierzone 19.08.2026, nienaprawione
-- **`isUnsupportablePromise()` nie zna trybu** — wzorzec od rabatów wycina zdania,
-  które w trybie wewnętrznym są poprawne („Przysługuje ci rabat do 3 procent").
-  Warstwa powstała dla bota publicznego i nie odróżnia obietnicy złożonej klientowi
-  od informacji podanej pracownikowi. Nienaprawione
+- ~~**Weryfikacja wycina krótkie zdania wyliczeń**~~ i ~~**`isUnsupportablePromise()`
+  nie zna trybu**~~ — **naprawione 19.08.2026** (próg zależny od długości, cytat
+  dosłowny, warstwy znające tryb). Pomiar kontrolny: 8 zdań traconych na 89 przed,
+  **0 na 71 po**
+- **`isDuplicate()` potrafi skasować odrębny krok procedury** — przy odpowiedzi
+  wypunktowanej dwa kroki dotyczące tej samej rzeczy („nie zakrywaj zbrojenia przed
+  odbiorem" i „przed zakryciem wykonaj dokumentację zdjęciową") przekraczają próg
+  60% wspólnych słów i drugi znika **po cichu**, bez zwiększenia licznika `trimmed`.
+  Zmierzone 19.08.2026 na `i23`. Wyjątek dopisano wyłącznie dla linii `Podstawa:`;
+  progu 0.6 **nie ruszano**, bo dotyczy też trybu publicznego i wymaga własnego
+  pomiaru. Nienaprawione
+- **`numbersAreGrounded()` nie odróżnia liczby zmyślonej od zacytowanej z pytania** —
+  „przy pojemności 1600 cm3" wycina całe zdanie, bo `1600` przyszło z pytania,
+  a w dokumentacji jest tylko próg 900. Zachowanie jest bezpieczne, ale kosztuje
+  poprawną odpowiedź. Dotyczy obu trybów. Nienaprawione
+- **Ściśnięte grupy na stykach obszarów** (problem 3 z mapy) — **zostawione
+  świadomie** 19.08.2026. Odpowiedzi są trafne mimo małego odskoku lidera, a
+  rozsuwanie fragmentów oznaczałoby przepisywanie treści pod wyszukiwarkę
+- **Pytanie wieloczęściowe nadal bywa zbywane połową odpowiedzi** (problem 4) —
+  pomiar powtórzony po naprawach 19.08.2026: pytanie o marżę przy 500 tys. dalej
+  zwraca sam próg 12%, bez 22% i 14%, mimo obu fragmentów w kontekście z niemal
+  równym wynikiem. Naprawy 1, 2 i 5 tego nie ruszyły — to osobny problem syntezy
 - ~~**Tryb wewnętrzny odpowiada ostrożnie jak klientowi**~~ — **nieaktualne
   od 19.08.2026**, rozwiązane osobnym promptem wewnętrznym (`DECYZJE.md` → „Prompty"). Pomiar kontrolny: to samo pytanie zwraca teraz 22% **i** 14%
 
@@ -414,11 +457,20 @@ Kolejność jest celowa — uzasadnienie jest częścią decyzji, nie ozdobnikie
      41 fragmentów w sześciu obszarach, wdrożone i przeindeksowane. Treści
      **nie brakuje już nigdzie** — pomiar na 20 pytaniach nie znalazł ani jednej
      luki dokumentacyjnej.
-   - **Etap 4: domknięcie problemów z pomiaru** — pięć rzeczy, żadna nie dotyczy
-     treści: próg weryfikacji kontra krótkie zdania wyliczeń, `isUnsupportablePromise()`
-     nieznający trybu, ściśnięte grupy na stykach obszarów, niepełna odpowiedź na
-     pytanie wieloczęściowe mimo obu fragmentów w kontekście, oraz ton rozkazujący
-     narzucony fragmentowi opisowemu. Liczby i przypadki w `DECYZJE.md` → „Treść wewnętrzna". **Kolejność napraw nierozstrzygnięta.**
+   - ~~**Etap 4: domknięcie problemów z pomiaru**~~ — ✅ **w części wykonane
+     19.08.2026.** Naprawione **1** (próg zależny od długości + cytat dosłowny),
+     **2** (warstwy znające tryb) i **5** (prompt: kroki tylko przy procedurze,
+     zachowanie adresata). Problem **3** (ściśnięte grupy) zostawiony świadomie.
+     Problem **4** zmierzony ponownie po naprawach i **nadal występuje** — patrz
+     „Znane ograniczenia". Przy okazji znaleziono i opisano dwa nowe:
+     `isDuplicate()` kasujący odrębne kroki i `numbersAreGrounded()` wycinający
+     liczbę zacytowaną z pytania. Szczegóły: `DECYZJE.md` → „Progi zależne
+     od długości".
+   - **Etap 5 (otwarty): synteza odpowiedzi wieloczęściowej** — problem 4 nie jest
+     ani retrievalem (oba fragmenty są w kontekście), ani weryfikacją (nic nie jest
+     wycinane): model po prostu nie łączy dwóch fragmentów w jedną odpowiedź.
+     Kolejna próba należy do promptu, ale **przed nią trzeba zmierzyć**, czy to
+     kwestia sformułowania pytania, czy kolejności fragmentów w kontekście.
 2. **Druga branża** — kancelaria albo gabinet. Sprawdzenie, ile zabezpieczeń jest
    uniwersalnych, a ile to protezy pod budowlankę (wzorce mówią o rabatach
    w hurtowniach — u kancelarii groźne będą terminy przedawnienia i szanse wygranej).

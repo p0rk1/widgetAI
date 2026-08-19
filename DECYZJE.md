@@ -22,6 +22,7 @@ zapis wraca jako ten sam błąd za trzy sesje.
 - [Separacja przestrzeni wiedzy](#separacja-przestrzeni-wiedzy--na-poziomie-danych-nie-promptu)
 - [Prompty — dwa tryby](#prompty--dwa-tryby-jeden-rdzeń-rzetelności)
 - [Treść wewnętrzna i mapa problemów](#treść-wewnętrzna--41-fragmentów-i-mapa-problemów)
+- [Progi zależne od długości, cytat dosłowny, warstwy znające tryb](#progi-zależne-od-długości-cytat-dosłowny-i-warstwy-znające-tryb)
 - [Granica dostawcy](#granica-dostawcy--model-i-baza-wektorowa-są-wymienne)
 - [Dokumentacja BudMax](#dokumentacja-budmax)
 
@@ -485,6 +486,130 @@ zwrot o włos od wzorców `leaksInstructions()`, których jeszcze nie rusza.
 **Czego pomiar nie sprawdził:** pełnej ścieżki `POST /internal` z prawdziwym
 tokenem. `/debug` omija Access i trzy z czterech warstw weryfikacji — po naprawach
 trzeba powtórzyć pomiar sposobem A z `ZERO-TRUST.md`, krok 8.
+
+## Progi zależne od długości, cytat dosłowny i warstwy znające tryb
+
+Naprawa problemów 1, 2 i 5 z mapy, 19.08.2026. Problem 3 zostawiony świadomie,
+problem 4 zmierzony ponownie i **nadal otwarty**.
+
+### Skąd wzięły się progi 0.45 / 3 słowa
+
+Rozkład na 89 zdaniach z przebiegu 20 pytań wewnętrznych, w kubełkach po długości:
+
+| Słów | n | min | mediana | max | poniżej 0.48 |
+|---|---|---|---|---|---|
+| 1–3 | 3 | 0.458 | 0.520 | 0.581 | 1 |
+| 4–6 | 9 | 0.438 | 0.575 | 0.663 | 1 |
+| 7–10 | 35 | 0.467 | 0.651 | 0.761 | 1 |
+| 11–15 | 26 | 0.537 | 0.690 | 0.747 | 0 |
+| 16+ | 16 | 0.622 | 0.740 | 0.829 | 0 |
+
+Rozstrzygające jest zestawienie dwóch liczb: najniższe **przechodzące** zdanie
+1–3-słowowe miało **0.520**, a wycinane były **0.458** i **0.466**. Między nimi
+jest pusty pas, w którym nie leży nic, co dziś przechodzi — próg **0.45** dla
+zdań do 3 słów mieści się w tym pasie. Obniżenie progu **z definicji** nie może
+wyrzucić niczego, co przechodziło wcześniej; ryzykiem jest wyłącznie wpuszczenie
+czegoś nowego, dlatego zejście zatrzymano na 0.45, a nie na 0.36, którego
+wymagałoby „okulary ochronne".
+
+**Nie robić z tego progu ogólnego zjazdu.** Kubełki 4–6 i 7–10 mają wycięcia
+o niskim cosinusie, ale **wszystkie są dosłownymi cytatami** i łapie je druga
+droga pokrycia. Obniżanie progu dla zdań dłuższych nie ma podstawy w danych.
+
+### Cytat dosłowny jako druga droga pokrycia
+
+Zdanie występujące **dosłownie** w pobranym fragmencie przechodzi bez względu
+na cosinus: tekstu, który fizycznie stoi w dokumentacji, nie da się uznać za
+niepokryty. To właściwa odpowiedź na „Nie uznawaj roszczenia i nie obiecuj
+naprawy ani odszkodowania" (0.467, zdanie żywcem z `i33`) — nie obniżanie progu
+dla wszystkich dziewięciosłowowców.
+
+**Pułapka, którą trzeba było obejść: zgubione zaprzeczenie.** „zakrywaj zbrojenia"
+jest dosłownym podciągiem „nie zakrywaj zbrojenia", więc sam `includes` przepuściłby
+zdanie o **odwróconym** znaczeniu. Dlatego trafienie poprzedzone partykułą przeczącą
+(`nie`, `bez`, `nigdy`, `ani`, `żadn`) się nie liczy — musi istnieć wystąpienie bez
+niej. Minimalna długość dopasowania to 12 znaków po normalizacji, żeby pojedyncze
+słowo nie potwierdzało samo siebie.
+
+Cytat dosłowny zastępuje **wyłącznie** sprawdzenie semantyczne. Liczby i obietnice
+są sprawdzane tak samo, bo dosłowność jednego zdania nie usprawiedliwia zmyślonej
+liczby dostawionej obok.
+
+### Dlaczego warstwy dostały tryb
+
+`isUnsupportablePromise()` i `leaksInstructions()` powstały dla bota publicznego
+i **wycinały w trybie wewnętrznym dokładnie to, po co ten tryb istnieje**:
+
+- „Przysługuje ci rabat do 3 procent" pasuje do wzorca rabatowego — a to jest treść
+  `i39`, informacja o progu decyzyjnym, nie obietnica złożona klientowi.
+- Zakaz mówienia „zgodnie z dokumentacją" istnieje dlatego, że **klient nie wie**
+  o istnieniu dokumentacji. Pracownik wie — sam prompt każe mu podać `Podstawa:`.
+
+Co zostało wspólne: **wolne terminy i obietnice zdążenia**. Dokumentacja nie zna
+grafiku ekip, więc zmyślony termin szkodzi wewnątrz tak samo jak na zewnątrz.
+
+### Dwa defekty znalezione przy okazji — nienaprawione
+
+Znalazły się dopiero wtedy, gdy `/debug` zaczął uruchamiać wszystkie warstwy,
+a nie samą semantyczną. **Wcześniej były niewidoczne w każdym pomiarze, jaki
+robiliśmy** — stąd zapis z 19.08 „20/20 odpowiedzi z linią `Podstawa:`" dotyczył
+w rzeczywistości surowego tekstu modelu, a nie tego, co wychodziło z weryfikacji.
+
+1. **`isDuplicate()` kasuje odrębne kroki procedury.** Przy odpowiedzi na `i23`
+   („co przed zakryciem zbrojenia") dwa różne kroki — „nie zakrywaj zbrojenia przed
+   odbiorem" i „przed zakryciem wykonaj dokumentację zdjęciową" — przekroczyły próg
+   60% wspólnych słów i drugi zniknął. Razem z nimi zniknęła linia `Podstawa:`,
+   bo tytuł fragmentu z definicji dzieli słowa ze zdaniem opartym na jego treści.
+   Wszystko **po cichu**: deduplikacja nie zwiększa licznika `trimmed`.
+   Naprawiono **wyłącznie wyjątek dla linii `Podstawa:`**. Progu 0.6 nie ruszano —
+   dotyczy też trybu publicznego, więc wymaga własnego pomiaru, a nie poprawki
+   przy okazji.
+2. **`numbersAreGrounded()` nie odróżnia liczby zmyślonej od zacytowanej z pytania.**
+   „przy pojemności 1600 cm3" wycina całe zdanie, bo `1600` przyszło z pytania,
+   a dokumentacja zna tylko próg 900. Zachowanie jest bezpieczne, ale kosztuje
+   poprawną odpowiedź, i dotyczy obu trybów.
+
+### Prompt: trzy podejścia do adresata, i czego uczy drugie
+
+Reguła „zachowaj adresata z fragmentu" **nie zadziałała za pierwszym razem** —
+na „czego może ode mnie żądać inspektor" model dalej pisał „może od ciebie żądać",
+bo powtarzał założenie z pytania. Druga wersja kazała sprostować takie założenie
+i zadziałała, ale **zaczęła strzelać tam, gdzie nie trzeba**: pytanie „kto może
+wpisywać do dziennika budowy" dostało doklejone sprostowanie o poleceniach
+inspektora, o które nikt nie pytał. Winna była lista wyzwalaczy, którą podałem
+w regule („ode mnie", „czy mogę", „co mam zrobić") — zbyt szeroka. Trzecia wersja
+opisuje **warunek**, a nie słowa kluczowe: sprostowanie należy się tylko wtedy,
+gdy pytanie przypisuje rozmówcy obowiązek, który we fragmencie należy do kogoś
+innego.
+
+Wniosek na przyszłość: **regułę promptu opisuj warunkiem, nie listą fraz.** Lista
+fraz jest łatwiejsza do napisania i model dopasowuje ją zbyt chętnie — koszt
+widać dopiero na pytaniu, które tych fraz nie miało zawierać.
+
+### Wynik pomiaru kontrolnego
+
+Te same 20 pytań, przed i po. Dla przebiegu „przed" straty policzone offline
+**prawdziwymi funkcjami** z `worker.js`, bo ówczesny `/debug` ich nie pokazywał.
+
+| | przed | po |
+|---|---|---|
+| zdań w odpowiedziach | 89 | 71 |
+| wycięte (brak pokrycia / liczba / obietnica) | 4 | **0** |
+| usunięte po cichu (duplikat / instrukcje) | 4 | **0** |
+| razem utraconych | **8 z 89** | **0 z 71** |
+| lider z przestrzeni `internal` | 20/20 | 20/20 |
+
+Odpowiedzi są **krótsze** (89 → 71 zdań), bo prompt przestał wymuszać listę tam,
+gdzie fragment żadnej procedury nie zawiera. To jest zamierzone, nie utrata treści:
+`i25` odpowiada teraz zdaniami i z poprawnym adresatem („Inspektor nie wydaje
+poleceń bezpośrednio Tobie, ale kierownikowi budowy"), zamiast wypunktowanej listy
+z jedną pozycją uciętą na progu.
+
+Uwaga do czytania tej tabeli: w przebiegu „po" **żadne zdanie nie potrzebowało
+ratunku** ani progiem 0.45, ani cytatem dosłownym. Obie drogi są dziś siatką
+bezpieczeństwa, a nie mechanizmem, na którym stoi wynik — bo prompt przestał
+produkować zdania, które ich wymagały. Nie znaczy to, że są zbędne: kolejna
+zmiana tonu albo fragment o innej budowie zdań wrócą do tego pasa.
 
 ## Granica dostawcy — model i baza wektorowa są wymienne
 

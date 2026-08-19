@@ -31,6 +31,18 @@ const TOP_K = 8; // podniesione z 6 — krótkie, ogólne pytania miały za mał
 const MIN_CHUNKS = 2;
 const MIN_SIMILARITY = 0.35;
 const CITATION_THRESHOLD = 0.48; // podniesione z 0.42 — przy długich odpowiedziach 0.42 przepuszczało zbyt wiele
+
+// Próg dla zdań KRÓTKICH — obniżony, bo cosinus krótkiego zdania wobec długiego
+// fragmentu jest niski NIEZALEŻNIE od tego, czy zdanie jest w nim zawarte.
+// Zmierzone 19.08.2026 na 89 zdaniach z przebiegu wewnętrznego: najniższe
+// przechodzące zdanie 1–3-słowowe miało 0.520, a wycinane były 0.458
+// („poprawek robót") i 0.466 („Zatwierdza to zarząd") — oba z pokryciem
+// we fragmentach. Próg 0.45 domyka tę lukę, nie ruszając niczego, co dziś
+// przechodzi. Prompt wewnętrzny produkuje takie zdania seryjnie, bo każe
+// wypisywać kroki w osobnych liniach — bez tego progu obie warstwy pracują
+// przeciwko sobie.
+const CITATION_THRESHOLD_KROTKIE = 0.45;
+const KROTKIE_ZDANIE_SLOW = 3; // do tylu słów zdanie liczy się jako krótkie
 const HISTORY_TURNS = 6;
 const MAX_QUESTION_LENGTH = 3000; // realni klienci piszą długie, opisowe wiadomości
 const TOP_K_LONG = 10; // przy długich, wielowątkowych pytaniach pobierz więcej fragmentów
@@ -558,10 +570,59 @@ function numbersAreGrounded(sentence, filtered) {
   return nums.every((n) => corpusNums.has(n));
 }
 
+// Normalizacja do porównań dosłownych: małe litery, interpunkcja na spacje,
+// spacje sklejone. Bez tego „okulary ochronne," nie zrówna się z „okulary
+// ochronne" we fragmencie.
+function normalizujDoPorownania(s) {
+  return s.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, " ").replace(/\s+/g, " ").trim();
+}
+
+// Czy zdanie występuje DOSŁOWNIE w treści któregoś z pobranych fragmentów.
+// Jeśli tak, cosinus nie musi o niczym decydować: zdania, które fizycznie
+// stoi w dokumentacji, nie da się uznać za niepokryte. To jest właściwa
+// odpowiedź na „Nie uznawaj roszczenia i nie obiecuj naprawy ani odszkodowania"
+// (0.467, zdanie żywcem z i33) — nie obniżanie progu dla wszystkich.
+//
+// PUŁAPKA, KTÓRĄ TO OMIJA: zgubione zaprzeczenie. „zakrywaj zbrojenia" jest
+// dosłownym podciągiem „nie zakrywaj zbrojenia", więc sam `includes` przepuściłby
+// zdanie o odwróconym znaczeniu. Dlatego trafienie poprzedzone partykułą
+// przeczącą się nie liczy — musi istnieć wystąpienie bez niej.
+const PRZECZENIA = ["nie", "bez", "nigdy", "ani", "żadn"];
+
+function wystepujeDoslownie(sentence, filtered) {
+  const igla = normalizujDoPorownania(sentence);
+  if (igla.length < 12) return false; // za krótkie, żeby cokolwiek potwierdzać
+  for (const m of filtered) {
+    const stog = normalizujDoPorownania(`${m.metadata.text} ${m.metadata.title}`);
+    let od = 0;
+    for (;;) {
+      const i = stog.indexOf(igla, od);
+      if (i === -1) break;
+      const przed = stog.slice(Math.max(0, i - 12), i).trim().split(" ").pop() || "";
+      if (!PRZECZENIA.some((p) => przed.startsWith(p))) return true;
+      od = i + 1;
+    }
+  }
+  return false;
+}
+
+// Próg cytowania zależny od długości zdania — patrz komentarz przy
+// CITATION_THRESHOLD_KROTKIE.
+function progCytowania(sentence) {
+  const slow = normalizujDoPorownania(sentence).split(" ").filter(Boolean).length;
+  return slow <= KROTKIE_ZDANIE_SLOW ? CITATION_THRESHOLD_KROTKIE : CITATION_THRESHOLD;
+}
+
 // Zdania, których dokumentacja z natury nie może potwierdzić: deklaracje
 // dostępności terminów, obietnice zdążenia, potwierdzenia przypuszczeń klienta
 // o rabatach czy podatkach. Model chętnie je generuje, bo brzmią uprzejmie.
-function isUnsupportablePromise(s) {
+//
+// WARSTWA ZNA TRYB — od 19.08.2026. Wzorce rabatowe i cenowe powstały po to,
+// żeby bot nie potwierdził klientowi rabatu, którego firma nie dała. Pracownikowi
+// te same zdania trzeba podać: „Przysługuje ci rabat do 3 procent" to dokładnie
+// treść i39, po którą przyszedł. Wzorce o wolnych terminach i o zdążeniu
+// zostają w OBU trybach — zmyślony termin szkodzi wewnątrz tak samo.
+function isUnsupportablePromise(s, tryb = PROMPT_PUBLICZNY) {
   const t = s.toLowerCase();
 
   // Zdanie zaprzeczające ("nie oferujemy rabatów") albo odsyłające do biura
@@ -570,22 +631,43 @@ function isUnsupportablePromise(s) {
   const isNegationOrDeferral = /\b(nie |bez |brak |nie mam|potwierdzi biuro|potwierdzi (nasze )?biuro|skontaktuj|kontakt z biurem|ustali biuro|zależy od indywidualn)/.test(t);
   if (isNegationOrDeferral) return false;
 
-  const patterns = [
+  // Obowiązują w obu trybach: dokumentacja nie zna grafiku ekip, więc ani
+  // klientowi, ani pracownikowi nie wolno deklarować wolnego terminu.
+  const wspolne = [
     /mamy wolne terminy|dysponujemy terminami|termin.{0,20}dostępn/,
     /(będziemy się starać|postaramy się|zdążymy|jesteśmy w stanie zdążyć)/,
+  ];
+
+  // Wyłącznie tryb publiczny: rabaty, upusty i stawki. Wewnątrz to nie jest
+  // obietnica złożona klientowi, tylko informacja o progach decyzyjnych.
+  const tylkoPubliczne = [
     /(oferujemy|udzielamy|mamy|przysługuj|możemy zaoferować).{0,30}(rabat|zniżk|upust)/,
     /(rabat|zniżk|upust).{0,30}(oferujemy|udzielamy|możliwe|dostępn)/,
     /niższy vat|lepsze ceny w hurtown|taniej w hurtown/,
     /płacisz z góry|płatność z góry/,
   ];
+
+  const patterns = tryb === PROMPT_WEWNETRZNY ? wspolne : [...wspolne, ...tylkoPubliczne];
   return patterns.some((p) => p.test(t));
 }
 
 // Zdania zdradzające klientowi, że pod spodem działa bot z instrukcjami.
 // Model czasem przepisuje polecenia dosłownie zamiast je wykonać.
-function leaksInstructions(s) {
+//
+// WARSTWA ZNA TRYB — od 19.08.2026. Zakaz mówienia „zgodnie z dokumentacją"
+// istnieje dlatego, że KLIENT nie wie o istnieniu dokumentacji ani instrukcji.
+// Pracownik wie — sam prompt wewnętrzny każe mu podać „Podstawa: <tytuł>".
+// Wycinanie u niego całego zdania za odwołanie do procedury to utrata treści
+// za potknięcie stylistyczne, a przy instrukcji BHP treść jest ważniejsza niż
+// styl. Zdradzanie samych instrukcji („proszę mi powiedzieć, że", „jako
+// asystent AI") zostaje zakazane w obu trybach — to nie jest odwołanie do
+// dokumentacji, tylko przepisywanie polecenia zamiast wykonania go.
+function leaksInstructions(s, tryb = PROMPT_PUBLICZNY) {
   const t = s.toLowerCase();
-  return /(proszę mi powiedzieć, że|zgodnie z (moją |naszą )?dokumentacj|według (podanych )?fragment|w (mojej|naszej) dokumentacji (jest|znajduje)|na podstawie fragment|jako asystent ai)/.test(t);
+  const wspolne = /(proszę mi powiedzieć, że|jako asystent ai)/;
+  if (wspolne.test(t)) return true;
+  if (tryb === PROMPT_WEWNETRZNY) return false;
+  return /(zgodnie z (moją |naszą )?dokumentacj|według (podanych )?fragment|w (mojej|naszej) dokumentacji (jest|znajduje)|na podstawie fragment)/.test(t);
 }
 
 // Usuwa zdania powtarzające treść już zawartą w odpowiedzi. Porównuje
@@ -599,6 +681,14 @@ function isDuplicate(sentence, alreadyKept) {
     s.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, "").split(/\s+/)
       .filter((w) => w.length > 3).map(stem).filter((w) => w.length > 2)
   );
+  // Linia źródła nie jest twierdzeniem, tylko odsyłaczem — nie może być
+  // „powtórzeniem" zdania, które z tego samego fragmentu korzysta. Bez tego
+  // wyjątku warstwa po cichu kasowała obowiązkową linię „Podstawa: <tytuł>",
+  // bo tytuł fragmentu z definicji dzieli słowa ze zdaniem opartym na jego
+  // treści. Zmierzone 19.08.2026: znikała w 2 z 20 odpowiedzi wewnętrznych,
+  // niewidocznie, bo /debug pokazywał wtedy wyłącznie warstwę semantyczną.
+  if (/^podstawa:/i.test(sentence.trim())) return false;
+
   const a = norm(sentence);
   if (a.size < 3) return false;
   for (const prev of alreadyKept) {
@@ -612,7 +702,7 @@ function isDuplicate(sentence, alreadyKept) {
   return false;
 }
 
-async function verifyClaims(fullText, filtered, env) {
+async function verifyClaims(fullText, filtered, env, tryb = PROMPT_PUBLICZNY) {
   const claims = splitSentences(fullText);
   const toCheck = claims.length ? claims : [fullText];
 
@@ -630,16 +720,23 @@ async function verifyClaims(fullText, filtered, env) {
     }
 
     const numbersOk = numbersAreGrounded(toCheck[i], filtered);
-    const promiseOk = !isUnsupportablePromise(toCheck[i]);
+    const promiseOk = !isUnsupportablePromise(toCheck[i], tryb);
 
     // Zdania zdradzające instrukcje lub powtarzające już powiedzianą treść
     // usuwamy po cichu — to defekt formy, nie brak pokrycia w dokumentacji,
     // więc nie zwiększamy licznika "niepotwierdzonych" pokazywanego klientowi.
-    if (leaksInstructions(toCheck[i]) || isDuplicate(toCheck[i], kept)) {
+    if (leaksInstructions(toCheck[i], tryb) || isDuplicate(toCheck[i], kept)) {
       continue;
     }
 
-    if (bestSim >= CITATION_THRESHOLD && numbersOk && promiseOk) {
+    // Pokrycie ma dwie drogi: podobieństwo powyżej progu ZALEŻNEGO OD DŁUGOŚCI
+    // albo dosłowne wystąpienie zdania we fragmencie. Druga droga zastępuje
+    // wyłącznie sprawdzenie semantyczne — liczby i obietnice są sprawdzane
+    // tak samo, bo dosłowność zdania nie usprawiedliwia zmyślonej liczby
+    // dostawionej obok.
+    const pokryte = bestSim >= progCytowania(toCheck[i]) || wystepujeDoslownie(toCheck[i], filtered);
+
+    if (pokryte && numbersOk && promiseOk) {
       usedSources.add(bestTitle);
       kept.push(toCheck[i]);
     } else if (isConnectiveSentence(toCheck[i]) && numbersOk && promiseOk) {
@@ -793,7 +890,11 @@ ODPOWIADAJ NA CAŁE PYTANIE:
 
 TON — instruktażowy, nie sprzedażowy:
 - Pisz w trybie rozkazującym, do wykonania: "przerwij pracę", "powiadom kierownika budowy", "zgłoś w raporcie tygodniowym do piątku do 14". Nie pisz "firma prowadzi procedurę zgłoszenia" ani "pracownicy powinni rozważyć".
-- Gdy fragment opisuje czynności, wypisz je jako kroki w kolejności wykonania — każdy krok w osobnej linii, zaczynając od czasownika.
+- Gdy fragment opisuje CZYNNOŚCI DO WYKONANIA, wypisz je jako kroki w kolejności wykonania — każdy krok w osobnej linii, zaczynając od czasownika.
+- Gdy fragment opisuje stan rzeczy, uprawnienia, definicję albo zakres czyjejś roli, odpowiedz zwykłymi zdaniami. NIE zamieniaj opisu w listę poleceń i nie dorabiaj kroków tam, gdzie fragment żadnej procedury nie zawiera. Lista kroków wyciągnięta z opisu gubi połowę treści i sugeruje procedurę, której nie ma.
+- ZACHOWAJ ADRESATA Z FRAGMENTU, nawet wbrew pytaniu. Jeśli fragment mówi, że coś robi albo coś dostaje kierownik budowy, brygadzista czy kadry — napisz to o nich, nie o rozmówcy. Rozkazujący ton dotyczy tego, co ma zrobić rozmówca, a nie tego, czyje są cudze obowiązki.
+- Pytanie bywa postawione z błędnym założeniem, kogo dotyczy — na przykład "czego inspektor może żądać ODE MNIE", podczas gdy fragment mówi, że polecenia inspektora odbiera kierownik budowy. Wtedy nie przejmuj tego założenia: sprostuj je pierwszym zdaniem, a dopiero potem podaj treść. Powtórzenie cudzego błędu w adresacie jest w instrukcji równie groźne jak zmyślona liczba — pracownik wykona cudzy obowiązek albo zaniecha własnego.
+- Sprostowanie dopisuj WYŁĄCZNIE wtedy, gdy samo pytanie przypisuje rozmówcy obowiązek, który we fragmencie należy do kogoś innego. Gdy pytanie brzmi neutralnie — "kto może wpisywać do dziennika", "kto zamawia materiał" — po prostu odpowiedz, kto. Nie zaczynaj wtedy od zdania o tym, czego rozmówca nie robi, i nie wciągaj do odpowiedzi cudzych obowiązków, o które nikt nie pytał.
 - Podawaj konkrety dokładnie tak, jak stoją we fragmentach: liczby, progi, terminy, nazwy stanowisk odpowiedzialnych i wymagany sprzęt.
 - Nie zwracaj się per Pan/Pani i nie prowadź rozmowy handlowej. To narzędzie pracy, nie kontakt z klientem.
 
@@ -975,21 +1076,52 @@ export default {
         const sentences = splitSentences(answer);
         const toCheck = sentences.length ? sentences : [answer];
         const sentenceVectors = await embed(env, toCheck);
+        // /debug uruchamia WSZYSTKIE warstwy weryfikacji, nie samą semantyczną.
+        // Do 19.08.2026 pokazywał wyłącznie cosinus, więc jego liczba wycięć
+        // była dolnym oszacowaniem, a konfliktu warstwy obietnic z trybem
+        // wewnętrznym nie dało się na nim zobaczyć w ogóle.
+        const juzZachowane = [];
         const sentenceScores = toCheck.map((s, i) => {
           let best = 0, title = null;
           for (const m of filtered) {
             const sim = cosineSimilarity(sentenceVectors[i], m.values);
             if (sim > best) { best = sim; title = m.metadata.title; }
           }
-          const passes = best >= CITATION_THRESHOLD;
+          const prog = progCytowania(s);
+          const doslownie = wystepujeDoslownie(s, filtered);
+          const liczbyOk = numbersAreGrounded(s, filtered);
+          const obietnica = isUnsupportablePromise(s, trybProm);
+          const instrukcje = leaksInstructions(s, trybProm);
+          const duplikat = isDuplicate(s, juzZachowane);
+          const passes = (best >= prog || doslownie) && liczbyOk && !obietnica;
           const connective = isConnectiveSentence(s);
+          if (!instrukcje && !duplikat && (passes || (connective && liczbyOk && !obietnica))) {
+            juzZachowane.push(s);
+          }
+          // Kolejność jak w verifyClaims: instrukcje i duplikaty odpadają
+          // po cichu PRZED sprawdzeniem pokrycia, więc i tu decydują pierwsze.
+          let akcja;
+          if (instrukcje) akcja = "USUNIĘTE (instrukcje)";
+          else if (duplikat) akcja = "USUNIĘTE (duplikat)";
+          else if (passes) akcja = "zachowane";
+          else if (connective && liczbyOk && !obietnica) akcja = "zachowane (grzecznościowe)";
+          else if (!liczbyOk) akcja = "WYCIĘTE (liczba bez pokrycia)";
+          else if (obietnica) akcja = "WYCIĘTE (obietnica)";
+          else akcja = "WYCIĘTE (brak pokrycia)";
+
           return {
             zdanie: s,
             najlepsze_dopasowanie: title,
             podobienstwo: best.toFixed(3),
+            prog: prog.toFixed(2),
+            doslownie,
+            liczby_ok: liczbyOk,
+            obietnica,
+            instrukcje,
+            duplikat,
             przechodzi: passes,
             grzecznosciowe: connective,
-            akcja: passes ? "zachowane" : connective ? "zachowane (grzecznościowe)" : "WYCIĘTE",
+            akcja,
           };
         });
 
@@ -997,7 +1129,7 @@ export default {
           pytanie: q,
           przeszukane_przestrzenie: spaces,
           tryb_promptu: trybProm,
-          progi: { MIN_SIMILARITY, CITATION_THRESHOLD },
+          progi: { MIN_SIMILARITY, CITATION_THRESHOLD, CITATION_THRESHOLD_KROTKIE, KROTKIE_ZDANIE_SLOW },
           znalezione_fragmenty: matches.map((m) => ({
             tytul: m.metadata.title,
             wynik: m.score.toFixed(3),
@@ -1085,7 +1217,11 @@ async function handleAsk(request, env, spaces, askedFrom, identity = null) {
     }
 
     // Tryb promptu, jak przestrzenie, przychodzi wyłącznie z routingu.
-    const systemPrompt = buildSystemPrompt(filtered.map((m) => m.metadata), trybPromptu(askedFrom));
+    // Jeden tryb dla promptu i dla weryfikacji. Rozjechanie ich znaczyłoby,
+    // że model dostaje polecenie podania wartości wewnętrznej, a warstwa
+    // weryfikacji wycina mu ją z odpowiedzi.
+    const tryb = trybPromptu(askedFrom);
+    const systemPrompt = buildSystemPrompt(filtered.map((m) => m.metadata), tryb);
     const messages = [...history, { role: "user", content: question }];
 
     const rawAnswer = await generate(env, systemPrompt, messages);
@@ -1095,7 +1231,7 @@ async function handleAsk(request, env, spaces, askedFrom, identity = null) {
       return jsonResponse({ answer: FALLBACK_MESSAGE, source: null, gap: true }, corsHeaders(request));
     }
 
-    const verdict = await verifyClaims(rawAnswer, filtered, env);
+    const verdict = await verifyClaims(rawAnswer, filtered, env, tryb);
     if (!verdict.ok) {
       await logQuestion(env, question, true, null, askedFrom);
       return jsonResponse({ answer: verdict.fallback, source: null, gap: true }, corsHeaders(request));
@@ -1119,7 +1255,15 @@ async function handleAsk(request, env, spaces, askedFrom, identity = null) {
 // Eksporty wyłącznie na potrzeby testu weryfikacji tokenu (test-access.mjs).
 // Cloudflare uruchamia `export default` — te nazwy nie zmieniają zachowania
 // Workera, pozwalają za to sprawdzić ścieżkę „ważny token" bez klikania w panelu.
-export { verifyAccessJwt, accessConfig, resetAccessCertsCache };
+// Eksport na potrzeby testów i analiz offline. Chodzi o to, żeby skrypt
+// diagnostyczny uruchamiał TE funkcje, a nie ich przepisaną kopię — kopia
+// rozjeżdża się z produkcją przy pierwszej poprawce i wtedy pomiar kłamie.
+export {
+  verifyAccessJwt, accessConfig, resetAccessCertsCache,
+  isUnsupportablePromise, leaksInstructions, isDuplicate, numbersAreGrounded,
+  wystepujeDoslownie, progCytowania, splitSentences, isConnectiveSentence,
+  PROMPT_PUBLICZNY, PROMPT_WEWNETRZNY,
+};
 
 function resetAccessCertsCache() {
   accessCertsCache = { teamDomain: null, fetchedAt: 0, keys: null };

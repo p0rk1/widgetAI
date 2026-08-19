@@ -19,6 +19,9 @@ każdej sesji, a historia decyzji jest potrzebna kilka razy w miesiącu.
 **Co działa w produkcji:**
 - Publiczny bot FAQ — 53 fragmenty, weryfikacja zdanie po zdaniu, model 70B
 - Bot dla pracowników — 41 fragmentów w sześciu obszarach, osobny prompt, za Access
+- **Eskalacja** — trzeci stan odpowiedzi przy wypadku, zagrożeniu życia, sporze
+  prawnym, kontroli i decyzji finansowej powyżej progu: kroki z dokumentacji
+  **plus** skierowanie do przełożonego, oznaczone osobnym polem w JSON
 - Trzy adresy odpowiadają: `budmax.know-base.app`, `budmax-wewnetrzny.know-base.app`,
   stary `knowbase-budmax.rezi7608.workers.dev`
 - Separacja przestrzeni `public` / `internal` w Vectorize, szczelność przetestowana
@@ -67,6 +70,7 @@ wystarcza do testów i jednego użytkownika, nie wystarcza dla zespołu klienta.
 | `DECYZJE.md` | Uzasadnienia, wyniki pomiarów, ślepe uliczki | repo, czytane na żądanie |
 | `ZERO-TRUST.md` | Instrukcja konfiguracji logowania do trybu wewnętrznego | repo |
 | `test-access.mjs` | Test weryfikacji tokenu Access (`node test-access.mjs`) | repo |
+| `test-eskalacja.mjs` | Test warstwy eskalacji (`node test-eskalacja.mjs`) | repo |
 
 **Treść jest w osobnych plikach od 19.08.2026** — stanowiła ponad połowę wagi
 `worker.js`, a zadanie dotyczące logiki nigdy jej nie potrzebuje. Bundler
@@ -167,6 +171,52 @@ obiecuje klientom.
   szczelności: `DECYZJE.md` → „Separacja przestrzeni wiedzy".
 - Pole `role` w metadanych jest zawsze `"all"` i nic po nim nie filtruje — jest
   teraz, bo dopisanie go później oznacza reindeks u każdego klienta.
+
+## Eskalacja — trzeci stan odpowiedzi (tylko tryb wewnętrzny)
+
+Obok odpowiedzi normalnej i „brak w dokumentacji" jest **trzeci stan**: kroki
+z dokumentacji **plus** twarde skierowanie do przełożonego. Nie zamiast siebie —
+razem. Przy wypadku bot nie może być jedynym źródłem decyzji, ale nie może też
+milczeć, bo ktoś musi wiedzieć, co zrobić w pierwszej minucie.
+
+| Kategoria | Wyzwalacz | Pozycja ramki |
+|---|---|---|
+| `wypadek` | słownictwo zdarzeniowe (spadł, złamał, krwawi, poszkodowany) | **przed** treścią |
+| `zagrozenie_zycia` | gaz, pożar, prąd, zawalenie, brak oddechu | **przed** treścią |
+| `spor_prawny` | groźba sądu, roszczenie, odszkodowanie, adwokat | po treści |
+| `kontrola` | organ (PIP, PINB, sanepid) **oraz** jego obecność/żądanie | po treści |
+| `finanse_prog` | pieniądze **oraz** decyzja **oraz** przekroczony próg (3% / 300 zł) | po treści |
+
+**Reguły, których nie wolno rozluźnić:**
+- Wyzwalanie jest **deterministyczne, wzorcami w kodzie** — nie oceną modelu.
+  Z tego samego powodu co `numbersAreGrounded()`: przy BHP błąd nie kosztuje
+  złej recenzji, tylko zdrowia.
+- Rozróżnienie idzie po **zdarzeniu, nie po temacie**. „Rusztowanie", „wysokość",
+  „szkolenie" i „środki ochrony" **celowo nie wyzwalają** — to tematy, przy
+  których nikt nie leży na ziemi.
+- **Próg jest różny dla różnych kategorii, bo koszt pomyłki jest różny.** Przy
+  wypadku i zagrożeniu życia wyzwalamy szeroko i weto ramy informacyjnej
+  **nie działa**. Przy sporze, kontroli i finansach wymagamy dwóch niezależnych
+  sygnałów, bo tam fałszywy alarm to szum, który nauczy ignorować ramkę.
+- **Pytanie jest normalizowane — małe litery i zdjęte ogonki.** Pracownik pisze
+  z telefonu „grozi sadem", „zlamal noge". Wzorce są zapisane bez ogonków i tak
+  mają zostać. **`\b` w JavaScripcie zna wyłącznie ASCII** — `\bmarż\b` nie
+  dopasuje się do „marżę". Nie wracać do `\b`.
+- **Tekst ramki nie przechodzi przez `verifyClaims()`** — jest doklejany po niej,
+  ze stałej w kodzie. To reguła operacyjna firmy, nie twierdzenie o dokumentacji,
+  więc nie ma czego weryfikować względem fragmentów. Dzięki temu weryfikacja dla
+  reszty odpowiedzi **nie jest w niczym osłabiona**, a `isDuplicate()` nigdy nie
+  widzi ramki i nie ma jej jak skasować.
+- Ramka trafia **i do pola `answer`, i do osobnego pola `eskalacja`**
+  (`{kategoria, pilne}`). Osobne pole jest dla interfejsu; tekst w `answer`
+  dla klientów, które tego pola nie znają — widget i panel go nie znają.
+- Eskalacja działa też, gdy **dokumentacja nie ma odpowiedzi**. Wtedy jest
+  potrzebna bardziej, nie mniej.
+
+**Test:** `node test-eskalacja.mjs` — 53 przypadki, w tym 17 negatywnych
+(pytania tematycznie bliskie, które wyzwolić nie mogą), zestaw bez ogonków
+i sprawdzenie pozycji ramki. Warstwa jest deterministyczna, więc testuje się ją
+lokalnie, bez wywoływania modelu.
 
 ## Prompty — dwa tryby, jeden rdzeń rzetelności
 
@@ -278,7 +328,8 @@ Uprawnienia są **rozdzielone na dwa niezależne mechanizmy** — patrz sekcja
   przy każdym zdaniu podaje `prog`, `doslownie`, `liczby_ok`, `obietnica`,
   `instrukcje`, `duplikat` i przyczynę w polu `akcja`. Wcześniej pokazywał sam
   cosinus, więc jego liczba wycięć była **dolnym oszacowaniem**, a zdania usuwane
-  po cichu przez deduplikację nie były w nim widoczne w ogóle
+  po cichu przez deduplikację nie były w nim widoczne w ogóle. Pokazuje też
+  `eskalacja` i `odpowiedz_z_eskalacja` — treść tak, jak zobaczy ją pracownik
 - `GET /purge?key=…&ids=c01,c02` — usuwa wpisy z indeksu (ID są globalne, niezależne od przestrzeni)
 
 ## Jak działa przepływ zapytania
@@ -407,13 +458,21 @@ też poprawne parafrazy.
   nie zna trybu**~~ — **naprawione 19.08.2026** (próg zależny od długości, cytat
   dosłowny, warstwy znające tryb). Pomiar kontrolny: 8 zdań traconych na 89 przed,
   **0 na 71 po**
-- **`isDuplicate()` potrafi skasować odrębny krok procedury** — przy odpowiedzi
-  wypunktowanej dwa kroki dotyczące tej samej rzeczy („nie zakrywaj zbrojenia przed
-  odbiorem" i „przed zakryciem wykonaj dokumentację zdjęciową") przekraczają próg
-  60% wspólnych słów i drugi znika **po cichu**, bez zwiększenia licznika `trimmed`.
-  Zmierzone 19.08.2026 na `i23`. Wyjątek dopisano wyłącznie dla linii `Podstawa:`;
-  progu 0.6 **nie ruszano**, bo dotyczy też trybu publicznego i wymaga własnego
-  pomiaru. Nienaprawione
+- **`isDuplicate()` kasuje odrębne zdanie, gdy dzieli słownictwo z poprzednim** —
+  **najpoważniejszy z otwartych problemów.** Próg 60% wspólnych słów liczony wobec
+  krótszego zdania łapie: dwa różne kroki procedury (`i23`: „nie zakrywaj zbrojenia
+  przed odbiorem" i „przed zakryciem wykonaj dokumentację zdjęciową") oraz —
+  co gorsza — **zdanie merytoryczne skasowane przez zdanie sprostowujące**.
+  Zmierzone 19.08.2026 na `i25`: po dodaniu reguły adresata odpowiedź zaczyna się
+  od „Inspektor nie wydaje poleceń bezpośrednio Tobie, ale kierownikowi budowy",
+  a właściwa treść („ma prawo żądać poprawek, ponownego wykonania, wstrzymania
+  robót", podobieństwo **0.775**) znika jako duplikat. Wszystko **po cichu** —
+  deduplikacja nie zwiększa licznika `trimmed`.
+  Naprawiony jest wyłącznie wyjątek dla linii `Podstawa:`. Proponowana poprawka:
+  nie uznawać za duplikat zdania **istotnie dłuższego** od tego, z którym się
+  pokrywa — dłuższe zdanie jest rozwinięciem, nie powtórzeniem. Progu 0.6 nie
+  ruszano, bo dotyczy też trybu publicznego. **Nienaprawione, decyzja po stronie
+  właściciela**
 - **`numbersAreGrounded()` nie odróżnia liczby zmyślonej od zacytowanej z pytania** —
   „przy pojemności 1600 cm3" wycina całe zdanie, bo `1600` przyszło z pytania,
   a w dokumentacji jest tylko próg 900. Zachowanie jest bezpieczne, ale kosztuje
@@ -466,6 +525,11 @@ Kolejność jest celowa — uzasadnienie jest częścią decyzji, nie ozdobnikie
      `isDuplicate()` kasujący odrębne kroki i `numbersAreGrounded()` wycinający
      liczbę zacytowaną z pytania. Szczegóły: `DECYZJE.md` → „Progi zależne
      od długości".
+   - ~~**Etap 4b: kategoria eskalacji**~~ — ✅ **wykonane 19.08.2026.** Trzeci stan
+     odpowiedzi obok normalnej i „brak w dokumentacji": kroki z dokumentacji plus
+     twarde skierowanie do przełożonego. Pięć kategorii, wyzwalanie deterministyczne
+     wzorcami, osobne pole `eskalacja` w JSON. Patrz sekcja „Eskalacja" wyżej,
+     uzasadnienia w `DECYZJE.md` → „Eskalacja".
    - **Etap 5 (otwarty): synteza odpowiedzi wieloczęściowej** — problem 4 nie jest
      ani retrievalem (oba fragmenty są w kontekście), ani weryfikacją (nic nie jest
      wycinane): model po prostu nie łączy dwóch fragmentów w jedną odpowiedź.
@@ -502,7 +566,7 @@ Kolejność jest celowa — uzasadnienie jest częścią decyzji, nie ozdobnikie
 - Przy zmianie progów → najpierw `/debug`, potem decyzja
 - Przed commitem → `node --check` na **wszystkich** plikach źródłowych plus
   `wrangler deploy --dry-run`; przy zmianach w weryfikacji tokenu także
-  `node test-access.mjs`
+  `node test-access.mjs`, a przy zmianach w eskalacji `node test-eskalacja.mjs`
 - `ALLOWED_ORIGINS` to lista samych domen bez ścieżek. Nowy klient = nowe wpisy
 - Nie dodawać warstw zabezpieczeń bez zmierzenia problemu na `/debug` —
   projekt ma za sobą kilka rund łatania objawów zamiast przyczyn

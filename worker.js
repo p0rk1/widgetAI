@@ -782,6 +782,164 @@ function isConnectiveSentence(s) {
 }
 
 // ============================================================
+// ESKALACJA — trzeci stan odpowiedzi, wyłącznie w trybie wewnętrznym
+// ============================================================
+//
+// PO CO TO ISTNIEJE
+// Przy wypadku, zagrożeniu życia albo sporze prawnym bot nie może być jedynym
+// źródłem decyzji — pracownik działa pod presją, a niepełna odpowiedź kosztuje
+// zdrowie albo odpowiedzialność firmy. Nie może też milczeć: ktoś musi wiedzieć,
+// co zrobić w pierwszej minucie. Dlatego odpowiedź eskalacyjna zawiera JEDNO
+// I DRUGIE — kroki z dokumentacji ORAZ twarde skierowanie do przełożonego.
+//
+// DLACZEGO WZORCE, A NIE OCENA MODELU
+// Ta warstwa jest deterministyczna z tego samego powodu co numbersAreGrounded():
+// przy BHP błąd nie kosztuje złej recenzji, tylko zdrowia. Model, który raz na
+// dwadzieścia odpowiedzi „uzna, że to nie jest pilne", jest bezużyteczny jako
+// zabezpieczenie.
+//
+// CZEGO NAUCZYŁA REGUŁA ADRESATA
+// Lista fraz odpala się zbyt chętnie (patrz DECYZJE.md → „Prompt: trzy podejścia
+// do adresata"). Dlatego rozróżnienie nie idzie po TEMACIE, tylko po tym, czy
+// pytanie opisuje ZDARZENIE, czy odpytuje REGUŁĘ. „Jakie środki ochrony przy
+// szlifowaniu" i „co ile odnawiamy szkolenie BHP" to tematycznie BHP, ale nikt
+// tam nie leży na ziemi — słownictwo tematyczne (rusztowanie, wysokość,
+// szkolenie, środki ochrony) świadomie NIE wyzwala eskalacji. Wyzwala je
+// słownictwo zdarzeniowe: „spadł", „krwawi", „przygniotło", „grozi sądem".
+//
+// PRÓG JEST RÓŻNY DLA RÓŻNYCH KATEGORII, BO KOSZT POMYŁKI JEST RÓŻNY
+// Przy wypadku i zagrożeniu życia fałszywy alarm kosztuje jedno zdanie za dużo,
+// a przeoczenie — zdrowie. Tam wyzwalamy szeroko i NIE stosujemy weta ramy
+// informacyjnej. Przy sporze, kontroli i finansach fałszywy alarm to szum, który
+// nauczy pracownika ignorować ramkę — tam wymagamy DWÓCH niezależnych sygnałów
+// i wetujemy pytania o samą regułę.
+//
+// DLACZEGO WERYFIKACJA TEGO NIE ZJADA
+// Tekst eskalacji NIE PRZECHODZI przez verifyClaims() — jest doklejany po niej,
+// ze stałej w kodzie. To nie jest twierdzenie o dokumentacji, tylko reguła
+// operacyjna firmy, więc nie ma czego weryfikować względem fragmentów. Osłabienie
+// weryfikacji dla reszty odpowiedzi byłoby jedynym innym wyjściem i byłoby złe:
+// verifyClaims widzi wyłącznie tekst modelu i ma go traktować tak samo surowo
+// jak dotąd. Z tego samego powodu isDuplicate() nigdy nie widzi ramki i nie ma
+// jej jak skasować.
+
+// Pytanie jest normalizowane PRZED dopasowaniem: małe litery i zdjęte ogonki.
+// Powód jest praktyczny, nie estetyczny — pracownik pisze z telefonu na budowie
+// i pisze „grozi sadem", „zlamal noge", „zadaja dokumentow". Wzorzec wymagający
+// „sądem" po prostu milczy, a milczenie tej warstwy to dokładnie ten błąd,
+// przed którym ma chronić. Dlatego wszystkie wzorce niżej są zapisane BEZ
+// OGONKÓW — porównujemy tekst znormalizowany z wzorcem znormalizowanym.
+//
+// Druga pułapka, już naprawiona: `\b` w JavaScripcie zna wyłącznie ASCII, więc
+// `\bmarż\b` NIE dopasuje się do „marżę". Po normalizacji problem znika, ale
+// początek wyrazu i tak pilnujemy przez `(?<![a-z0-9])` — dopasowanie ma się
+// zaczynać na granicy wyrazu, a wolno mu przejść w dowolną końcówkę fleksyjną.
+function bezOgonkow(s) {
+  return s
+    .toLowerCase()
+    .replace(/ł/g, "l")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+const ESKALACJA_KONTAKT = "kierownik budowy";
+
+// Rama informacyjna — pytanie o REGUŁĘ, nie o zdarzenie. Wetuje eskalację
+// wyłącznie w kategoriach o niskiej pilności.
+const RAMA_INFORMACYJNA = /(?<![a-z0-9])(co ile|jak czesto|jakie sa zasady|jaki jest (wymog|termin|limit)|ile wynosi|kto (zglasza|prowadzi|odpowiada)|w jakim (czasie|terminie)|czy musze miec|co obejmuje|jak dokumentujemy|z jakim wyprzedzeniem|jakie srodki ochrony|kiedy odnawiamy)/;
+
+const KATEGORIE_ESKALACJI = [
+  {
+    id: "wypadek",
+    pilne: true,
+    // Słownictwo ZDARZENIOWE, nie tematyczne. Nie ma tu „rusztowania",
+    // „wysokości" ani „szkolenia" — to tematy, przy których nikt nie leży
+    // na ziemi. Właśnie ta różnica ma odsiewać fałszywe wyzwolenia.
+    zdarzenie: /(?<![a-z0-9])(wypad(ek|ku|kiem|ki)|poszkodowan|uraz|ranny|zrani|skalecz|zlama|przygniot|potrac|poparz|oparzen|krwaw|nieprzytomn|stracil przytomnosc|zaslab|zemdla|doznal|spadl z|upadl z|karetk|pogotowi)/,
+    tekst: `NAJPIERW POWIADOM: przy urazie zagrażającym życiu dzwoń pod 112, zaraz potem do kierownika budowy — zanim wykonasz cokolwiek z poniższego. Wypadku nie rozliczasz sam: o zgłoszeniach i terminach decyduje kierownik budowy.`,
+  },
+  {
+    id: "zagrozenie_zycia",
+    pilne: true,
+    zdarzenie: /(?<![a-z0-9])(zagrozenie zycia|zagraza zyciu|nie oddycha|reanimac|pozar|pali sie|ulatnia sie|czuc gaz|porazeni|porazi|iskrzy|grozi zawaleniem|zawali|osuna|osune|osunal|zerwal sie|urwal sie|uwiezion|przysypa|zasypa)/,
+    tekst: `NAJPIERW POWIADOM: dzwoń pod 112, zaraz potem do kierownika budowy — natychmiast, zanim zrobisz cokolwiek innego. Przy bezpośrednim zagrożeniu życia decyzję podejmują służby i kierownik budowy, nie ten bot.`,
+  },
+  {
+    id: "spor_prawny",
+    pilne: false,
+    zdarzenie: /(?<![a-z0-9])(grozi (sadem|pozwem)|pozew|pozwie|do sadu|roszczen|odszkodowan|zadoscuczynien|adwokat|radc[aey] prawn|kancelari|wezwanie do zaplaty|przedsadow|sprawa sadowa|poda[c] nas do sadu)/,
+    tekst: `SKIERUJ DO PRZEŁOŻONEGO: nie odpowiadaj na roszczenie ani groźbę na własną rękę i nie składaj żadnych oświadczeń. Zgłoś sprawę kierownikowi budowy tego samego dnia — to on decyduje o kontakcie z biurem i obsługą prawną.`,
+  },
+  {
+    id: "kontrola",
+    pilne: false,
+    // DWA sygnały naraz: organ ORAZ jego obecność albo żądanie. Sam „PIP"
+    // w pytaniu o terminy zgłoszeń to pytanie o regułę, nie kontrola na placu.
+    zdarzenie: /(?<![a-z0-9])(pip(?![a-z])|inspekcj[aie] pracy|inspektor(a|owi|em)? pracy|nadzor(u|owi|em)? budowlan|pinb(?![a-z])|sanepid|straz(y)? pozarn)/,
+    // `zada` z ograniczonym ogonem, żeby „żąda" nie łapało „zadanie" i „zadaj".
+    drugiSygnal: /(?<![a-z0-9])(przyjecha[l]|przysz(edl|la)|jest na budowie|na miejscu|kontrol|zada(c|l|la|ja)?(?![a-z])|wezwa|zjawi[l]|legitymuje|zabezpiecz(a|yl) dokument)/,
+    tekst: `SKIERUJ DO PRZEŁOŻONEGO: rozmowę z kontrolą prowadzi wyłącznie kierownik budowy. Powiadom go natychmiast i nie ustalaj niczego z kontrolującym samodzielnie.`,
+  },
+  {
+    id: "finanse_prog",
+    pilne: false,
+    // Trzy sygnały: pieniądze + decyzja + przekroczony próg z dokumentacji
+    // (3% rabatu handlowca, 300 zł zakupu drobnego brygadzisty).
+    zdarzenie: /(?<![a-z0-9])(rabat|upust|znizk|marz|zaliczk|gotowk|kwot|zlot|tysiecy|procent)/,
+    drugiSygnal: /(?<![a-z0-9])(czy moge|mam prawo|moge (zejsc|dac|kupic|zamowic|udzielic)|czy dac|zatwierdz|akceptacj|zgod[aey]|decyduj|podpisa|obniz)/,
+    prog: true,
+    tekst: `SKIERUJ DO PRZEŁOŻONEGO: tej decyzji nie podejmujesz sam. Zgodę wydaje osoba wskazana w progach decyzyjnych — uzyskaj ją PRZED rozmową z klientem, nie po niej.`,
+  },
+];
+
+// Czy w pytaniu pada kwota powyżej najniższego progu decyzyjnego (300 zł)
+// albo procent powyżej samodzielnego rabatu handlowca (3%). Progi pochodzą
+// z i39 i i41 — gdy tam się zmienią, tu też trzeba je zmienić.
+function przekroczonyProgDecyzyjny(pytanie) {
+  const t = bezOgonkow(pytanie);
+  const procenty = [...t.matchAll(/(\d+(?:[.,]\d+)?)\s*(?:procent|proc\.|%)/g)]
+    .map((m) => parseFloat(m[1].replace(",", ".")));
+  if (procenty.some((p) => p > 3)) return true;
+  return extractNumbers(t).map(Number).some((k) => k >= 300);
+}
+
+// Wykrywa kategorię eskalacji. Zwraca null albo { id, pilne, tekst }.
+// Patrzy WYŁĄCZNIE na treść pytania — nie na odpowiedź modelu i nie na to,
+// co znalazł retrieval. Dzięki temu wynik nie zależy od tego, czy dokumentacja
+// akurat coś na ten temat zawiera: przy wypadku bez pokrycia w dokumentacji
+// skierowanie do przełożonego jest potrzebne bardziej, nie mniej.
+function wykryjEskalacje(pytanie, askedFrom) {
+  if (askedFrom !== SPACE_INTERNAL) return null; // publiczny bot nie eskaluje do brygadzisty
+  const t = bezOgonkow(pytanie);
+  const informacyjne = RAMA_INFORMACYJNA.test(t);
+
+  for (const k of KATEGORIE_ESKALACJI) {
+    if (!k.zdarzenie.test(t)) continue;
+    if (k.drugiSygnal && !k.drugiSygnal.test(t)) continue;
+    if (k.prog && !przekroczonyProgDecyzyjny(pytanie)) continue;
+    // Weto ramy informacyjnej obowiązuje TYLKO tam, gdzie fałszywy alarm boli
+    // bardziej niż przeoczenie. Przy wypadku i zagrożeniu życia nie obowiązuje:
+    // „kto zgłasza wypadek śmiertelny" dostanie ramkę i dobrze, bo koszt to
+    // jedno zdanie za dużo, a koszt przeoczenia to zdrowie.
+    if (!k.pilne && informacyjne) continue;
+    return { id: k.id, pilne: k.pilne, tekst: k.tekst };
+  }
+  return null;
+}
+
+// Skleja odpowiedź z ramką eskalacji. Przy kategoriach pilnych skierowanie idzie
+// PRZED treścią — pracownik pod presją czyta pierwszą linię i może nie doczytać
+// do końca. Przy pozostałych na końcu, żeby nie odpychać od właściwej odpowiedzi.
+//
+// Ramka trafia też do pola `answer`, nie tylko do osobnego pola JSON: widget
+// i panel nie znają nowego pola, a odpowiedź musi być kompletna także dla
+// klienta, który go nie obsługuje.
+function zlozZEskalacja(tekst, esk) {
+  if (!esk) return tekst;
+  return esk.pilne ? `${esk.tekst}\n\n${tekst}` : `${tekst}\n\n${esk.tekst}`;
+}
+
+// ============================================================
 // PROMPTY — dwa tryby, jeden rdzeń rzetelności
 //
 // Publiczny i wewnętrzny różnią się TYM, KOMU odpowiadają, a nie tym, ile
@@ -1069,7 +1227,9 @@ export default {
 
         // Tryb promptu bierze się z zakresu przeszukania: gdy w grze jest
         // przestrzeń wewnętrzna, /debug pokazuje to, co zobaczyłby pracownik.
-        const trybProm = trybPromptu(spaces.includes(SPACE_INTERNAL) ? SPACE_INTERNAL : SPACE_PUBLIC);
+        const przestrzenPytania = spaces.includes(SPACE_INTERNAL) ? SPACE_INTERNAL : SPACE_PUBLIC;
+        const trybProm = trybPromptu(przestrzenPytania);
+        const eskalacjaDbg = wykryjEskalacje(q, przestrzenPytania);
         const systemPrompt = buildSystemPrompt(filtered.map((m) => m.metadata), trybProm);
         const answer = await generate(env, systemPrompt, [{ role: "user", content: q }]);
 
@@ -1129,6 +1289,7 @@ export default {
           pytanie: q,
           przeszukane_przestrzenie: spaces,
           tryb_promptu: trybProm,
+          eskalacja: eskalacjaDbg ? { kategoria: eskalacjaDbg.id, pilne: eskalacjaDbg.pilne } : null,
           progi: { MIN_SIMILARITY, CITATION_THRESHOLD, CITATION_THRESHOLD_KROTKIE, KROTKIE_ZDANIE_SLOW },
           znalezione_fragmenty: matches.map((m) => ({
             tytul: m.metadata.title,
@@ -1137,6 +1298,8 @@ export default {
           })),
           po_filtrze: filtered.length,
           odpowiedz: answer,
+          // Tak, jak zobaczy to pracownik: z doklejoną ramką eskalacji.
+          odpowiedz_z_eskalacja: zlozZEskalacja(answer, eskalacjaDbg),
           weryfikacja_zdan: sentenceScores,
         }, corsHeaders(request));
       } catch (e) {
@@ -1189,6 +1352,13 @@ async function handleAsk(request, env, spaces, askedFrom, identity = null) {
     }, corsHeaders(request), 400);
   }
 
+  // Kategoria eskalacji zależy WYŁĄCZNIE od pytania i od tego, z którego
+  // endpointu przyszło — nie od tego, co znalazł retrieval ani co napisał model.
+  // Przy wypadku, którego dokumentacja nie pokrywa, skierowanie do przełożonego
+  // jest potrzebne bardziej, nie mniej.
+  const eskalacja = wykryjEskalacje(question, askedFrom);
+  const poleEskalacji = eskalacja ? { eskalacja: { kategoria: eskalacja.id, pilne: eskalacja.pilne } } : {};
+
   if (env.RATE_LIMIT_KV) {
     const ip = request.headers.get("cf-connecting-ip") || "unknown";
     const bucket = Math.floor(Date.now() / 3600000);
@@ -1213,7 +1383,7 @@ async function handleAsk(request, env, spaces, askedFrom, identity = null) {
 
     if (filtered.length === 0) {
       await logQuestion(env, question, true, null, askedFrom);
-      return jsonResponse({ answer: FALLBACK_MESSAGE, source: null, gap: true }, corsHeaders(request));
+      return jsonResponse({ answer: zlozZEskalacja(FALLBACK_MESSAGE, eskalacja), source: null, gap: true, ...poleEskalacji }, corsHeaders(request));
     }
 
     // Tryb promptu, jak przestrzenie, przychodzi wyłącznie z routingu.
@@ -1228,21 +1398,25 @@ async function handleAsk(request, env, spaces, askedFrom, identity = null) {
 
     if (!rawAnswer || /nie mam takich informacji/i.test(rawAnswer)) {
       await logQuestion(env, question, true, null, askedFrom);
-      return jsonResponse({ answer: FALLBACK_MESSAGE, source: null, gap: true }, corsHeaders(request));
+      return jsonResponse({ answer: zlozZEskalacja(FALLBACK_MESSAGE, eskalacja), source: null, gap: true, ...poleEskalacji }, corsHeaders(request));
     }
 
     const verdict = await verifyClaims(rawAnswer, filtered, env, tryb);
     if (!verdict.ok) {
       await logQuestion(env, question, true, null, askedFrom);
-      return jsonResponse({ answer: verdict.fallback, source: null, gap: true }, corsHeaders(request));
+      return jsonResponse({ answer: zlozZEskalacja(verdict.fallback, eskalacja), source: null, gap: true, ...poleEskalacji }, corsHeaders(request));
     }
 
     await logQuestion(env, question, false, verdict.source, askedFrom);
     return jsonResponse({
-      answer: verdict.text,
+      answer: zlozZEskalacja(verdict.text, eskalacja),
       source: verdict.source,
       gap: false,
       trimmed: verdict.removed || 0,
+      // Trzeci stan odpowiedzi obok normalnej i „brak w dokumentacji".
+      // Osobne pole, żeby interfejs mógł ją pokazać inaczej — sam tekst
+      // ramki jest już w `answer`, dla klientów, które tego pola nie znają.
+      ...poleEskalacji,
       // Publiczna odpowiedź zachowuje dotychczasowy kształt — pole dochodzi
       // tylko wtedy, gdy pytający jest zalogowany.
       ...(identity ? { zalogowany: { email: identity.email, domena: identity.domena } } : {}),
@@ -1262,6 +1436,7 @@ export {
   verifyAccessJwt, accessConfig, resetAccessCertsCache,
   isUnsupportablePromise, leaksInstructions, isDuplicate, numbersAreGrounded,
   wystepujeDoslownie, progCytowania, splitSentences, isConnectiveSentence,
+  wykryjEskalacje, zlozZEskalacja, KATEGORIE_ESKALACJI,
   PROMPT_PUBLICZNY, PROMPT_WEWNETRZNY,
 };
 

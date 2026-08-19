@@ -23,6 +23,7 @@ zapis wraca jako ten sam błąd za trzy sesje.
 - [Prompty — dwa tryby](#prompty--dwa-tryby-jeden-rdzeń-rzetelności)
 - [Treść wewnętrzna i mapa problemów](#treść-wewnętrzna--41-fragmentów-i-mapa-problemów)
 - [Progi zależne od długości, cytat dosłowny, warstwy znające tryb](#progi-zależne-od-długości-cytat-dosłowny-i-warstwy-znające-tryb)
+- [Eskalacja — dlaczego wzorce, a nie ocena modelu](#eskalacja--dlaczego-wzorce-a-nie-ocena-modelu)
 - [Granica dostawcy](#granica-dostawcy--model-i-baza-wektorowa-są-wymienne)
 - [Dokumentacja BudMax](#dokumentacja-budmax)
 
@@ -610,6 +611,104 @@ ratunku** ani progiem 0.45, ani cytatem dosłownym. Obie drogi są dziś siatką
 bezpieczeństwa, a nie mechanizmem, na którym stoi wynik — bo prompt przestał
 produkować zdania, które ich wymagały. Nie znaczy to, że są zbędne: kolejna
 zmiana tonu albo fragment o innej budowie zdań wrócą do tego pasa.
+
+## Eskalacja — dlaczego wzorce, a nie ocena modelu
+
+Trzeci stan odpowiedzi, 19.08.2026. Reguły operacyjne są w `CLAUDE.md` → „Eskalacja";
+tutaj powody i dwie pułapki, które kosztowały najwięcej.
+
+### Dlaczego deterministycznie
+
+Kuszące było oddanie tej oceny modelowi — „rozpoznaj, czy sytuacja jest pilna".
+Odrzucone: model, który raz na dwadzieścia odpowiedzi uzna wypadek za pytanie
+o procedurę, jest bezużyteczny jako **zabezpieczenie**. Ta warstwa stoi na tej
+samej zasadzie co `numbersAreGrounded()`: ma dawać gwarancję, nie
+prawdopodobieństwo. Przy BHP błąd nie kosztuje złej recenzji, tylko zdrowia.
+
+### Dlaczego wyzwalacz idzie po zdarzeniu, a nie po temacie
+
+Wprost z wniosku o regule adresata: lista fraz odpala się zbyt chętnie. Gdyby
+kategoria „wypadek" reagowała na słownictwo **tematyczne** — rusztowanie, wysokość,
+BHP, szkolenie — ramka pojawiłaby się przy „co ile odnawiamy szkolenie BHP", czyli
+w połowie normalnych pytań. Pracownik nauczyłby się ją przewijać i nie zobaczyłby
+jej wtedy, gdy będzie potrzebna. Dlatego wyzwala **słownictwo zdarzeniowe**:
+spadł, złamał, krwawi, przygniotło, poszkodowany.
+
+Miara skuteczności tego rozróżnienia: na standardowym zestawie 20 pytań eskalacja
+odpaliła **4 razy i wszystkie 4 były trafne**, przy zerowych fałszywych
+wyzwoleniach na 16 pozostałych. Warto zauważyć, że pytanie o **inspektora nadzoru
+inwestorskiego** nie eskaluje, a o **inspektora pracy** tak — to nie przypadek:
+inspektor nadzoru reprezentuje inwestora i jest normalnym elementem budowy,
+a nie organem kontroli.
+
+### Dlaczego próg jest różny dla różnych kategorii
+
+Koszt pomyłki jest asymetryczny i **inny w każdą stronę zależnie od kategorii**:
+
+- Przy wypadku i zagrożeniu życia fałszywy alarm kosztuje jedno zdanie za dużo,
+  a przeoczenie — zdrowie. Wyzwalamy szeroko, a **weto ramy informacyjnej
+  celowo nie działa**: „kto zgłasza wypadek śmiertelny do PIP" dostaje ramkę,
+  choć jest pytaniem o regułę.
+- Przy sporze, kontroli i finansach fałszywy alarm to szum. Wymagamy **dwóch
+  niezależnych sygnałów** (organ *oraz* jego obecność; pieniądze *oraz* decyzja
+  *oraz* przekroczony próg) i wetujemy pytania o samą regułę.
+
+To jest odpowiedź na „nie opieraj się wyłącznie na słowach kluczowych": różnicuje
+nie długość listy, tylko **reguła decyzyjna**, dobrana do kosztu pomyłki.
+
+### Dlaczego ramka omija weryfikację
+
+Skierowanie do przełożonego **nie pochodzi z żadnego fragmentu**, więc
+`verifyClaims()` wyciąłby je jako twierdzenie bez pokrycia, a `isDuplicate()`
+mógłby skasować przy powtórzeniu. Rozważane były trzy wyjścia:
+
+1. dopisać ramkę jako fragment do `INTERNAL_CHUNKS` — **odrzucone**, bo wtedy
+   trafiałaby do kontekstu modelu i konkurowała w retrievalu z prawdziwą treścią;
+2. zrobić wyjątek w `verifyClaims()` na ten konkretny tekst — **odrzucone**,
+   bo to osłabia weryfikację o furtkę, którą kiedyś przejdzie coś innego;
+3. **doklejać ramkę po weryfikacji, ze stałej w kodzie** — wybrane.
+
+Trzecie jest jedynym, w którym weryfikacja dla reszty odpowiedzi **nie zmienia
+się ani o jotę**: `verifyClaims()` nadal widzi wyłącznie tekst modelu i traktuje
+go tak samo surowo. Ramka to reguła operacyjna firmy, nie twierdzenie
+o dokumentacji — nie ma czego weryfikować względem fragmentów.
+
+Skutek uboczny, świadomie zaakceptowany: przy wypadku skierowanie do kierownika
+budowy pada **dwa razy** — raz w ramce, raz w krokach z `i04`, które też każą go
+powiadomić. W sytuacji awaryjnej powtórzenie najważniejszej instrukcji nie jest
+defektem.
+
+### Dwie pułapki, które kosztowały 11 i 1 przypadek testowy
+
+1. **`\b` w JavaScripcie zna wyłącznie ASCII.** `\bmarż\b` nie dopasuje się do
+   „marżę", bo `ż` i `ę` nie są dla niego znakami słowa — granica wypada
+   w środku wyrazu albo nie wypada wcale. Pierwsza wersja warstwy milczała
+   na **11 z 41** przypadków. Zastąpione przez `(?<![a-z0-9])` bez ogona:
+   dopasowanie ma zaczynać się na granicy wyrazu, ale wolno mu przejść
+   w dowolną końcówkę fleksyjną. **Nie wracać do `\b`.**
+2. **Pracownik pisze bez ogonków.** Wzorzec wymagający „sądem" nie zadziałał na
+   „grozi sadem" — a tak właśnie wygląda pytanie pisane z telefonu na budowie.
+   Wykryte dopiero na żywym `/debug`, bo w teście jednostkowym sam pisałem
+   poprawną polszczyzną. Pytanie jest teraz normalizowane (`bezOgonkow()`),
+   a wzorce zapisane bez ogonków. Zestaw bez ogonków został w teście na stałe.
+
+Wniosek ogólniejszy: **test pisany przez tę samą osobę, która pisała wzorce,
+odtwarza jej własne założenia.** Przypadek z ogonkami znalazł się wyłącznie
+dlatego, że sprawdzenie na żywo poszło z linii poleceń, gdzie wygodniej było
+napisać bez polskich znaków.
+
+### Znalezione przy okazji: sprostowanie adresata kasuje treść
+
+Reguła adresata z poprzedniej sesji weszła w konflikt z `isDuplicate()`.
+Na pytanie o inspektora nadzoru odpowiedź zaczyna się teraz od zdania
+sprostowującego, a właściwa treść — dłuższa i niosąca konkrety — dzieli z nim
+słownictwo i **znika jako duplikat** przy podobieństwie 0.775. To ta sama
+usterka co przy krokach `i23`, ale trafia w główną ścieżkę i pojawiła się
+**w wyniku naszej własnej poprawki**.
+
+Proponowana poprawka (niewykonana, bo dotyka też trybu publicznego): nie uznawać
+za duplikat zdania **istotnie dłuższego** od tego, z którym się pokrywa —
+dłuższe zdanie jest rozwinięciem, nie powtórzeniem.
 
 ## Granica dostawcy — model i baza wektorowa są wymienne
 

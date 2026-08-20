@@ -26,6 +26,9 @@ zapis wraca jako ten sam błąd za trzy sesje.
 - [Eskalacja — dlaczego wzorce, a nie ocena modelu](#eskalacja--dlaczego-wzorce-a-nie-ocena-modelu)
 - [Deduplikacja: rozwinięcie to nie powtórzenie](#deduplikacja-rozwinięcie-to-nie-powtórzenie)
 - [Granica dostawcy](#granica-dostawcy--model-i-baza-wektorowa-są-wymienne)
+- [Interfejsy pracownicze](#interfejsy-pracownicze--aplikacja-etap-5-i-panel-etap-6)
+- [Uziemienie liczb: pytanie nie jest zrodlem](#uziemienie-liczb-pytanie-uzytkownika-nie-jest-zrodlem)
+- [Problem 4 - nowa diagnoza](#problem-4--nowa-diagnoza-20082026)
 - [Dokumentacja BudMax](#dokumentacja-budmax)
 
 ## Decyzje, do których nie wracać
@@ -844,6 +847,179 @@ a granica z jednym wyjątkiem przestaje być granicą.
 Refaktoryzacja z 17.08.2026 była **czysto strukturalna** — progi, prompt, `CHUNKS`
 i logika weryfikacji bez zmian, zachowanie identyczne (potwierdzone porównaniem
 wyników `/debug` przed i po).
+
+## Interfejsy pracownicze — aplikacja (Etap 5) i panel (Etap 6)
+
+Dopisane 20.08.2026, po fakcie: oba etapy powstały w sesji, która nie znała
+historii projektu, i `DECYZJE.md` o nich nie wiedział.
+
+**Co doszło:** `GET /app` (`app-internal.js`) — aplikacja asystenta budowy,
+mobile-first, z dyktowaniem i kaflami szybkiego startu. `GET /panel`
+(`panel-internal.js`) — panel luk szkoleniowych i eskalacji. `GET /stats-internal`
+— dane dla tego panelu, **autoryzowane tokenem Access**, nie `REINDEX_SECRET`.
+
+**Rozstrzygnięcie warte zapamiętania:** `/stats-internal` jest pierwszym
+endpointem analitycznym, który wyszedł spod klucza administratora. To kierunek
+docelowy także dla `panel.html` — dziś właściciel firmy dostaje klucz otwierający
+również `/purge` i `/reindex`. Nie zmieniamy tego przy okazji, ale wzorzec już
+istnieje w kodzie.
+
+**Naprawione 20.08.2026:** oba interfejsy odpowiadały `200` na **publicznej
+domenie klienta** i na `workers.dev`, bo warunek trasy sprawdzał samą ścieżkę.
+Danych to nie wystawiało — strony wołają `/internal` i `/stats-internal`, a te
+bez tokenu zwracają 401 — ale interfejs pracowniczy nie ma czego szukać pod
+adresem, na który wchodzi klient. Dziś `/app`, `/panel` i `GET /` przechodzą
+przez `hostWewnetrzny(url)`; poza hostem wewnętrznym ścieżki nie istnieją.
+Osobna funkcja, nie wklejony warunek — przy multi-tenant zmieni się jedno miejsce.
+
+## Uziemienie liczb: pytanie użytkownika NIE jest źródłem
+
+Próba i cofnięcie w ciągu jednego dnia, 20.08.2026. **Ślepa uliczka z pomiarem.**
+
+### Co próbowano
+
+Otwarty defekt „`numbersAreGrounded()` nie odróżnia liczby zmyślonej od
+zacytowanej z pytania" doczekał się poprawki: do korpusu liczb dokładane było
+pytanie użytkownika, więc zdanie „dla silnika 1600 cm3" przestawało wypadać.
+
+### Dlaczego cofnięte
+
+Poprawka oddaje **pytającemu** decyzję o tym, które liczby są uziemione.
+Zmierzone prawdziwą funkcją, tryb publiczny:
+
+| zdanie modelu | pytanie | przed poprawką | po poprawce |
+|---|---|---|---|
+| „Tak, remont łazienki kosztuje 1200 zł/m²." | „Czy remont kosztuje 1200 zł/m²?" | **wycięte** | **przechodzi** |
+| to samo zdanie | bez pytania | wycięte | wycięte |
+
+To jest dokładnie wzorzec, przed którym ta warstwa powstała: **potwierdzanie
+założeń klienta**. Sprawdzone, czy łapie to inna warstwa — `isUnsupportablePromise()`
+w trybie publicznym **przepuszcza** zdanie o cenie (wzorce celują w rabaty
+i terminy). Zostaje sama weryfikacja semantyczna, o której ten plik notuje niżej,
+że przepuściła zdanie o nieoferowanej usłudze z wynikiem **0.676**.
+
+Zakaz: **pytanie nie wchodzi do korpusu `numbersAreGrounded()`.** Pilnują tego
+przypadki wrogie w `test-weryfikacja.mjs`, w tym strażnik liczby argumentów
+funkcji — przywrócenie trzeciego parametru wywala test.
+
+### Koszt cofnięcia — zmierzony, nie oszacowany
+
+Defekt wraca i jest większy, niż zapisywał przykład z „1600 cm3". Pomiar na
+6 pytaniach, w których pytający podaje własną liczbę, po 3 przebiegi:
+
+| | wynik |
+|---|---|
+| zdań łącznie | 39 |
+| wyciętych na regule liczb | **12** |
+| odpowiedzi zredukowanych do samej linii `Podstawa:` | **6 z 18 przebiegów** |
+
+Mechanizm: model **powtarza kwotę z pytania** w zdaniu odpowiedzi
+(„Przy zleceniu o wartości 500 000 złotych standardowa marża wynosi 22 procent…"),
+całe zdanie wypada na regule liczb, a pracownikowi zostaje sam nagłówek źródła.
+Pytania, w których model kwoty nie powtarza („Mam 12 lat stażu…"), nie tracą nic.
+
+**Wniosek dla przyszłej poprawki:** kierunek „dołóż pytanie do korpusu" jest
+zamknięty. Otwarty jest kierunek węższy — pozwolić na liczbę z pytania tylko
+wtedy, gdy zdanie **nie przypisuje jej firmie** jako ceny, terminu ani stawki,
+albo wyłącznie w trybie wewnętrznym. Nie robiono tego 20.08.2026: wymaga
+własnego pomiaru, a nie poprawki przy okazji.
+
+## Problem 4 — nowa diagnoza (20.08.2026)
+
+**Dotychczasowy zapis był błędny co do przyczyny** i trzeba go czytać jako
+obalony. Problem 4 brzmiał: „model nie łączy dwóch fragmentów w jedną odpowiedź".
+
+### Co obala starą diagnozę
+
+Klauzula o 12% **leży w tym samym fragmencie** (`i01`, zdanie 2 z 5) co marża
+standardowa 22% i granica 14%. Nie ma tu żadnych dwóch fragmentów do połączenia.
+Model pomijał zdanie z fragmentu, **który sam cytował w linii `Podstawa:`**.
+
+### Co zmierzono
+
+Wyeliminowano po kolei trzy hipotezy, `/debug?space=obie`, po 4 przebiegi.
+Uwaga metodologiczna: `/debug` pokazuje w polu `odpowiedz` **surowy tekst modelu
+przed weryfikacją**, więc te liczby mierzą model, nie warstwy wycinające.
+
+**Pozycja zdania we fragmencie — nie ona.** Pytania celujące wprost w późne
+zdania: `i14` zd. 3/6 → 4/4, `i14` zd. 5/6 → 4/4, `i15` zd. 3/7 → 4/4,
+`i18` zd. 5/6 → 4/4. Późna pozycja nie szkodzi.
+
+**Długość fragmentu — nie ona.** Najdłuższy fragment (`i15`, 1005 znaków)
+odpowiada 4/4. Najkrótszy z badanych (`i01`, 619) jest tym, który zawodzi.
+
+**Sformułowanie pytania — tak, i to nieprzewidywalnie.** Ten sam fragment,
+to samo zdanie docelowe, ten sam lider retrievalu (0.55–0.58):
+
+| pytanie | 12% w odpowiedzi |
+|---|---|
+| „Jaka marża przy zleceniu za 500 tysięcy **złotych**?" | **2/6** |
+| „Jaka marża przy zleceniu za 500 tysięcy?" | 6/6 |
+| „Jaką marżę mogę zejść przy 500 tys. i kto zatwierdza?" | 6/6 |
+| „…o wartości 500 tysięcy złotych?" | 4/4 |
+| „…za 600 tysięcy złotych?" | 4/4 |
+| „…za pół miliona złotych?" | 4/4 |
+
+Model **poprawnie wylicza próg**: przy 300 tysiącach 12% nie pada ani razu
+(0/4, i tak ma być), przy 500/900 tys., 1,5 mln i 800 tys. — 4/4.
+
+### Co z tego wynika
+
+1. **Pytanie z oryginalnego zapisu przestało być odtwarzalne.** „Jaką marżę mogę
+   zejść przy 500 tys. i kto zatwierdza" daje dziś 6/6. Problem 4 w postaci,
+   w jakiej go zapisano, **nie występuje**.
+2. Zostaje wąska, powtarzalna kruchość na **konkretnych formach powierzchniowych
+   kwoty**. Jedno zbędne słowo („złotych") zmienia 6/6 na 2/6, przy nietkniętym
+   retrievalu i tej samej pozycji zdania.
+3. **Mechanizmu nie znamy** i nie zgadujemy go. Wiadomo, czego przyczyną NIE jest:
+   retrievalu, pozycji zdania, długości fragmentu, arytmetyki progu.
+4. Wariant „za 500 000 złotych" (0/4) **nie należy do tej klasy w ogóle** — tam
+   model odpowiada poprawnie, a zdanie wycina `numbersAreGrounded()`. To defekt
+   liczb opisany wyżej, nie problem 4. Dwa objawy zlewały się w jeden, dopóki
+   `/debug` nie pokazał obu warstw naraz.
+
+**Zakaz do czasu ustalenia mechanizmu:** żadnej reguły w prompcie „pod problem 4".
+Poprzednia taka próba (lista przykładów: „np. marżę standardową i progi decyzyjne
+przy danej kwocie") łamała zapisany wniosek „regułę promptu opisuj warunkiem,
+nie listą fraz", **i nie działała** — 12% padało w 1 z 4 przebiegów. Cofnięta
+20.08.2026 razem ze zmianą w `PROMPT_RDZEN`.
+
+### Zestaw 20 pytań publicznych — zapisany, żeby pomiar był odtwarzalny
+
+Pomiar z 20.08.2026 („Deduplikacja") powoływał się na „zestaw 20 pytań klienta",
+którego nigdzie nie zapisano — więc nie dało się go powtórzyć. Zestaw używany
+od teraz, 16 pytań zwykłych i 4 długie wielowątkowe: koszt remontu łazienki,
+elewacje, czas stanu surowego, skład kosztorysu, rękojmia a gwarancja,
+formalności i pozwolenie, etapy realizacji, harmonogram płatności, materiały
+własne, stawka VAT, Czyste Powietrze, reklamacja, ogród, kierownik budowy,
+technologia szkieletowa, wizja lokalna — plus cztery pytania łączone
+(harmonogram+opóźnienia+płatności; wykończenie+elewacja+gwarancja;
+fotowoltaika+dotacje+odbiory; wycena+umowa+raportowanie postępu).
+
+### Pomiar kontrolny po przywróceniu `PROMPT_RDZEN`
+
+Ten sam zestaw, po 2 przebiegi, `/debug?space=public`, przed i po cofnięciu:
+
+| | przed (prompt zmieniony) | po (prompt przywrócony) |
+|---|---|---|
+| zdań łącznie | 127 | 115 |
+| wyciętych | 1 | 1 |
+| średnie podobieństwo zdania | 0.7509 | 0.7534 |
+| mediana | 0.760 | 0.788 |
+| średni wynik lidera | 0.6771 | 0.6771 |
+| zdań poniżej progu 0.48 | 3 | 3 |
+
+**Weryfikacja i retrieval nietknięte** — identyczny lider potwierdza, że prompt
+nie ruszał wyszukiwania. Cena przywrócenia jest widoczna gdzie indziej:
+odpowiedzi są **krótsze o ok. 9%** (127 → 115 zdań), a na pytaniach o kilku
+faktach bywają mniej kompletne. Zmierzone na pytaniu o formalności: rozróżnienie
+zgłoszenie/pozwolenie pada w 4/6 przebiegów, informacja o osobnej płatności
+w 3/6, **oba naraz w 1/6** — przed cofnięciem oba były w obu próbkach.
+
+To jest **przyjęty koszt, nie regresja do naprawienia**: prompt publiczny jest
+kalibrowany od wielu sesji i nie zmienia się przy okazji pracy nad trybem
+wewnętrznym. Gdyby kiedyś świadomie podnosić kompletność publicznych odpowiedzi,
+to osobną decyzją i z własnym pomiarem — nie efektem ubocznym.
 
 ## Dokumentacja BudMax
 

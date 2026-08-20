@@ -242,6 +242,14 @@ const ALLOWED_ORIGINS = [
   "https://budmax-wewnetrzny.know-base.app", // bot dla pracowników (za Access)
 ];
 
+// Host wewnętrzny to jedyne miejsce, przed którym stoi Cloudflare Access.
+// Interfejsy pracownicze (`/app`, `/panel`) serwujemy wyłącznie stamtąd.
+// Osobna funkcja, a nie wklejony warunek: przy multi-tenant zmieni się tu
+// jedno miejsce, nie trzy.
+function hostWewnetrzny(url) {
+  return url.hostname.includes("wewnetrzny");
+}
+
 function corsHeaders(request) {
   const origin = request?.headers?.get("Origin") || "";
   const dozwolony = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
@@ -568,14 +576,21 @@ function extractNumbers(text) {
 }
 
 // Sprawdza, czy każda liczba ze zdania występuje w treści któregokolwiek
-// z pobranych fragmentów LUB dosłownie w pytaniu użytkownika. To wyłapuje
-// zmyślone ceny i terminy wplecione w skądinąd poprawnie brzmiące zdanie,
-// jednocześnie nie kasując zdań, w których model odnosi się do parametrów
-// podanych przez pytającego (np. "dla silnika 1600 cm3").
-function numbersAreGrounded(sentence, filtered, userQuestion = "") {
+// z pobranych fragmentów. To wyłapuje zmyślone ceny i terminy wplecione
+// w skądinąd poprawnie brzmiące zdanie — czego weryfikacja semantyczna nie widzi.
+//
+// PYTANIE UŻYTKOWNIKA NIE JEST ŹRÓDŁEM UZIEMIENIA — i nie wolno go dopisywać
+// do korpusu. Próba z 20.08.2026 (cofnięta tego samego dnia) dokładała tu
+// `userQuestion`, żeby ratować zdania odnoszące się do parametrów z pytania
+// ("dla silnika 1600 cm3"). Skutkiem ubocznym było to, że pytający sam
+// decydował, które liczby są uziemione: na "Czy remont kosztuje 1200 zł/m²?"
+// zdanie potwierdzające przechodziło, bo 1200 przyszło z pytania. To dokładnie
+// ten wzorzec, przed którym ta warstwa powstała — potwierdzanie założeń klienta.
+// Przypadek wrogi pilnuje tego w `test-weryfikacja.mjs`.
+function numbersAreGrounded(sentence, filtered) {
   const nums = extractNumbers(sentence);
   if (!nums.length) return true;
-  const corpus = filtered.map((m) => m.metadata.text + " " + m.metadata.title).join(" ") + " " + (userQuestion || "");
+  const corpus = filtered.map((m) => m.metadata.text + " " + m.metadata.title).join(" ");
   const corpusNums = new Set(extractNumbers(corpus));
   return nums.every((n) => corpusNums.has(n));
 }
@@ -724,7 +739,7 @@ function isDuplicate(sentence, alreadyKept) {
   return false;
 }
 
-async function verifyClaims(fullText, filtered, env, tryb = PROMPT_PUBLICZNY, userQuestion = "") {
+async function verifyClaims(fullText, filtered, env, tryb = PROMPT_PUBLICZNY) {
   const claims = splitSentences(fullText);
   const toCheck = claims.length ? claims : [fullText];
 
@@ -742,7 +757,7 @@ async function verifyClaims(fullText, filtered, env, tryb = PROMPT_PUBLICZNY, us
       if (sim > bestSim) { bestSim = sim; bestTitle = m.metadata.title; }
     }
 
-    const numbersOk = numbersAreGrounded(toCheck[i], filtered, userQuestion);
+    const numbersOk = numbersAreGrounded(toCheck[i], filtered);
     const promiseOk = !isUnsupportablePromise(toCheck[i], tryb);
 
     // Zdania zdradzające instrukcje lub powtarzające już powiedzianą treść
@@ -984,7 +999,7 @@ function zlozZEskalacja(tekst, esk) {
 // Rdzeń rzetelności — obowiązuje w OBU trybach. Tryb wewnętrzny zmienia to,
 // co wolno powiedzieć rozmówcy, a nie to, czy wolno to zmyślić.
 const PROMPT_RDZEN = {
-  laczenieFragmentow: `Gdy pytanie dotyczy kilku kwestii lub zagadnienia opisanego w kilku fragmentach, POŁĄCZ informacje ze wszystkich relewantnych fragmentów w jedną kompletną odpowiedź. Nie pomijaj żadnego aspektu, o który pyta użytkownik ani progów wynikających z fragmentów. Pamiętaj jednak: NIE WOLNO Ci tworzyć nowego twierdzenia, którego żaden pojedynczy fragment wprost nie potwierdza.`,
+  laczenieFragmentow: `Możesz łączyć informacje z kilku fragmentów, żeby dać pełniejszą odpowiedź, ale NIE WOLNO Ci tworzyć nowego twierdzenia, którego żaden pojedynczy fragment wprost nie potwierdza.`,
   liczby: `NIGDY nie podawaj żadnej liczby (ceny, kwoty, terminu, procentu, okresu gwarancji), której nie ma dosłownie w powyższych fragmentach. Nie szacuj, nie podawaj "orientacyjnie", nie mów "od X do Y".`,
   // Zdanie musi zostać dosłowne w obu trybach: handleAsk() rozpoznaje brak
   // odpowiedzi wyrażeniem /nie mam takich informacji/i na surowym tekście
@@ -1069,9 +1084,8 @@ KOMU ODPOWIADASZ — to jest różnica wobec trybu publicznego:
 - Zdanie we fragmencie w rodzaju "tych wartości nie komunikujemy klientom" dotyczy rozmowy z klientem. NIE jest poleceniem zatajenia ich przed pracownikiem. Pominięcie takiej liczby jest błędem — po to istnieje ten tryb.
 - Nie odsyłaj do biura, działu ani przełożonego w sprawie, na którą fragmenty odpowiadają. Odesłanie ma sens tylko wtedy, gdy fragmenty wymagają czyjejś zgody (np. akceptacji zarządu) albo gdy odpowiedzi w nich nie ma.
 
-ODPOWIADAJ NA CAŁE PYTANIE I SYNTEZUJ WIEDZĘ:
-- Jeśli pytanie ma kilka części lub łączy dwa zagadnienia (np. marżę standardową i progi decyzyjne przy danej kwocie, procedurę wypadkową i zgłoszenie do PIP) — połącz wiedzę ze wszystkich pasujących fragmentów w jedną pełną odpowiedź.
-- Gdy fragmenty zawierają wartość standardową i jej granicę, próg kwotowy albo wyjątek — podaj oba, nie samą wartość standardową.
+ODPOWIADAJ NA CAŁE PYTANIE:
+- Jeśli pytanie ma kilka części, odpowiedz na KAŻDĄ. Gdy fragmenty zawierają wartość standardową i jej granicę, próg albo wyjątek — podaj oba, nie samą wartość standardową.
 - Niepełna odpowiedź jest tu groźniejsza niż w trybie publicznym: pracownik nie wie, czego nie dostał, i podejmie decyzję na połowie danych.
 
 TON — instruktażowy, nie sprzedażowy:
@@ -1250,8 +1264,13 @@ export default {
     }
 
     // Interfejs asystenta dla pracowników (Etap 5).
-    // Serwowany na dedykowanym hoście wewnętrznym (GET /) lub ścieżce /app.
-    if ((url.pathname === "/app" || (url.pathname === "/" && url.hostname.includes("wewnetrzny"))) && request.method === "GET") {
+    // WYŁĄCZNIE na hoście wewnętrznym — tam, gdzie przed Workerem stoi Access.
+    // Bez tego warunku `/app` i `/panel` odpowiadały 200 także na publicznej
+    // domenie klienta i na workers.dev (zmierzone 20.08.2026). Danych to nie
+    // wystawiało — obie strony wołają `/internal` i `/stats-internal`, które bez
+    // tokenu zwracają 401 — ale interfejs pracowniczy nie ma czego szukać pod
+    // adresem, na który wchodzi klient.
+    if ((url.pathname === "/app" || url.pathname === "/") && hostWewnetrzny(url) && request.method === "GET") {
       return new Response(APP_INTERNAL_HTML, {
         headers: {
           "Content-Type": "text/html; charset=utf-8",
@@ -1261,8 +1280,8 @@ export default {
     }
 
     // Panel analityczny dla bota wewnętrznego (Etap 6).
-    // Zwraca interfejs HTML chroniony przez Cloudflare Access.
-    if (url.pathname === "/panel" && request.method === "GET") {
+    // Jak wyżej: tylko host wewnętrzny, bo tylko przed nim stoi Access.
+    if (url.pathname === "/panel" && hostWewnetrzny(url) && request.method === "GET") {
       return new Response(PANEL_INTERNAL_HTML, {
         headers: {
           "Content-Type": "text/html; charset=utf-8",
@@ -1400,7 +1419,7 @@ export default {
           }
           const prog = progCytowania(s);
           const doslownie = wystepujeDoslownie(s, filtered);
-          const liczbyOk = numbersAreGrounded(s, filtered, q);
+          const liczbyOk = numbersAreGrounded(s, filtered);
           const obietnica = isUnsupportablePromise(s, trybProm);
           const instrukcje = leaksInstructions(s, trybProm);
           const duplikat = isDuplicate(s, juzZachowane);
@@ -1552,9 +1571,14 @@ async function handleAsk(request, env, spaces, askedFrom, identity = null) {
       return jsonResponse({ answer: zlozZEskalacja(FALLBACK_MESSAGE, eskalacja), source: null, gap: true, ...poleEskalacji }, corsHeaders(request));
     }
 
-    const verdict = await verifyClaims(rawAnswer, filtered, env, tryb, question);
+    const verdict = await verifyClaims(rawAnswer, filtered, env, tryb);
     if (!verdict.ok) {
-      await logQuestion(env, question, true, null, askedFrom, null, eskalacja);
+      // Licznik `cicho` MUSI dostać dane także tutaj. To jest ścieżka, na której
+      // po weryfikacji nie zostało ani jedno twierdzenie — czyli jedyny przypadek,
+      // w którym deduplikacja mogła zjeść CAŁĄ odpowiedź. Przekazywanie tu `null`
+      // (stan sprzed 20.08.2026) wycinało z metryk dokładnie ten przypadek,
+      // dla którego licznik powstał.
+      await logQuestion(env, question, true, null, askedFrom, verdict.cicho, eskalacja);
       return jsonResponse({ answer: zlozZEskalacja(verdict.fallback, eskalacja), source: null, gap: true, ...poleEskalacji }, corsHeaders(request));
     }
 

@@ -14,7 +14,7 @@ i ślepe uliczki mieszkają w [`DECYZJE.md`](DECYZJE.md)** — czytanym wybiórc
 na żądanie, po nagłówkach. Rozdzielone 19.08.2026, bo ten plik wczytuje się przy
 każdej sesji, a historia decyzji jest potrzebna kilka razy w miesiącu.
 
-## Stan na 19.08.2026 — zacznij stąd
+## Stan na 20.08.2026 — zacznij stąd
 
 **Co działa w produkcji:**
 - Publiczny bot FAQ — 53 fragmenty, weryfikacja zdanie po zdaniu, model 70B
@@ -28,23 +28,35 @@ każdej sesji, a historia decyzji jest potrzebna kilka razy w miesiącu.
 - Tryb wewnętrzny na tożsamości z Cloudflare Access, pełna ścieżka potwierdzona
   pomiarem na żywo prawdziwym tokenem (18.08.2026)
 
-**Ostatnie trzy sesje, w skrócie:**
+**Ostatnie sesje, w skrócie:**
 
 | Data | Co | Gdzie szczegóły |
 |---|---|---|
 | 17.08 | Granica dostawcy, separacja przestrzeni, Access, własna domena | `DECYZJE.md` |
 | 18.08 | Aplikacja Access skonfigurowana, tryb wewnętrzny domknięty pomiarem | `DECYZJE.md` → Cloudflare Access |
 | 19.08 | Rozdzielony prompt, **41 fragmentów treści wewnętrznej**, rozdzielone pliki | `DECYZJE.md` → Prompty, Treść wewnętrzna |
+| 20.08 | Etapy 5 i 6 (aplikacja, panel wewnętrzny), naprawa `isDuplicate()` | `DECYZJE.md` → Deduplikacja, Interfejsy pracownicze |
+| 20.08 | **Trzy zmiany cofnięte**, nowa diagnoza problemu 4, przypięcie `/app` i `/panel` | `DECYZJE.md` → Uziemienie liczb, Problem 4 |
 
 **Gdzie jesteśmy:** treści nie brakuje nigdzie, a z pięciu problemów z pomiaru
 **trzy są naprawione** (próg zależny od długości zdania z cytatem dosłownym,
 warstwy weryfikacji znające tryb, prompt niewymuszający listy kroków przy
-fragmencie opisowym). Pomiar kontrolny na tych samych 20 pytaniach: **8 zdań
-traconych na 89 przed naprawami, 0 na 71 po**. Problem ściśniętych grup zostawiony
-świadomie. **Nadal otwarte:** synteza odpowiedzi wieloczęściowej (model nie łączy
-dwóch fragmentów, choć oba są w kontekście) oraz dwa defekty znalezione przy okazji —
-`isDuplicate()` kasujący odrębne kroki procedury i `numbersAreGrounded()` wycinający
-liczbę zacytowaną z pytania. Wszystko w „Znane ograniczenia" i `DECYZJE.md`.
+fragmencie opisowym), **czwarty — `isDuplicate()` — naprawiony 20.08.2026**.
+Problem ściśniętych grup zostawiony świadomie.
+
+**Nadal otwarte, oba z nową wiedzą z 20.08.2026:**
+- `numbersAreGrounded()` wycina liczbę zacytowaną z pytania. Kierunek „dołóż
+  pytanie do korpusu" **jest zamknięty** — próba cofnięta jako regresja
+  bezpieczeństwa. Zmierzona skala: 12 zdań wyciętych na 39, 6 z 18 odpowiedzi
+  zredukowanych do samej linii `Podstawa:`
+- Problem 4 **nie jest problemem syntezy dwóch fragmentów** — stara diagnoza
+  obalona pomiarem. Zostaje kruchość na formie powierzchniowej pytania,
+  o nieznanym mechanizmie
+
+Wszystko w „Znane ograniczenia" i `DECYZJE.md`.
+
+**Trzy zmiany cofnięte 20.08.2026** (uziemianie liczb pytaniem, reguła syntezy
+jako lista przykładów, zmiana w `PROMPT_RDZEN`) — powody w „Ślepe uliczki".
 
 **Zostało po stronie właściciela, nie kodu:** kroki 2 i 3 z `ZERO-TRUST.md`
 (Google i Microsoft jako metody logowania). Dziś działa wyłącznie One-time PIN —
@@ -321,10 +333,13 @@ Uprawnienia są **rozdzielone na dwa niezależne mechanizmy** — patrz sekcja
   przestrzeń `public`**, wpisaną na sztywno w routingu
 - `POST /internal` — bot dla pracowników, przeszukuje `public` + `internal`.
   **Wyłącznie na tożsamości z Cloudflare Access** — `REINDEX_SECRET` tu nie działa
-- `GET /` (na hoście wewnętrznym) lub `GET /app` — aplikacja webowa asystenta budowy (Etap 5)
-  zoptymalizowana na telefon, z dyktowaniem głosowym i kaflami szybkiego startu
-- `GET /panel` — panel analityczny procedur i szkoleń (Etap 6). Zwraca HTML bota wewnętrznego
-  chroniony przez Cloudflare Access
+- `GET /` lub `GET /app` — aplikacja webowa asystenta budowy (Etap 5)
+  zoptymalizowana na telefon, z dyktowaniem głosowym i kaflami szybkiego startu.
+  **Wyłącznie na hoście wewnętrznym** (`hostWewnetrzny()`) — gdzie indziej ścieżka
+  nie istnieje
+- `GET /panel` — panel analityczny procedur i szkoleń (Etap 6). Zwraca HTML bota
+  wewnętrznego chroniony przez Cloudflare Access. **Też tylko host wewnętrzny** —
+  do 20.08.2026 odpowiadał 200 na publicznej domenie klienta i na `workers.dev`
 - `GET /stats-internal` — dane statystyczne bota wewnętrznego (luki szkoleniowe, procedury,
   zdarzenia/eskalacje). **Autoryzacja przez token Access (JWT)** — brak wpisywania hasła/klucza admina
 - `GET /reindex?key=…&space=public|internal` — **uruchom po każdej zmianie CHUNKS
@@ -362,6 +377,12 @@ Kolejno w `verifyClaims()` i funkcjach pomocniczych:
   w pobranych fragmentach. To najważniejsze zabezpieczenie: łapie zmyślone ceny
   ("1500–3000 zł/m²") i terminy ("3–4 miesiące"), których weryfikacja semantyczna
   nie widziała, bo zdanie brzmiało poprawnie.
+  **Pytanie użytkownika NIE jest źródłem uziemienia** — nie wolno go dokładać do
+  korpusu. Próba z 20.08.2026, cofnięta tego samego dnia, pozwalała pytającemu
+  zdecydować, które liczby są uziemione: na „Czy remont kosztuje 1200 zł/m²?"
+  zdanie potwierdzające przechodziło. `isUnsupportablePromise()` tego **nie
+  łapie** — zmierzone. Pilnują tego przypadki wrogie w `test-weryfikacja.mjs`,
+  łącznie ze strażnikiem liczby argumentów funkcji.
 - **`isUnsupportablePromise(s, tryb)`** — **zna tryb od 19.08.2026.** W obu trybach
   wycina deklaracje wolnych terminów i obietnice zdążenia. Wzorce rabatowe i cenowe
   działają **tylko publicznie**: pracownikowi „przysługuje ci rabat do 3 procent"
@@ -434,6 +455,12 @@ Lista jest tutaj, bo zniknięty zapis wraca jako ten sam błąd za trzy sesje.
 - **Przenoszenie reguły tonu do `BEZWZGLĘDNE ZAKAZY`** — nadpisałaby wolę klienta
 - **Wartości `budmax-reindex-2026` i `gieldowa1q2w3e`** — martwe i spalone,
   nie używać nawet jako przykładów
+- **Pytanie użytkownika jako źródło uziemienia liczb** — cofnięte 20.08.2026,
+  oddawało pytającemu decyzję, które liczby są prawdziwe
+- **Reguła promptu „pod problem 4" jako lista przykładów** — cofnięta 20.08.2026,
+  łamała zasadę „warunek, nie lista fraz" i nie działała (12% w 1 z 4 przebiegów)
+- **Zmiana `PROMPT_RDZEN` w celu naprawy trybu wewnętrznego** — rdzeń jest wspólny,
+  więc przepisuje też prompt publiczny kalibrowany od wielu sesji
 
 ## Procedura łatania luk w dokumentacji
 
@@ -489,14 +516,25 @@ też poprawne parafrazy.
 - **`numbersAreGrounded()` nie odróżnia liczby zmyślonej od zacytowanej z pytania** —
   „przy pojemności 1600 cm3" wycina całe zdanie, bo `1600` przyszło z pytania,
   a w dokumentacji jest tylko próg 900. Zachowanie jest bezpieczne, ale kosztuje
-  poprawną odpowiedź. Dotyczy obu trybów. Nienaprawione
+  poprawną odpowiedź. Dotyczy obu trybów. **Nienaprawione — i kierunek „dołóż
+  pytanie do korpusu" jest zamknięty** (próba z 20.08.2026 cofnięta jako regresja
+  bezpieczeństwa, `DECYZJE.md` → „Uziemienie liczb"). Zmierzona skala 20.08.2026:
+  na 6 pytaniach z własną liczbą pytającego, po 3 przebiegi — **12 zdań wyciętych
+  na 39**, a **6 z 18 odpowiedzi zredukowanych do samej linii `Podstawa:`**.
+  Uruchamia się wtedy, gdy model powtarza kwotę z pytania
 - **Ściśnięte grupy na stykach obszarów** (problem 3 z mapy) — **zostawione
   świadomie** 19.08.2026. Odpowiedzi są trafne mimo małego odskoku lidera, a
   rozsuwanie fragmentów oznaczałoby przepisywanie treści pod wyszukiwarkę
-- **Pytanie wieloczęściowe nadal bywa zbywane połową odpowiedzi** (problem 4) —
-  pomiar powtórzony po naprawach 19.08.2026: pytanie o marżę przy 500 tys. dalej
-  zwraca sam próg 12%, bez 22% i 14%, mimo obu fragmentów w kontekście z niemal
-  równym wynikiem. Naprawy 1, 2 i 5 tego nie ruszyły — to osobny problem syntezy
+- **Problem 4 — stara diagnoza obalona 20.08.2026, zostaje wąska kruchość.**
+  To **nie jest** problem łączenia dwóch fragmentów: klauzula o 12% leży w tym
+  samym fragmencie (`i01`, zdanie 2 z 5) co 22% i 14%, a model pomijał zdanie
+  z fragmentu, który sam cytował. Zmierzone i wykluczone: pozycja zdania,
+  długość fragmentu, retrieval, arytmetyka progu. Zostaje zależność od **formy
+  powierzchniowej pytania**: „500 tysięcy złotych" → 12% w 2/6 przebiegów,
+  „500 tysięcy" → 6/6, „600 tysięcy złotych" → 4/4. Pytanie z pierwotnego zapisu
+  **przestało być odtwarzalne** (6/6). **Mechanizmu nie znamy — do czasu jego
+  ustalenia żadnej reguły w prompcie „pod problem 4".** Szczegóły i tabele:
+  `DECYZJE.md` → „Problem 4 — nowa diagnoza"
 - ~~**Tryb wewnętrzny odpowiada ostrożnie jak klientowi**~~ — **nieaktualne
   od 19.08.2026**, rozwiązane osobnym promptem wewnętrznym (`DECYZJE.md` → „Prompty"). Pomiar kontrolny: to samo pytanie zwraca teraz 22% **i** 14%
 
@@ -543,11 +581,18 @@ Kolejność jest celowa — uzasadnienie jest częścią decyzji, nie ozdobnikie
      twarde skierowanie do przełożonego. Pięć kategorii, wyzwalanie deterministyczne
      wzorcami, osobne pole `eskalacja` w JSON. Patrz sekcja „Eskalacja" wyżej,
      uzasadnienia w `DECYZJE.md` → „Eskalacja".
-   - **Etap 5 (otwarty): synteza odpowiedzi wieloczęściowej** — problem 4 nie jest
-     ani retrievalem (oba fragmenty są w kontekście), ani weryfikacją (nic nie jest
-     wycinane): model po prostu nie łączy dwóch fragmentów w jedną odpowiedź.
-     Kolejna próba należy do promptu, ale **przed nią trzeba zmierzyć**, czy to
-     kwestia sformułowania pytania, czy kolejności fragmentów w kontekście.
+   - ~~**Etap 5: synteza odpowiedzi wieloczęściowej**~~ — **przemianowane
+     20.08.2026, bo diagnoza była błędna.** Pomiar wykluczył pozycję zdania,
+     długość fragmentu, retrieval i arytmetykę progu; klauzula, której brakowało,
+     leży w **tym samym fragmencie** co reszta odpowiedzi. Nie ma tu żadnej
+     syntezy dwóch fragmentów do naprawienia.
+   - **Etap 5 (otwarty): kruchość na formie pytania.** To, co zostało z problemu 4:
+     „500 tysięcy złotych" daje pełną odpowiedź w 2/6 przebiegów, „500 tysięcy"
+     w 6/6, przy identycznym retrievalu. **Mechanizmu nie znamy i nie zgadujemy.**
+     Kolejny krok jest pomiarowy, nie promptowy: ustalić, czy to własność
+     tokenizacji kwoty, czy szerszy wzorzec — dopiero potem cokolwiek zmieniać.
+     **Do tego czasu żadnej reguły w prompcie „pod problem 4"** — poprzednia
+     taka próba złamała zasadę „warunek, nie lista fraz" i nie zadziałała.
 2. **Druga branża** — kancelaria albo gabinet. Sprawdzenie, ile zabezpieczeń jest
    uniwersalnych, a ile to protezy pod budowlankę (wzorce mówią o rabatach
    w hurtowniach — u kancelarii groźne będą terminy przedawnienia i szanse wygranej).

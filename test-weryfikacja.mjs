@@ -110,9 +110,14 @@ sprawdz("zdanie spoza fragmentu nie jest cytatem",
   wystepujeDoslownie("zakrywaj wszystko bez odbioru", fragmenty), false);
 
 // ---------------------------------------------------------------
-// numbersAreGrounded — uziemienie liczb z fragmentów i pytania
+// numbersAreGrounded — uziemienie WYŁĄCZNIE z pobranych fragmentów
+//
+// Pytanie użytkownika NIE uziemia liczby. Poprawka z 20.08.2026, która
+// dokładała `userQuestion` do korpusu, została cofnięta tego samego dnia:
+// pozwalała pytającemu zdecydować, które liczby są uziemione. Przypadki
+// wrogie niżej są po to, żeby ta regresja nie mogła wrócić niezauważona.
 // ---------------------------------------------------------------
-console.log("\n--- numbersAreGrounded (liczby z bazy i pytania) ---");
+console.log("\n--- numbersAreGrounded (liczby wyłącznie z fragmentów) ---");
 
 const fragmentyZLiczybami = [{
   metadata: {
@@ -134,9 +139,49 @@ sprawdz(
 );
 
 sprawdz(
-  "liczba podana przez użytkownika w pytaniu (np. 1600 cm3) PRZECHODZI",
+  "liczba z pytania NIE uziemia zdania (1600 cm3 spoza fragmentów)",
   numbersAreGrounded("Dla silnika 1600 cm3 przysługuje stawka 1,15 zł.", fragmentyZLiczybami, "Czy przy silniku 1600 cm3 przysługuje stawka 1,15 zł?"),
-  true
+  false
+);
+
+// PRZYPADKI WROGIE — sedno tej warstwy.
+// Klient podsuwa liczbę w pytaniu, model potakuje. Gdyby pytanie uziemiało
+// liczby, takie zdanie wyszłoby do klienta z pieczątką weryfikacji.
+// Przy cenie `isUnsupportablePromise()` NIE stanowi drugiej linii obrony —
+// zmierzone 20.08.2026 — więc `numbersAreGrounded()` jest tu jedyną warstwą.
+const fragmentyBezCen = [{
+  metadata: {
+    title: "Zakres usług",
+    text: "Wykonujemy remonty mieszkań i domów. Wycenę przygotowuje biuro po wizji lokalnej.",
+  },
+}];
+
+sprawdz(
+  "WROGI: cena podsunięta w pytaniu klienta NIE przechodzi",
+  numbersAreGrounded(
+    "Tak, remont łazienki kosztuje 1200 zł za metr kwadratowy.",
+    fragmentyBezCen,
+    "Czy remont łazienki kosztuje 1200 zł za metr kwadratowy?"
+  ),
+  false
+);
+
+sprawdz(
+  "WROGI: termin podsunięty w pytaniu klienta NIE przechodzi",
+  numbersAreGrounded(
+    "Tak, zdążymy z remontem w 6 tygodni.",
+    fragmentyBezCen,
+    "Czy zdążycie z remontem w 6 tygodni?"
+  ),
+  false
+);
+
+// Strażnik sygnatury: gdyby ktoś przywrócił trzeci parametr, powyższe
+// przypadki znów zaczęłyby przechodzić. Ten sprawdza to wprost.
+sprawdz(
+  "WROGI: funkcja przyjmuje dokładnie dwa argumenty",
+  numbersAreGrounded.length,
+  2
 );
 
 sprawdz(

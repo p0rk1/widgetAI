@@ -579,20 +579,44 @@ function extractNumbers(text) {
 // z pobranych fragmentów. To wyłapuje zmyślone ceny i terminy wplecione
 // w skądinąd poprawnie brzmiące zdanie — czego weryfikacja semantyczna nie widzi.
 //
-// PYTANIE UŻYTKOWNIKA NIE JEST ŹRÓDŁEM UZIEMIENIA — i nie wolno go dopisywać
-// do korpusu. Próba z 20.08.2026 (cofnięta tego samego dnia) dokładała tu
-// `userQuestion`, żeby ratować zdania odnoszące się do parametrów z pytania
-// ("dla silnika 1600 cm3"). Skutkiem ubocznym było to, że pytający sam
-// decydował, które liczby są uziemione: na "Czy remont kosztuje 1200 zł/m²?"
-// zdanie potwierdzające przechodziło, bo 1200 przyszło z pytania. To dokładnie
-// ten wzorzec, przed którym ta warstwa powstała — potwierdzanie założeń klienta.
-// Przypadek wrogi pilnuje tego w `test-weryfikacja.mjs`.
-function numbersAreGrounded(sentence, filtered) {
+// PYTANIE JAKO ŹRÓDŁO UZIEMIENIA — ROZSTRZYGNIĘTE PO TRYBIE, 20.08.2026.
+//
+// W trybie PUBLICZNYM pytanie nie jest źródłem i nigdy nim nie będzie. Klient
+// jest stroną negocjacji: gdyby liczba z jego pytania uziemiała zdanie, na
+// "Czy remont kosztuje 1200 zł/m²?" potwierdzenie przeszłoby weryfikację.
+// `isUnsupportablePromise()` tego NIE łapie — zmierzone. To jedyna warstwa,
+// która tam stoi, i zostaje bez zmian.
+//
+// W trybie WEWNĘTRZNYM pracownik nie negocjuje sam ze sobą — podaje parametr
+// ("przy silniku 1600 cm3", "za 7000 zł"), na który dokumentacja ma odpowiedź.
+// Mierzone 20.08.2026 na czterech zbiorach: reguła surowa wycinała 13 zdań na 40
+// i redukowała 7 z 16 odpowiedzi do samej linii `Podstawa:`, w tym zdania
+// ODMOWNE ("Nie, nie możesz dać rabatu 15 procent") — czyli dokładnie te,
+// dla których pracownik zadał pytanie.
+//
+// Czego to NIE rozluźnia: liczba, która nie pochodzi ani z fragmentów, ani
+// z pytania, wypada nadal w obu trybach. Dzięki temu liczba WYLICZONA przez
+// model ("za 200 km otrzymasz 230 złotych") jest wycinana tak samo jak dotąd.
+//
+// Dlaczego nie po budowie zdania: sprawdzono. Rozdzielenie "kontekstu" od
+// "przypisania firmie" pozycją liczby, przyimkiem czy czasownikiem daje 9/14
+// na korpusie przypadków — gubi zdania odmowne i przepuszcza zdanie mieszane
+// ("kosztuje 1200 zł, a zaliczka wynosi 10 procent"). Różnica leży w znaczeniu,
+// a warstwa oceniająca znaczenie jest zawodna z definicji. `DECYZJE.md` →
+// "Uziemienie liczb".
+//
+// Domyślny tryb jest PUBLICZNY celowo: wywołanie, które o trybie zapomni,
+// dostaje wariant surowy, nie luźny.
+function numbersAreGrounded(sentence, filtered, tryb = PROMPT_PUBLICZNY, userQuestion = "") {
   const nums = extractNumbers(sentence);
   if (!nums.length) return true;
   const corpus = filtered.map((m) => m.metadata.text + " " + m.metadata.title).join(" ");
   const corpusNums = new Set(extractNumbers(corpus));
-  return nums.every((n) => corpusNums.has(n));
+  // Jedyne miejsce, w którym pytanie w ogóle wchodzi do gry — i tylko wewnętrznie.
+  const zPytania = tryb === PROMPT_WEWNETRZNY
+    ? new Set(extractNumbers(userQuestion || ""))
+    : new Set();
+  return nums.every((n) => corpusNums.has(n) || zPytania.has(n));
 }
 
 // Normalizacja do porównań dosłownych: małe litery, interpunkcja na spacje,
@@ -739,7 +763,7 @@ function isDuplicate(sentence, alreadyKept) {
   return false;
 }
 
-async function verifyClaims(fullText, filtered, env, tryb = PROMPT_PUBLICZNY) {
+async function verifyClaims(fullText, filtered, env, tryb = PROMPT_PUBLICZNY, userQuestion = "") {
   const claims = splitSentences(fullText);
   const toCheck = claims.length ? claims : [fullText];
 
@@ -757,7 +781,7 @@ async function verifyClaims(fullText, filtered, env, tryb = PROMPT_PUBLICZNY) {
       if (sim > bestSim) { bestSim = sim; bestTitle = m.metadata.title; }
     }
 
-    const numbersOk = numbersAreGrounded(toCheck[i], filtered);
+    const numbersOk = numbersAreGrounded(toCheck[i], filtered, tryb, userQuestion);
     const promiseOk = !isUnsupportablePromise(toCheck[i], tryb);
 
     // Zdania zdradzające instrukcje lub powtarzające już powiedzianą treść
@@ -1419,7 +1443,7 @@ export default {
           }
           const prog = progCytowania(s);
           const doslownie = wystepujeDoslownie(s, filtered);
-          const liczbyOk = numbersAreGrounded(s, filtered);
+          const liczbyOk = numbersAreGrounded(s, filtered, trybProm, q);
           const obietnica = isUnsupportablePromise(s, trybProm);
           const instrukcje = leaksInstructions(s, trybProm);
           const duplikat = isDuplicate(s, juzZachowane);
@@ -1571,7 +1595,7 @@ async function handleAsk(request, env, spaces, askedFrom, identity = null) {
       return jsonResponse({ answer: zlozZEskalacja(FALLBACK_MESSAGE, eskalacja), source: null, gap: true, ...poleEskalacji }, corsHeaders(request));
     }
 
-    const verdict = await verifyClaims(rawAnswer, filtered, env, tryb);
+    const verdict = await verifyClaims(rawAnswer, filtered, env, tryb, question);
     if (!verdict.ok) {
       // Licznik `cicho` MUSI dostać dane także tutaj. To jest ścieżka, na której
       // po weryfikacji nie zostało ani jedno twierdzenie — czyli jedyny przypadek,

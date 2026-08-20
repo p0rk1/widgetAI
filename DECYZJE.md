@@ -872,57 +872,55 @@ adresem, na który wchodzi klient. Dziś `/app`, `/panel` i `GET /` przechodzą
 przez `hostWewnetrzny(url)`; poza hostem wewnętrznym ścieżki nie istnieją.
 Osobna funkcja, nie wklejony warunek — przy multi-tenant zmieni się jedno miejsce.
 
-## Uziemienie liczb: pytanie użytkownika NIE jest źródłem
+## Uziemienie liczb: rozstrzygnięcie po trybie (R3) — 20.08.2026
 
-Próba i cofnięcie w ciągu jednego dnia, 20.08.2026. **Ślepa uliczka z pomiarem.**
-
-### Co próbowano
+### Problem i badane warianty
 
 Otwarty defekt „`numbersAreGrounded()` nie odróżnia liczby zmyślonej od
-zacytowanej z pytania" doczekał się poprawki: do korpusu liczb dokładane było
-pytanie użytkownika, więc zdanie „dla silnika 1600 cm3" przestawało wypadać.
+zacytowanej z pytania" został zbadany na korpusie prawdziwych odpowiedzi modelu
+(22 pytania × 2 przebiegi, 19 zdań z liczbami z pytania).
 
-### Dlaczego cofnięte
+Badano trzy reguły na 14 przypadkach z etykietami:
 
-Poprawka oddaje **pytającemu** decyzję o tym, które liczby są uziemione.
-Zmierzone prawdziwą funkcją, tryb publiczny:
+| reguła | wynik | co psuje |
+|---|---|---|
+| R1: surowa (bez pytania) | 7/14 | gubi wszystkie 7 zdań klasy A (parametry pracownika) |
+| R2: liczba z pytania dozwolona zawsze | 8/14 | przepuszcza wszystkie przypadki wrogie (narzucanie cen przez klienta) |
+| **R3: dozwolona tylko w trybie wewnętrznym** | **14/14** | przyjęta, z warunkiem opisanym niżej |
 
-| zdanie modelu | pytanie | przed poprawką | po poprawce |
-|---|---|---|---|
-| „Tak, remont łazienki kosztuje 1200 zł/m²." | „Czy remont kosztuje 1200 zł/m²?" | **wycięte** | **przechodzi** |
-| to samo zdanie | bez pytania | wycięte | wycięte |
+### Dlaczego rozdzielenie formą nie jest wykonalne
 
-To jest dokładnie wzorzec, przed którym ta warstwa powstała: **potwierdzanie
-założeń klienta**. Sprawdzone, czy łapie to inna warstwa — `isUnsupportablePromise()`
-w trybie publicznym **przepuszcza** zdanie o cenie (wzorce celują w rabaty
-i terminy). Zostaje sama weryfikacja semantyczna, o której ten plik notuje niżej,
-że przepuściła zdanie o nieoferowanej usłudze z wynikiem **0.676**.
+Rozdzielenie klasy A (parametry podawane w dobrej wierze) od klasy B (próba
+przypisania firmie nieprawdziwych warunków) **nie jest wykonalne deterministycznie
+po strukturze zdania**, ponieważ różnica leży w znaczeniu, a nie w formie:
+- Ten sam przyimek obsługuje obie klasy: „nie możesz zatwierdzić odstępstwa **za** 7000 zł" (odmowa, zostawić) vs „remont kosztuje 1200 zł **za** metr" (przypisanie firmie, wyciąć).
+- Pozycja liczby w zdaniu również nie rozdziela: „Twoje 55 godzin przekracza limit" (podmiot) vs „kosztuje 1200" (po czasowniku) vs „Przy zleceniu za 250 000 zł możesz udzielić rabatu" (początek zdania).
+- Każde kryterium formalne redukuje się do zawodnej warstwy wzorców ze spadającym zwrotem.
 
-Zakaz: **pytanie nie wchodzi do korpusu `numbersAreGrounded()`.** Pilnują tego
-przypadki wrogie w `test-weryfikacja.mjs`, w tym strażnik liczby argumentów
-funkcji — przywrócenie trzeciego parametru wywala test.
+### Wariant R3 — uzasadnienie i warunek utrzymania
 
-### Koszt cofnięcia — zmierzony, nie oszacowany
+Przyjęto wariant R3 (`numbersAreGrounded(sentence, filtered, tryb = PROMPT_PUBLICZNY, userQuestion = "")`):
+- **Publicznie:** zbiór liczb z pytania jest pusty — ścieżka nie istnieje. Reguła surowa bezwzględnie blokuje narzucanie cen i terminów przez klienta.
+- **Wewnętrznie:** liczba z pytania uziemia zdanie modelu.
+- **W obu trybach:** liczby wyliczone przez model (arytmetyka) oraz zmyślone liczby spoza fragmentów i pytania wypadają tak samo jak dotąd.
+- **Domyślny tryb:** publiczny (surowy).
 
-Defekt wraca i jest większy, niż zapisywał przykład z „1600 cm3". Pomiar na
-6 pytaniach, w których pytający podaje własną liczbę, po 3 przebiegi:
+> [!IMPORTANT]
+> **Warunek konieczny:** Skuteczność R3 zależy od zachowania modelu (odmowy 6/6 przy podsuwaniu wartości ponad próg), a nie od gwarancji strukturalnej. Przy zmianie modelu bazowego lub promptu wewnętrznego **ten wariant musi zostać bezwzględnie przemierzony na nowo**.
 
-| | wynik |
-|---|---|
-| zdań łącznie | 39 |
-| wyciętych na regule liczb | **12** |
-| odpowiedzi zredukowanych do samej linii `Podstawa:` | **6 z 18 przebiegów** |
+### Kluczowy wynik pomiaru: zbiór B_wewn
 
-Mechanizm: model **powtarza kwotę z pytania** w zdaniu odpowiedzi
-(„Przy zleceniu o wartości 500 000 złotych standardowa marża wynosi 22 procent…"),
-całe zdanie wypada na regule liczb, a pracownikowi zostaje sam nagłówek źródła.
-Pytania, w których model kwoty nie powtarza („Mam 12 lat stażu…"), nie tracą nic.
+Najmocniejszym i nieprzewidzianym argumentem za R3 okazał się zbiór `B_wewn`:
+gdy pracownik pytał o wartość przekraczającą próg (np. „Czy mogę dać rabat 15%?"),
+model poprawnie odpowiadał odmową cytującą liczbę pytającego:
+*„Nie, nie możesz dać rabatu 15 procent samodzielnie — próg to 3 procent."*
+Stara reguła surowa wycinała całe zdanie odmowne jako „nieuziemione", więc
+pracownik dostawał ciszę zamiast odpowiedzi. W R3 pracownik otrzymuje pełną,
+prawidłową odpowiedź.
 
-**Wniosek dla przyszłej poprawki:** kierunek „dołóż pytanie do korpusu" jest
-zamknięty. Otwarty jest kierunek węższy — pozwolić na liczbę z pytania tylko
-wtedy, gdy zdanie **nie przypisuje jej firmie** jako ceny, terminu ani stawki,
-albo wyłącznie w trybie wewnętrznym. Nie robiono tego 20.08.2026: wymaga
-własnego pomiaru, a nie poprawki przy okazji.
+Pomiary `test-weryfikacja.mjs` (26/26 zdanych) pilnują, by wariant publiczny
+pozostał nienaruszony (w tym testy wrogie: cena klienta, termin klienta,
+brak trybu, nieznany tryb, strażnik sygnatury).
 
 ## Problem 4 — nowa diagnoza (20.08.2026)
 

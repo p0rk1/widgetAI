@@ -7,7 +7,10 @@
 // pomiarze przez wiele sesji. Test istnieje po to, żeby zmiana progów albo
 // stemmera nie przywróciła tego stanu niezauważenie.
 
-import { isDuplicate, progCytowania, wystepujeDoslownie, numbersAreGrounded } from "./worker.js";
+import {
+  isDuplicate, progCytowania, wystepujeDoslownie, numbersAreGrounded,
+  PROMPT_PUBLICZNY, PROMPT_WEWNETRZNY,
+} from "./worker.js";
 
 let zdane = 0;
 const oblane = [];
@@ -110,14 +113,15 @@ sprawdz("zdanie spoza fragmentu nie jest cytatem",
   wystepujeDoslownie("zakrywaj wszystko bez odbioru", fragmenty), false);
 
 // ---------------------------------------------------------------
-// numbersAreGrounded — uziemienie WYŁĄCZNIE z pobranych fragmentów
+// numbersAreGrounded — uziemienie zależne od TRYBU
 //
-// Pytanie użytkownika NIE uziemia liczby. Poprawka z 20.08.2026, która
-// dokładała `userQuestion` do korpusu, została cofnięta tego samego dnia:
-// pozwalała pytającemu zdecydować, które liczby są uziemione. Przypadki
-// wrogie niżej są po to, żeby ta regresja nie mogła wrócić niezauważona.
+// PUBLICZNIE pytanie nie uziemia liczby i nigdy nie będzie: klient jest stroną
+// negocjacji, więc potwierdzenie jego ceny nie może przejść weryfikacji.
+// WEWNĘTRZNIE liczba z pytania jest dopuszczona — pracownik podaje parametr,
+// a nie negocjuje sam ze sobą. Przypadki wrogie niżej pilnują, żeby wariant
+// publiczny nie rozluźnił się przy okazji zmian w wewnętrznym.
 // ---------------------------------------------------------------
-console.log("\n--- numbersAreGrounded (liczby wyłącznie z fragmentów) ---");
+console.log("\n--- numbersAreGrounded (uziemienie zależne od trybu) ---");
 
 const fragmentyZLiczybami = [{
   metadata: {
@@ -139,8 +143,42 @@ sprawdz(
 );
 
 sprawdz(
-  "liczba z pytania NIE uziemia zdania (1600 cm3 spoza fragmentów)",
-  numbersAreGrounded("Dla silnika 1600 cm3 przysługuje stawka 1,15 zł.", fragmentyZLiczybami, "Czy przy silniku 1600 cm3 przysługuje stawka 1,15 zł?"),
+  "WEWNĘTRZNIE: liczba z pytania (1600 cm3) uziemia zdanie",
+  numbersAreGrounded(
+    "Dla silnika 1600 cm3 przysługuje stawka 1,15 zł.",
+    fragmentyZLiczybami, PROMPT_WEWNETRZNY,
+    "Czy przy silniku 1600 cm3 przysługuje stawka 1,15 zł?"
+  ),
+  true
+);
+
+sprawdz(
+  "PUBLICZNIE: ta sama liczba z pytania NIE uziemia zdania",
+  numbersAreGrounded(
+    "Dla silnika 1600 cm3 przysługuje stawka 1,15 zł.",
+    fragmentyZLiczybami, PROMPT_PUBLICZNY,
+    "Czy przy silniku 1600 cm3 przysługuje stawka 1,15 zł?"
+  ),
+  false
+);
+
+sprawdz(
+  "WEWNĘTRZNIE: zdanie ODMOWNE z liczbą pytającego przechodzi",
+  numbersAreGrounded(
+    "Nie, nie możesz zatwierdzić odstępstwa za 7000 zł.",
+    [{ metadata: { title: "Progi decyzyjne", text: "Kierownik budowy zatwierdza odstępstwo do 5 tysięcy złotych." } }],
+    PROMPT_WEWNETRZNY, "Czy moge zatwierdzic odstepstwo za 7000 zl?"
+  ),
+  true
+);
+
+sprawdz(
+  "WEWNĘTRZNIE: liczba WYLICZONA przez model nadal wypada",
+  numbersAreGrounded(
+    "Za 200 km otrzymasz 230 złotych.",
+    fragmentyZLiczybami, PROMPT_WEWNETRZNY,
+    "Przejechalem 200 km, ile dostane?"
+  ),
   false
 );
 
@@ -160,7 +198,7 @@ sprawdz(
   "WROGI: cena podsunięta w pytaniu klienta NIE przechodzi",
   numbersAreGrounded(
     "Tak, remont łazienki kosztuje 1200 zł za metr kwadratowy.",
-    fragmentyBezCen,
+    fragmentyBezCen, PROMPT_PUBLICZNY,
     "Czy remont łazienki kosztuje 1200 zł za metr kwadratowy?"
   ),
   false
@@ -170,16 +208,39 @@ sprawdz(
   "WROGI: termin podsunięty w pytaniu klienta NIE przechodzi",
   numbersAreGrounded(
     "Tak, zdążymy z remontem w 6 tygodni.",
-    fragmentyBezCen,
+    fragmentyBezCen, PROMPT_PUBLICZNY,
     "Czy zdążycie z remontem w 6 tygodni?"
   ),
   false
 );
 
-// Strażnik sygnatury: gdyby ktoś przywrócił trzeci parametr, powyższe
-// przypadki znów zaczęłyby przechodzić. Ten sprawdza to wprost.
 sprawdz(
-  "WROGI: funkcja przyjmuje dokładnie dwa argumenty",
+  "WROGI: brak podanego trybu = wariant PUBLICZNY (surowy)",
+  numbersAreGrounded(
+    "Tak, remont łazienki kosztuje 1200 zł za metr kwadratowy.",
+    fragmentyBezCen, undefined,
+    "Czy remont łazienki kosztuje 1200 zł za metr kwadratowy?"
+  ),
+  false
+);
+
+sprawdz(
+  "WROGI: nieznana nazwa trybu NIE otwiera wariantu luźnego",
+  numbersAreGrounded(
+    "Tak, remont łazienki kosztuje 1200 zł za metr kwadratowy.",
+    fragmentyBezCen, "obie",
+    "Czy remont łazienki kosztuje 1200 zł za metr kwadratowy?"
+  ),
+  false
+);
+
+// Strażnik sygnatury. `Function.length` liczy parametry PRZED pierwszym
+// domyślnym, więc dwa wymagane (`sentence`, `filtered`) to nadal 2 — a `tryb`
+// i `userQuestion` mają wartości domyślne. Wartość inna niż 2 oznacza, że ktoś
+// uczynił tryb lub pytanie parametrem wymaganym albo przestawił kolejność;
+// jedno i drugie zmienia to, co dostają wywołania dwuargumentowe.
+sprawdz(
+  "WROGI: funkcja ma dokładnie dwa parametry wymagane",
   numbersAreGrounded.length,
   2
 );

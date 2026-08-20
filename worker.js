@@ -567,12 +567,14 @@ function extractNumbers(text) {
 }
 
 // Sprawdza, czy każda liczba ze zdania występuje w treści któregokolwiek
-// z pobranych fragmentów. To wyłapuje zmyślone ceny i terminy wplecione
-// w skądinąd poprawnie brzmiące zdanie — czego weryfikacja semantyczna nie widzi.
-function numbersAreGrounded(sentence, filtered) {
+// z pobranych fragmentów LUB dosłownie w pytaniu użytkownika. To wyłapuje
+// zmyślone ceny i terminy wplecione w skądinąd poprawnie brzmiące zdanie,
+// jednocześnie nie kasując zdań, w których model odnosi się do parametrów
+// podanych przez pytającego (np. "dla silnika 1600 cm3").
+function numbersAreGrounded(sentence, filtered, userQuestion = "") {
   const nums = extractNumbers(sentence);
   if (!nums.length) return true;
-  const corpus = filtered.map((m) => m.metadata.text + " " + m.metadata.title).join(" ");
+  const corpus = filtered.map((m) => m.metadata.text + " " + m.metadata.title).join(" ") + " " + (userQuestion || "");
   const corpusNums = new Set(extractNumbers(corpus));
   return nums.every((n) => corpusNums.has(n));
 }
@@ -721,7 +723,7 @@ function isDuplicate(sentence, alreadyKept) {
   return false;
 }
 
-async function verifyClaims(fullText, filtered, env, tryb = PROMPT_PUBLICZNY) {
+async function verifyClaims(fullText, filtered, env, tryb = PROMPT_PUBLICZNY, userQuestion = "") {
   const claims = splitSentences(fullText);
   const toCheck = claims.length ? claims : [fullText];
 
@@ -739,7 +741,7 @@ async function verifyClaims(fullText, filtered, env, tryb = PROMPT_PUBLICZNY) {
       if (sim > bestSim) { bestSim = sim; bestTitle = m.metadata.title; }
     }
 
-    const numbersOk = numbersAreGrounded(toCheck[i], filtered);
+    const numbersOk = numbersAreGrounded(toCheck[i], filtered, userQuestion);
     const promiseOk = !isUnsupportablePromise(toCheck[i], tryb);
 
     // Zdania zdradzające instrukcje lub powtarzające już powiedzianą treść
@@ -981,7 +983,7 @@ function zlozZEskalacja(tekst, esk) {
 // Rdzeń rzetelności — obowiązuje w OBU trybach. Tryb wewnętrzny zmienia to,
 // co wolno powiedzieć rozmówcy, a nie to, czy wolno to zmyślić.
 const PROMPT_RDZEN = {
-  laczenieFragmentow: `Możesz łączyć informacje z kilku fragmentów, żeby dać pełniejszą odpowiedź, ale NIE WOLNO Ci tworzyć nowego twierdzenia, którego żaden pojedynczy fragment wprost nie potwierdza.`,
+  laczenieFragmentow: `Gdy pytanie dotyczy kilku kwestii lub zagadnienia opisanego w kilku fragmentach, POŁĄCZ informacje ze wszystkich relewantnych fragmentów w jedną kompletną odpowiedź. Nie pomijaj żadnego aspektu, o który pyta użytkownik ani progów wynikających z fragmentów. Pamiętaj jednak: NIE WOLNO Ci tworzyć nowego twierdzenia, którego żaden pojedynczy fragment wprost nie potwierdza.`,
   liczby: `NIGDY nie podawaj żadnej liczby (ceny, kwoty, terminu, procentu, okresu gwarancji), której nie ma dosłownie w powyższych fragmentach. Nie szacuj, nie podawaj "orientacyjnie", nie mów "od X do Y".`,
   // Zdanie musi zostać dosłowne w obu trybach: handleAsk() rozpoznaje brak
   // odpowiedzi wyrażeniem /nie mam takich informacji/i na surowym tekście
@@ -1066,8 +1068,9 @@ KOMU ODPOWIADASZ — to jest różnica wobec trybu publicznego:
 - Zdanie we fragmencie w rodzaju "tych wartości nie komunikujemy klientom" dotyczy rozmowy z klientem. NIE jest poleceniem zatajenia ich przed pracownikiem. Pominięcie takiej liczby jest błędem — po to istnieje ten tryb.
 - Nie odsyłaj do biura, działu ani przełożonego w sprawie, na którą fragmenty odpowiadają. Odesłanie ma sens tylko wtedy, gdy fragmenty wymagają czyjejś zgody (np. akceptacji zarządu) albo gdy odpowiedzi w nich nie ma.
 
-ODPOWIADAJ NA CAŁE PYTANIE:
-- Jeśli pytanie ma kilka części, odpowiedz na KAŻDĄ. Gdy fragmenty zawierają wartość standardową i jej granicę, próg albo wyjątek — podaj oba, nie samą wartość standardową.
+ODPOWIADAJ NA CAŁE PYTANIE I SYNTEZUJ WIEDZĘ:
+- Jeśli pytanie ma kilka części lub łączy dwa zagadnienia (np. marżę standardową i progi decyzyjne przy danej kwocie, procedurę wypadkową i zgłoszenie do PIP) — połącz wiedzę ze wszystkich pasujących fragmentów w jedną pełną odpowiedź.
+- Gdy fragmenty zawierają wartość standardową i jej granicę, próg kwotowy albo wyjątek — podaj oba, nie samą wartość standardową.
 - Niepełna odpowiedź jest tu groźniejsza niż w trybie publicznym: pracownik nie wie, czego nie dostał, i podejmie decyzję na połowie danych.
 
 TON — instruktażowy, nie sprzedażowy:
@@ -1385,7 +1388,7 @@ export default {
           }
           const prog = progCytowania(s);
           const doslownie = wystepujeDoslownie(s, filtered);
-          const liczbyOk = numbersAreGrounded(s, filtered);
+          const liczbyOk = numbersAreGrounded(s, filtered, q);
           const obietnica = isUnsupportablePromise(s, trybProm);
           const instrukcje = leaksInstructions(s, trybProm);
           const duplikat = isDuplicate(s, juzZachowane);
@@ -1537,7 +1540,7 @@ async function handleAsk(request, env, spaces, askedFrom, identity = null) {
       return jsonResponse({ answer: zlozZEskalacja(FALLBACK_MESSAGE, eskalacja), source: null, gap: true, ...poleEskalacji }, corsHeaders(request));
     }
 
-    const verdict = await verifyClaims(rawAnswer, filtered, env, tryb);
+    const verdict = await verifyClaims(rawAnswer, filtered, env, tryb, question);
     if (!verdict.ok) {
       await logQuestion(env, question, true, null, askedFrom, null, eskalacja);
       return jsonResponse({ answer: zlozZEskalacja(verdict.fallback, eskalacja), source: null, gap: true, ...poleEskalacji }, corsHeaders(request));

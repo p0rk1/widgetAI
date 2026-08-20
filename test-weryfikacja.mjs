@@ -7,7 +7,7 @@
 // pomiarze przez wiele sesji. Test istnieje po to, żeby zmiana progów albo
 // stemmera nie przywróciła tego stanu niezauważenie.
 
-import { isDuplicate, progCytowania, wystepujeDoslownie } from "./worker.js";
+import { isDuplicate, progCytowania, wystepujeDoslownie, numbersAreGrounded } from "./worker.js";
 
 let zdane = 0;
 const oblane = [];
@@ -108,6 +108,42 @@ sprawdz("zgubione zaprzeczenie NIE jest cytatem",
   wystepujeDoslownie("zakrywaj zbrojenia, izolacji", fragmenty), false);
 sprawdz("zdanie spoza fragmentu nie jest cytatem",
   wystepujeDoslownie("zakrywaj wszystko bez odbioru", fragmenty), false);
+
+// ---------------------------------------------------------------
+// numbersAreGrounded — uziemienie liczb z fragmentów i pytania
+// ---------------------------------------------------------------
+console.log("\n--- numbersAreGrounded (liczby z bazy i pytania) ---");
+
+const fragmentyZLiczybami = [{
+  metadata: {
+    title: "Delegacje i ryczałt",
+    text: "Stawka wynosi 1,15 złotego za kilometr przy pojemności powyżej 900 cm3 oraz 0,89 złotego do 900 cm3.",
+  },
+}];
+
+sprawdz(
+  "liczba dosłownie z fragmentu przechodzi",
+  numbersAreGrounded("Stawka wynosi 1,15 zł za kilometr.", fragmentyZLiczybami),
+  true
+);
+
+sprawdz(
+  "zmyślona liczba bez pokrycia w bazie i pytaniu ODPADA",
+  numbersAreGrounded("Stawka wynosi 2,50 zł za kilometr.", fragmentyZLiczybami),
+  false
+);
+
+sprawdz(
+  "liczba podana przez użytkownika w pytaniu (np. 1600 cm3) PRZECHODZI",
+  numbersAreGrounded("Dla silnika 1600 cm3 przysługuje stawka 1,15 zł.", fragmentyZLiczybami, "Czy przy silniku 1600 cm3 przysługuje stawka 1,15 zł?"),
+  true
+);
+
+sprawdz(
+  "zdanie bez liczb zawsze przechodzi",
+  numbersAreGrounded("Rozliczenie delegacji składa się w kadrach.", fragmentyZLiczybami),
+  true
+);
 
 console.log("\n---");
 for (const o of oblane) console.log(`BŁĄD: ${o}`);

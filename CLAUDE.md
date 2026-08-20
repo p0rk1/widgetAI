@@ -64,10 +64,12 @@ wystarcza do testów i jednego użytkownika, nie wystarcza dla zespołu klienta.
 | `worker.js` | Backend — RAG, weryfikacja, prompty, tożsamość, routing | Cloudflare Worker `knowbase-budmax` |
 | `content-public.js` | `CHUNKS` — 53 fragmenty publiczne | importowane przez `worker.js` |
 | `content-internal.js` | `INTERNAL_CHUNKS` — 41 fragmentów wewnętrznych | importowane przez `worker.js` |
-| `panel-internal.js` | `PANEL_INTERNAL_HTML` — szablon panelu wewnętrznego | importowane przez `worker.js` dla `/panel` |
+| `app-internal.js` | `APP_INTERNAL_HTML` — aplikacja asystenta budowy PWA | importowane przez `worker.js` dla `GET /app` |
+| `panel-internal.js` | `PANEL_INTERNAL_HTML` — szablon panelu wewnętrznego | importowane przez `worker.js` dla `GET /panel` |
 | `index.html` | Strona firmy z osadzonym widgetem | GitHub Pages |
 | `panel.html` | Panel analityczny dla właściciela firmy (widget publiczny) | GitHub Pages |
 | `panel-internal.html` | Panel analityczny procedur i szkoleń (bot wewnętrzny) | repo / serwowane przez Worker |
+| `app-internal.html` | Aplikacja webowa asystenta budowy (mobile-first, dyktowanie) | repo / serwowane przez Worker |
 | `wrangler.toml` | Konfiguracja deployu — bindingi, zmienne Access, data kompatybilności | repo |
 | `DECYZJE.md` | Uzasadnienia, wyniki pomiarów, ślepe uliczki | repo, czytane na żądanie |
 | `ZERO-TRUST.md` | Instrukcja konfiguracji logowania do trybu wewnętrznego | repo |
@@ -319,6 +321,8 @@ Uprawnienia są **rozdzielone na dwa niezależne mechanizmy** — patrz sekcja
   przestrzeń `public`**, wpisaną na sztywno w routingu
 - `POST /internal` — bot dla pracowników, przeszukuje `public` + `internal`.
   **Wyłącznie na tożsamości z Cloudflare Access** — `REINDEX_SECRET` tu nie działa
+- `GET /` (na hoście wewnętrznym) lub `GET /app` — aplikacja webowa asystenta budowy (Etap 5)
+  zoptymalizowana na telefon, z dyktowaniem głosowym i kaflami szybkiego startu
 - `GET /panel` — panel analityczny procedur i szkoleń (Etap 6). Zwraca HTML bota wewnętrznego
   chroniony przez Cloudflare Access
 - `GET /stats-internal` — dane statystyczne bota wewnętrznego (luki szkoleniowe, procedury,

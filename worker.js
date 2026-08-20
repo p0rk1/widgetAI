@@ -27,6 +27,7 @@
 import { CHUNKS } from "./content-public.js";
 import { INTERNAL_CHUNKS } from "./content-internal.js";
 import { PANEL_INTERNAL_HTML } from "./panel-internal.js";
+import { APP_INTERNAL_HTML } from "./app-internal.js";
 
 const TOP_K = 8; // podniesione z 6 — krótkie, ogólne pytania miały za mało kandydatów
 const MIN_CHUNKS = 2;
@@ -1246,6 +1247,17 @@ export default {
       } catch (e) {
         return jsonResponse({ error: e.message }, corsHeaders(request), 500);
       }
+    }
+
+    // Interfejs asystenta dla pracowników (Etap 5).
+    // Serwowany na dedykowanym hoście wewnętrznym (GET /) lub ścieżce /app.
+    if ((url.pathname === "/app" || (url.pathname === "/" && url.hostname.includes("wewnetrzny"))) && request.method === "GET") {
+      return new Response(APP_INTERNAL_HTML, {
+        headers: {
+          "Content-Type": "text/html; charset=utf-8",
+          ...corsHeaders(request),
+        },
+      });
     }
 
     // Panel analityczny dla bota wewnętrznego (Etap 6).

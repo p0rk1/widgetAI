@@ -26,6 +26,7 @@
 // literówki w ścieżce importu.
 import { CHUNKS } from "./content-public.js";
 import { INTERNAL_CHUNKS } from "./content-internal.js";
+import { PANEL_INTERNAL_HTML } from "./panel-internal.js";
 
 const TOP_K = 8; // podniesione z 6 — krótkie, ogólne pytania miały za mało kandydatów
 const MIN_CHUNKS = 2;
@@ -1110,7 +1111,10 @@ function sanitizeHistory(rawHistory) {
 // `space` mówi, z którego endpointu przyszło pytanie. Panel właściciela firmy
 // pokazuje analitykę publicznego widgetu — pytania pracowników nie mają się tam
 // mieszać, nawet zanim bot wewnętrzny dostanie własny panel.
-async function logQuestion(env, question, gap, source, space = SPACE_PUBLIC, cicho = null) {
+//
+// `eskalacja` (opcjonalny) — obiekt eskalacji z wykryjEskalacje(). Zapisujemy
+// tylko ID kategorii, żeby panel wewnętrzny mógł pokazać statystyki zdarzeń.
+async function logQuestion(env, question, gap, source, space = SPACE_PUBLIC, cicho = null, eskalacja = null) {
   if (!env.RATE_LIMIT_KV) return;
   try {
     const key = `log:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
@@ -1123,6 +1127,9 @@ async function logQuestion(env, question, gap, source, space = SPACE_PUBLIC, cic
       // Zapisujemy tylko wtedy, gdy coś faktycznie zniknęło — pusty obiekt
       // w każdym wpisie logu to koszt bez wartości.
       ...(cicho && (cicho.duplikat || cicho.instrukcje) ? { cicho } : {}),
+      // Kategoria eskalacji — panel wewnętrzny liczy ile razy wystrzelił
+      // każdy typ. Pole pojawia się wyłącznie przy pytaniach wewnętrznych.
+      ...(eskalacja ? { eskalacja: eskalacja.id } : {}),
       ts: Date.now(),
     });
     await env.RATE_LIMIT_KV.put(key, entry, { expirationTtl: LOG_RETENTION_DAYS * 86400 });
@@ -1231,6 +1238,88 @@ export default {
             wpisow_w_logu: wszystkie.length,
           },
           topSources,
+          timeline,
+        }, corsHeaders(request));
+      } catch (e) {
+        return jsonResponse({ error: e.message }, corsHeaders(request), 500);
+      }
+    }
+
+    // Panel analityczny dla bota wewnętrznego (Etap 6).
+    // Zwraca interfejs HTML chroniony przez Cloudflare Access.
+    if (url.pathname === "/panel" && request.method === "GET") {
+      return new Response(PANEL_INTERNAL_HTML, {
+        headers: {
+          "Content-Type": "text/html; charset=utf-8",
+          ...corsHeaders(request),
+        },
+      });
+    }
+
+    // Statystyki dla panelu bota wewnętrznego (pytania pracowników, luki szkoleniowe, eskalacje).
+    // Dostęp wyłącznie przez token Cloudflare Access (JWT) — brak logowania hasłem/kluczem admina.
+    if (url.pathname === "/stats-internal" && request.method === "GET") {
+      const auth = await verifyAccessJwt(request, env);
+      if (!auth.ok) {
+        return jsonResponse({ error: auth.error, szczegoly: auth.szczegoly }, corsHeaders(request), auth.status);
+      }
+      try {
+        const wszystkie = await readLog(env);
+        // Bierzemy wyłącznie pytania zadane do bota wewnętrznego
+        const entries = wszystkie.filter((e) => (e.space || SPACE_PUBLIC) === SPACE_INTERNAL);
+
+        const total = entries.length;
+        const gaps = entries.filter((e) => e.gap);
+        const answered = entries.filter((e) => !e.gap);
+
+        // Najczęściej sprawdzane procedury wewnętrzne
+        const sourceCount = {};
+        for (const e of answered) {
+          if (!e.source) continue;
+          for (const s of e.source.split(",").map((x) => x.trim())) {
+            if (s) sourceCount[s] = (sourceCount[s] || 0) + 1;
+          }
+        }
+        const topSources = Object.entries(sourceCount)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 10)
+          .map(([tytul, liczba]) => ({ tytul, liczba }));
+
+        // Statystyki eskalacji zdarzeniowych (BHP, wypadki, spory, kontrole)
+        const byKategoria = {};
+        let totalEskalacji = 0;
+        for (const e of entries) {
+          if (!e.eskalacja) continue;
+          totalEskalacji++;
+          byKategoria[e.eskalacja] = (byKategoria[e.eskalacja] || 0) + 1;
+        }
+
+        // Aktywność w ostatnich 14 dniach
+        const dayCount = {};
+        for (const e of entries) {
+          const d = new Date(e.ts).toISOString().slice(0, 10);
+          dayCount[d] = (dayCount[d] || 0) + 1;
+        }
+        const timeline = Object.entries(dayCount).sort((a, b) => a[0].localeCompare(b[0])).slice(-14);
+
+        return jsonResponse({
+          total,
+          answered: answered.length,
+          gaps: gaps.length,
+          gapRate: total ? Math.round((gaps.length / total) * 100) : 0,
+          gapQuestions: gaps.slice(0, 50).map((e) => ({ q: e.q, ts: e.ts })),
+          recentQuestions: entries.slice(0, 50).map((e) => ({
+            q: e.q,
+            gap: e.gap,
+            source: e.source,
+            eskalacja: e.eskalacja || null,
+            ts: e.ts,
+          })),
+          topSources,
+          eskalacje: {
+            total: totalEskalacji,
+            byKategoria,
+          },
           timeline,
         }, corsHeaders(request));
       } catch (e) {
@@ -1429,7 +1518,7 @@ async function handleAsk(request, env, spaces, askedFrom, identity = null) {
     const filtered = allMatches.filter((m, idx) => idx < MIN_CHUNKS || m.score >= MIN_SIMILARITY);
 
     if (filtered.length === 0) {
-      await logQuestion(env, question, true, null, askedFrom);
+      await logQuestion(env, question, true, null, askedFrom, null, eskalacja);
       return jsonResponse({ answer: zlozZEskalacja(FALLBACK_MESSAGE, eskalacja), source: null, gap: true, ...poleEskalacji }, corsHeaders(request));
     }
 
@@ -1444,17 +1533,17 @@ async function handleAsk(request, env, spaces, askedFrom, identity = null) {
     const rawAnswer = await generate(env, systemPrompt, messages);
 
     if (!rawAnswer || /nie mam takich informacji/i.test(rawAnswer)) {
-      await logQuestion(env, question, true, null, askedFrom);
+      await logQuestion(env, question, true, null, askedFrom, null, eskalacja);
       return jsonResponse({ answer: zlozZEskalacja(FALLBACK_MESSAGE, eskalacja), source: null, gap: true, ...poleEskalacji }, corsHeaders(request));
     }
 
     const verdict = await verifyClaims(rawAnswer, filtered, env, tryb);
     if (!verdict.ok) {
-      await logQuestion(env, question, true, null, askedFrom);
+      await logQuestion(env, question, true, null, askedFrom, null, eskalacja);
       return jsonResponse({ answer: zlozZEskalacja(verdict.fallback, eskalacja), source: null, gap: true, ...poleEskalacji }, corsHeaders(request));
     }
 
-    await logQuestion(env, question, false, verdict.source, askedFrom, verdict.cicho);
+    await logQuestion(env, question, false, verdict.source, askedFrom, verdict.cicho, eskalacja);
     return jsonResponse({
       answer: zlozZEskalacja(verdict.text, eskalacja),
       source: verdict.source,

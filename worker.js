@@ -888,7 +888,7 @@ const KATEGORIE_ESKALACJI = [
   {
     id: "zagrozenie_zycia",
     pilne: true,
-    zdarzenie: /(?<![a-z0-9])(zagrozenie zycia|zagraza zyciu|nie oddycha|reanimac|pozar|pali sie|ulatnia sie|czuc gaz|porazeni|porazi|iskrzy|grozi zawaleniem|zawali|osuna|osune|osunal|zerwal sie|urwal sie|uwiezion|przysypa|zasypa)/,
+    zdarzenie: /(?<![a-z0-9])(zagrozenie zycia|zagraza zyciu|nie oddycha|reanimac|pozar|pali sie|ulatnia sie|(czuc|zapach|wyciek|ulatnia).{0,20}gaz|porazeni|porazi|iskrzy|grozi zawaleniem|zawali|osuna|osune|osunal|zerwal sie|urwal sie|uwiezion|przysypa|zasypa)/,
     tekst: `NAJPIERW POWIADOM: dzwoń pod 112, zaraz potem do kierownika budowy — natychmiast, zanim zrobisz cokolwiek innego. Przy bezpośrednim zagrożeniu życia decyzję podejmują służby i kierownik budowy, nie ten bot.`,
   },
   {

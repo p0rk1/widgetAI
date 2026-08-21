@@ -1,9 +1,10 @@
 # Konfiguracja Cloudflare Zero Trust Access dla trybu wewnętrznego
 
-## Stan: ✅ tryb wewnętrzny gotowy (18.08.2026) · ⬜ panel właściciela czeka na konfigurację (21.08.2026)
+## Stan: ✅ tryb pracowniczy (18.08.2026) · ✅ panel właściciela (21.08.2026)
 
-> **Do wyklikania:** krok 9 — druga aplikacja Access dla `budmax-panel.know-base.app`.
-> Kod jest wdrożony; do tego czasu host panelowy zwraca 503 z nazwą brakującej zmiennej.
+> **Hosty przemianowane 21.08.2026:** `budmax-wewnetrzny` → `budmax-pracownik`,
+> `budmax-panel` → `budmax-wlasciciel`. Stare adresy **nie istnieją** (NXDOMAIN) —
+> zniknęły razem z wpisami w `wrangler.toml`.
 
 Aplikacja Access istnieje, `ACCESS_TEAM_DOMAIN` i `ACCESS_AUD` są w `wrangler.toml`,
 Worker wdrożony (wersja `e2544cf1-61ee-468b-ab08-c70447056701`). **`/internal` nie
@@ -39,11 +40,11 @@ Domena `know-base.app` jest w koncie Cloudflare, a Worker ma dwa własne adresy
 | Adres | Do czego | Stan |
 |---|---|---|
 | `budmax.know-base.app` | publiczny endpoint widgetu | działa, odpowiada |
-| `budmax-wewnetrzny.know-base.app` | bot dla pracowników | działa, za Access — niezalogowany dostaje 302 na ekran logowania |
+| `budmax-pracownik.know-base.app` | bot dla pracowników | działa, za Access — niezalogowany dostaje 302 na ekran logowania |
 | `knowbase-budmax.rezi7608.workers.dev` | stary adres, nadal używany przez widget i panel | działa, zostaje |
 
 **Rozdzielenie na dwa hosty jest sednem tej konfiguracji.** Aplikacja Access
-obejmie **cały host wewnętrzny**, a nie ścieżkę w środku hosta publicznego.
+obejmie **cały host pracowniczy**, a nie ścieżkę w środku hosta publicznego.
 Dzięki temu nie da się jej ustawić tak, żeby przypadkiem zażądała logowania od
 klientów albo zostawiła `/internal` bez ochrony — na tym hoście nie ma nic
 publicznego, co dałoby się zepsuć.
@@ -211,7 +212,7 @@ Kontrola, gdyby coś się rozjechało:
 curl -s -o /dev/null -w "%{http_code}\n" -X POST https://budmax.know-base.app/ \
   -H "Content-Type: application/json" -d '{"question":"test"}'          # 200
 
-curl -s -o /dev/null -w "%{http_code}\n" -X POST https://budmax-wewnetrzny.know-base.app/internal \
+curl -s -o /dev/null -w "%{http_code}\n" -X POST https://budmax-pracownik.know-base.app/internal \
   -H "Content-Type: application/json" -d '{"question":"test"}'          # 302 (Access przechwytuje przed Workerem)
 ```
 
@@ -236,12 +237,12 @@ przeniesienie ich na `budmax.know-base.app` to osobna, świadoma zmiana.
 
    | Pole | Wartość |
    |---|---|
-   | Subdomain | `budmax-wewnetrzny` |
+   | Subdomain | `budmax-pracownik` |
    | Domain | `know-base.app` (wybór z listy domen w koncie) |
    | Path | **zostaw puste** |
 
    **Ścieżki celowo nie ustawiamy** — aplikacja ma objąć cały host. Na
-   `budmax-wewnetrzny.know-base.app` nie ma niczego publicznego, więc nie ma
+   `budmax-pracownik.know-base.app` nie ma niczego publicznego, więc nie ma
    czego zablokować, a `/internal` nie ma jak zostać poza ochroną.
 
    > To jest zmiana względem pierwotnego planu, w którym oba tryby dzieliły
@@ -297,9 +298,9 @@ pojedyncze adresy osób, które mają testować. Regułę domenową włączysz p
    parametr `kid` do adresu logowania, na który przekierowuje niezalogowanego:
 
    ```bash
-   curl -s -o /dev/null -D - https://budmax-wewnetrzny.know-base.app/internal \
+   curl -s -o /dev/null -D - https://budmax-pracownik.know-base.app/internal \
      | grep -i "^location:"
-   # …/cdn-cgi/access/login/budmax-wewnetrzny.know-base.app?kid=<AUD>&meta=…
+   # …/cdn-cgi/access/login/budmax-pracownik.know-base.app?kid=<AUD>&meta=…
    ```
 
    Ten sam adres niesie parametr `meta` — podpisany JWT, którego pole `aud`
@@ -310,7 +311,7 @@ pojedyncze adresy osób, które mają testować. Regułę domenową włączysz p
    **Weryfikacja AUD zrobiona 18.08.2026 (kryptograficznie, nie na oko):** podpis
    RS256 meta-JWT sprawdzony kluczem o jego `kid` pobranym z JWKS zespołu
    `knowbase` — **poprawny**. Czyli token niosący `aud = 31995d69…` dla hosta
-   `budmax-wewnetrzny.know-base.app` jest podpisany kluczem tego zespołu, a nie
+   `budmax-pracownik.know-base.app` jest podpisany kluczem tego zespołu, a nie
    przepisany z przypadkowego ekranu. `kid` z adresu, `aud` z meta-JWT i
    `ACCESS_AUD` w `wrangler.toml` są identyczne.
 
@@ -343,15 +344,15 @@ ustawione w dashboardzie zniknęłyby przy najbliższym `wrangler deploy`.
 > tego kroku.
 
 **Dwa hosty odpowiadają na `/internal` inaczej i tak ma być.** Na
-`budmax-wewnetrzny.know-base.app` żądanie bez ważnej sesji **nie dociera do
+`budmax-pracownik.know-base.app` żądanie bez ważnej sesji **nie dociera do
 Workera** — zatrzymuje je Access na brzegu i odsyła `302` na ekran logowania.
 Kody Workera (`401` z opisem powodu) widać dopiero po przejściu przez Access
 albo na starym adresie `workers.dev`, którego Access nie obejmuje.
 
 Dlatego weryfikacja tokenu w Workerze testuje się na `workers.dev`, a działanie
-samego Access — na hoście wewnętrznym.
+samego Access — na hoście pracowniczym.
 
-**Z przeglądarki** — wejdź na `https://budmax-wewnetrzny.know-base.app/internal`.
+**Z przeglądarki** — wejdź na `https://budmax-pracownik.know-base.app/internal`.
 Powinno przekierować na ekran logowania Cloudflare (dziś: One-time PIN, po
 krokach 2–3 także Google / Microsoft). Po zalogowaniu zobaczysz odpowiedź Workera
 (dla GET będzie to `405 Method not allowed` — to dobrze, znaczy że Access
@@ -365,10 +366,10 @@ subdomenie.
 
 ```bash
 # 1. host za Access, bez sesji → 302 na ekran logowania (Access, nie Worker)
-curl -s -o /dev/null -D - -X POST https://budmax-wewnetrzny.know-base.app/internal \
+curl -s -o /dev/null -D - -X POST https://budmax-pracownik.know-base.app/internal \
   -H "Content-Type: application/json" -d '{"question":"Jaka jest marza?"}' | grep -i "^location:"
 # HTTP/1.1 302 Found
-# Location: https://knowbase.cloudflareaccess.com/cdn-cgi/access/login/budmax-wewnetrzny.know-base.app?kid=…
+# Location: https://knowbase.cloudflareaccess.com/cdn-cgi/access/login/budmax-pracownik.know-base.app?kid=…
 
 # 2. workers.dev, bez tokenu → 401 (a NIE 503 — to jest dowód, że vars doszły)
 curl -s -X POST https://knowbase-budmax.rezi7608.workers.dev/internal \
@@ -395,7 +396,7 @@ curl -s -o /dev/null -w "%{http_code}\n" -X POST https://budmax.know-base.app/ \
 ### ✅ Pełna ścieżka potwierdzona pomiarem — 18.08.2026
 
 Do tego dnia przetestowane były **same odmowy**, i nie z zaniedbania, tylko przez
-układ adresów: na hoście wewnętrznym Access zatrzymuje bezsesyjne żądanie na brzegu
+układ adresów: na hoście pracowniczym Access zatrzymuje bezsesyjne żądanie na brzegu
 (302), a na `workers.dev` Access nie działa wcale, więc nie ma skąd wziąć prawdziwego
 tokenu. `node test-access.mjs` (14/14) sprawdza logikę weryfikacji na **podstawionych**
 kluczach — to nie to samo co prawdziwy token → prawdziwe JWKS → wdrożony Worker.
@@ -439,11 +440,11 @@ jako sygnał tożsamości klienta zadziała dopiero przy domenach firmowych.
 **Tym sposobem wykonano pomiar powyżej.** Jako jedyny sprawdza **tożsamość osoby**
 (`email`, `domena` w polu `zalogowany`):
 
-1. Zaloguj się na `https://budmax-wewnetrzny.know-base.app/internal`
+1. Zaloguj się na `https://budmax-pracownik.know-base.app/internal`
    (dziś: One-time PIN na adres z reguły z kroku 6).
 2. DevTools → *Application* → *Cookies* → skopiuj **`CF_Authorization`**.
 3. ```bash
-   curl -s -X POST https://budmax-wewnetrzny.know-base.app/internal \
+   curl -s -X POST https://budmax-pracownik.know-base.app/internal \
      -H "Content-Type: application/json" \
      -H "Cookie: CF_Authorization=WKLEJ_TU" \
      -d '{"question":"Jaka jest standardowa marza na robocizne?"}'
@@ -463,7 +464,7 @@ Do testu dymnego po każdym deployu, bo daje się uruchomić ze skryptu:
    `Action: Service Auth`, `Include → Service Token → budmax-smoke-test`.
    Polityka `Allow` dla ludzi zostaje bez zmian.
 3. ```bash
-   curl -s -X POST https://budmax-wewnetrzny.know-base.app/internal \
+   curl -s -X POST https://budmax-pracownik.know-base.app/internal \
      -H "CF-Access-Client-Id: $CF_ID" -H "CF-Access-Client-Secret: $CF_SECRET" \
      -H "Content-Type: application/json" \
      -d '{"question":"Jaka jest standardowa marza na robocizne?"}'
@@ -486,13 +487,17 @@ podstawionych kluczach.
 
 ---
 
-## Krok 9. Aplikacja Access dla panelu właściciela — ⬜ DO ZROBIENIA (21.08.2026)
+## Krok 9. Aplikacja Access dla panelu właściciela — ✅ zrobione 21.08.2026
 
-Panel właściciela przeszedł z `REINDEX_SECRET` na tożsamość z Access. **Kod jest
-wdrożony, konfiguracji brakuje** — do czasu wykonania tego kroku host panelowy
-odpowiada `503` z nazwą brakującej zmiennej. To jest stan zamierzony, nie usterka.
+Panel właściciela przeszedł z `REINDEX_SECRET` na tożsamość z Access.
+**Zrobione i potwierdzone pomiarem 21.08.2026** — host odpowiada 302 na ekran
+logowania, `ACCESS_AUD_PANEL` jest wpisany.
 
-**Dlaczego osobny host, a nie ścieżka na hoście wewnętrznym.** Panel należy do
+> **Zostało jedno sprawdzenie:** czy polityka tej aplikacji dopuszcza **jeden
+> adres e-mail**, a nie całą domenę firmy (punkt 9.3). Tego nie da się odczytać
+> z zewnątrz — trzeba zerknąć w dashboard.
+
+**Dlaczego osobny host, a nie ścieżka na hoście pracowniczym.** Panel należy do
 właściciela firmy, aplikacja pracownicza do zespołu. To dwie różne polityki
 dostępu, a polityki przypina się do aplikacji Access, czyli do hostu. Osobny host
 sprawia, że **rola wynika z adresu** — Worker nie musi znać żadnych ról, list
@@ -500,9 +505,9 @@ e-maili ani grup. Wariant „jeden host, rola w polityce na ścieżce `/panel`"
 odrzucony z tego samego powodu, co przy trybie wewnętrznym: ochrona stałaby
 na poprawnie wpisanym polu `Path`.
 
-### 9.1. Host panelowy — ✅ zrobione przez `wrangler deploy`
+### 9.1. Host właściciela — ✅ zrobione przez `wrangler deploy`
 
-`budmax-panel.know-base.app` powstał automatycznie razem z wdrożeniem, bo
+`budmax-wlasciciel.know-base.app` powstał automatycznie razem z wdrożeniem, bo
 `wrangler.toml` ma dla niego wpis `[[routes]]` z `custom_domain = true`.
 Sprawdź w **Workers & Pages → knowbase-budmax → Settings → Domains & Routes**,
 że host jest na liście. Nic tu nie klikasz.
@@ -515,7 +520,7 @@ Sprawdź w **Workers & Pages → knowbase-budmax → Settings → Domains & Rout
 |---|---|
 | Application name | `BudMax — panel właściciela` |
 | Session Duration | `24 hours` (jak przy trybie wewnętrznym) |
-| Subdomain | `budmax-panel` |
+| Subdomain | `budmax-wlasciciel` |
 | Domain | `know-base.app` |
 | Path | **zostaw puste** — aplikacja ma obejmować cały host |
 
@@ -557,17 +562,17 @@ przypadki w `test-access.mjs` (sekcja 5).
 
 ```bash
 # 1. przed uzupełnieniem ACCESS_AUD_PANEL — 503 z nazwą brakującej zmiennej
-curl -s "https://budmax-panel.know-base.app/?cb=$RANDOM"
+curl -s "https://budmax-wlasciciel.know-base.app/?cb=$RANDOM"
 # Panel właściciela nie jest jeszcze skonfigurowany.
 # Brakujące zmienne: ACCESS_AUD_PANEL
 
 # 2. po uzupełnieniu i wdrożeniu — 302 na ekran logowania
-curl -s -o /dev/null -w "%{http_code}\n" -I "https://budmax-panel.know-base.app/?cb=$RANDOM"
+curl -s -o /dev/null -w "%{http_code}\n" -I "https://budmax-wlasciciel.know-base.app/?cb=$RANDOM"
 # 302
 
 # 3. dawny klucz administracyjny NIE otwiera panelu (ma być 404)
 curl -s "https://knowbase-budmax.rezi7608.workers.dev/stats?key=SEKRET&cb=$RANDOM"
-# {"error":"Panel właściciela działa wyłącznie na hoście panelowym."}
+# {"error":"Panel właściciela działa wyłącznie na hoście właściciela."}
 
 # 4. narzędzia wdrożeniowe nadal na kluczu (ma być 200 z podpowiedzią)
 curl -s "https://knowbase-budmax.rezi7608.workers.dev/purge?key=SEKRET"
@@ -584,8 +589,8 @@ Po zalogowaniu jednym adresem e-mail dostępne są **oba** panele właściciela:
 
 | Adres | Co pokazuje |
 |---|---|
-| `https://budmax-panel.know-base.app/` | analityka widgetu publicznego (pytania klientów, luki) |
-| `https://budmax-panel.know-base.app/panel` | analityka bota wewnętrznego (luki szkoleniowe, eskalacje) |
+| `https://budmax-wlasciciel.know-base.app/` | analityka widgetu publicznego (pytania klientów, luki) |
+| `https://budmax-wlasciciel.know-base.app/panel` | analityka bota wewnętrznego (luki szkoleniowe, eskalacje) |
 
 Stary adres `https://p0rk1.github.io/widgetAI/panel.html` **nie jest już panelem** —
 pokazuje wskazówkę z nowym adresem. Nie da się go zostawić działającym, bo ze
@@ -596,12 +601,12 @@ statycznej strony nie sposób uwierzytelnić się przez Access.
 | Objaw | Przyczyna | Co zrobić |
 |---|---|---|
 | `503` i lista brakujących zmiennych | `ACCESS_TEAM_DOMAIN` / `ACCESS_AUD` puste | Krok 7 |
-| `302` zamiast `401` na hoście wewnętrznym | **tak ma być** — Access odsyła na logowanie zanim żądanie dojdzie do Workera | nic; kody Workera testuj na `workers.dev` (krok 8) |
-| `401 Brak tokenu` mimo zalogowania | Access nie obejmuje tego hosta | Sprawdź *Application domain* — subdomena ma być `budmax-wewnetrzny`, `Path` puste (krok 5) |
-| `401 Brak tokenu` na `workers.dev` | **tak ma być** — Access nie działa na `*.workers.dev` i nigdy nie postawi tam tokenu | tryb wewnętrzny ma jeden adres: `budmax-wewnetrzny.know-base.app` |
+| `302` zamiast `401` na hoście pracowniczym | **tak ma być** — Access odsyła na logowanie zanim żądanie dojdzie do Workera | nic; kody Workera testuj na `workers.dev` (krok 8) |
+| `401 Brak tokenu` mimo zalogowania | Access nie obejmuje tego hosta | Sprawdź *Application domain* — subdomena ma być `budmax-pracownik`, `Path` puste (krok 5) |
+| `401 Brak tokenu` na `workers.dev` | **tak ma być** — Access nie działa na `*.workers.dev` i nigdy nie postawi tam tokenu | tryb wewnętrzny ma jeden adres: `budmax-pracownik.know-base.app` |
 | `401 Token podpisano kluczem nieznanym dla tego zespołu` | JWKS pobrane, ale token nie pochodzi z tego zespołu | jeśli to token z prawdziwego logowania — sprawdź `ACCESS_TEAM_DOMAIN` przez `issuer` z `/.well-known/openid-configuration` (krok 1) |
 | ekran logowania pokazuje inną nazwę niż `ACCESS_TEAM_DOMAIN` | to pole **wyświetlane** (*Custom pages*), nie domena uwierzytelniania | nic w kodzie; rozstrzyga `issuer`, nie napis — krok 1 |
-| Publiczny host prosi o logowanie | Aplikacja Access zbudowana na `budmax` zamiast `budmax-wewnetrzny` | Popraw *Application domain* (krok 5) |
+| Publiczny host prosi o logowanie | Aplikacja Access zbudowana na `budmax` zamiast `budmax-pracownik` | Popraw *Application domain* (krok 5) |
 | `401 Token wystawiony dla innej aplikacji` | AUD z innej aplikacji Access | Przepisz AUD z właściwej aplikacji (krok 7) |
 | `401 Token wystawiony przez inny zespół` | Literówka w `ACCESS_TEAM_DOMAIN` | Ma być pełny host `nazwa.cloudflareaccess.com`, bez `https://` |
 | `502 Nie udało się pobrać kluczy` | Zła nazwa zespołu albo chwilowa awaria | Sprawdź `https://knowbase.cloudflareaccess.com/cdn-cgi/access/certs` w przeglądarce |
@@ -615,7 +620,7 @@ statycznej strony nie sposób uwierzytelnić się przez Access.
 | Adres i endpoint | Kto ma dostęp | Czym się uwierzytelnia |
 |---|---|---|
 | `budmax.know-base.app` → `POST /` | każdy | — (publiczny widget) |
-| `budmax-wewnetrzny.know-base.app` → `POST /internal` | pracownik z reguły Access | tożsamość Google / Microsoft |
+| `budmax-pracownik.know-base.app` → `POST /internal` | pracownik z reguły Access | tożsamość Google / Microsoft |
 | dowolny host → `/reindex`, `/purge`, `/stats`, `/debug` | administrator | `REINDEX_SECRET` |
 
 Sedno etapu 2: **pracownik przestał dzielić sekret z administratorem.** Kto ma

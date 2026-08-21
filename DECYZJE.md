@@ -30,6 +30,7 @@ zapis wraca jako ten sam błąd za trzy sesje.
 - [Uziemienie liczb: rozstrzygnięcie po trybie (R3)](#uziemienie-liczb-rozstrzygnięcie-po-trybie-r3--20082026)
 - [Problem 4 — diagnoza i zamknięcie](#problem-4--nowa-diagnoza-20082026-i-zamknięcie-21082026)
 - [Panel wlasciciela na Access](#panel-właściciela-na-access--trzeci-host-rola-z-adresu-21082026)
+- [Zmiana nazw hostow i koniec dopasowania po podciagu](#zmiana-nazw-hostów-i-koniec-dopasowania-po-podciągu-21082026)
 - [Dokumentacja BudMax](#dokumentacja-budmax)
 
 ## Decyzje, do których nie wracać
@@ -92,17 +93,17 @@ dało się załatać kodem po czterech rundach prób. **Nie wracać do 8B.**
 | Host | Rola |
 |---|---|
 | `budmax.know-base.app` | publiczny endpoint widgetu |
-| `budmax-wewnetrzny.know-base.app` | bot dla pracowników, cały host za Access |
+| `budmax-pracownik.know-base.app` | bot dla pracowników, cały host za Access |
 | `knowbase-budmax.rezi7608.workers.dev` | stary adres — **zostaje włączony** |
 
 **Dlaczego dwa hosty, a nie jeden ze ścieżką.** Aplikacja Access obejmuje cały
-host wewnętrzny, więc nie ma tam ścieżki publicznej, którą dałoby się
+host pracowniczy, więc nie ma tam ścieżki publicznej, którą dałoby się
 przypadkiem odsłonić albo zablokować. Wariant „jeden host + Access na ścieżce
 `/internal`" został **odrzucony**: ochrona stałaby wtedy na poprawnie wpisanym
 polu `Path`, a pomyłka w nim albo odsłania tryb wewnętrzny, albo każe klientom
 się logować. Rozdzielenie hostów usuwa cały ten rodzaj błędu.
 
-**Dlaczego myślnik, a nie kropka** (`budmax-wewnetrzny`, nie `internal.budmax`).
+**Dlaczego myślnik, a nie kropka** (`budmax-pracownik`, nie `internal.budmax`).
 Darmowy certyfikat `*.know-base.app` pokrywa tylko jeden poziom subdomeny.
 Trzeci poziom wymagałby płatnego certyfikatu.
 
@@ -170,21 +171,21 @@ Odmowa dostępu i brak konfiguracji to dwie różne sytuacje i mają różne kod
 
 **Access nie obejmuje adresów `*.workers.dev`** — aplikacje self-hosted buduje się
 z domen w koncie Cloudflare. Dlatego 17.08.2026 doszła domena `know-base.app`
-i host `budmax-wewnetrzny.know-base.app` (patrz „Adresy i domeny"). Custom domain
+i host `budmax-pracownik.know-base.app` (patrz „Adresy i domeny"). Custom domain
 musi być także w `wrangler.toml` (`[[routes]]` z `custom_domain = true`), inaczej
 deploy ją zdejmie. Aplikacja Access na tym hoście istnieje od 18.08.2026 —
 `ZERO-TRUST.md`.
 
 Konsekwencja dla starego adresu: `/internal` na `workers.dev` **nigdy nie zadziała**,
 bo Access nie postawi tam tokenu. To poprawne zachowanie fail-closed, nie usterka —
-tryb wewnętrzny ma jeden adres i jest nim host wewnętrzny.
+tryb wewnętrzny ma jeden adres i jest nim host pracowniczy.
 
 **Dwa hosty zwracają na `/internal` różne kody i tak ma być.** Na
-`budmax-wewnetrzny.know-base.app` żądanie bez sesji **nie dociera do Workera** —
+`budmax-pracownik.know-base.app` żądanie bez sesji **nie dociera do Workera** —
 Access zatrzymuje je na brzegu i odsyła **302** na ekran logowania. Kody Workera
 (401 z powodem) widać tylko na `workers.dev` albo po przejściu przez Access.
 Dlatego weryfikację tokenu testuje się na `workers.dev`, a samo Access — na hoście
-wewnętrznym. Oczekiwanie „401 bez tokenu na hoście wewnętrznym" było błędne.
+wewnętrznym. Oczekiwanie „401 bez tokenu na hoście pracowniczym" było błędne.
 
 **`identity` z tokenu** — `email` i `domena` są odczytywane i przekazywane do
 `handleAsk()`, które odsyła je w polu `zalogowany`. Działanie potwierdzone
@@ -870,7 +871,7 @@ domenie klienta** i na `workers.dev`, bo warunek trasy sprawdzał samą ścieżk
 Danych to nie wystawiało — strony wołają `/internal` i `/stats-internal`, a te
 bez tokenu zwracają 401 — ale interfejs pracowniczy nie ma czego szukać pod
 adresem, na który wchodzi klient. Dziś `/app`, `/panel` i `GET /` przechodzą
-przez `hostWewnetrzny(url)`; poza hostem wewnętrznym ścieżki nie istnieją.
+przez `hostPracownika(url)`; poza hostem pracowniczym ścieżki nie istnieją.
 Osobna funkcja, nie wklejony warunek — przy multi-tenant zmieni się jedno miejsce.
 
 ## Uziemienie liczb: rozstrzygnięcie po trybie (R3) — 20.08.2026
@@ -1324,12 +1325,12 @@ wewnętrznym, objętym polityką całego zespołu, więc **każdy pracownik móg
 otworzyć `/panel`** i zobaczyć luki szkoleniowe, eskalacje i listę zadanych pytań.
 Ten sam defekt, tyle że już wdrożony. Naprawione w tej samej zmianie.
 
-### Rozstrzygnięcie: osobny host panelowy
+### Rozstrzygnięcie: osobny host właściciela
 
-`budmax-panel.know-base.app`, trzeci host na klienta, z **własną aplikacją Access**
+`budmax-wlasciciel.know-base.app`, trzeci host na klienta, z **własną aplikacją Access**
 i polityką na jeden adres e-mail zamiast całego zespołu.
 
-Rozważany był wariant tańszy — panel zostaje na hoście wewnętrznym, a właściciela
+Rozważany był wariant tańszy — panel zostaje na hoście pracowniczym, a właściciela
 od pracownika odróżnia polityka. **Odrzucony**, bo dałoby się to zrobić tylko na
 dwa sposoby, oba złe:
 
@@ -1358,7 +1359,7 @@ musiało zostać ruszone.
 Dług `ACCESS_AUD` **został częściowo spłacony przy okazji**, bo musiał: dwie
 aplikacje Access to dwa AUD. `accessConfig(env, url)` wybiera oczekiwany AUD
 **po hoście**. Rozwiązanie „akceptuj którykolwiek ze znanych AUD-ów" byłoby
-dziurą — token pracownika z hostu wewnętrznego otwierałby panel właściciela.
+dziurą — token pracownika z hostu pracowniczego otwierałby panel właściciela.
 To jest dwuelementowa wersja mapy `host → AUD` z „Adresy i domeny"; przy
 multi-tenant rozrasta się, a nie przepisuje.
 
@@ -1367,9 +1368,9 @@ multi-tenant rozrasta się, a nie przepisuje.
 | Endpoint | Kto | Czym |
 |---|---|---|
 | `POST /` | każdy | — |
-| `POST /internal` | pracownik | Access, host wewnętrzny |
-| `GET /`, `/app` (host wewnętrzny) | pracownik | Access |
-| `GET /`, `/panel`, `/stats`, `/stats-internal` (host panelowy) | **właściciel** | **Access, host panelowy** |
+| `POST /internal` | pracownik | Access, host pracowniczy |
+| `GET /`, `/app` (host pracowniczy) | pracownik | Access |
+| `GET /`, `/panel`, `/stats`, `/stats-internal` (host właściciela) | **właściciel** | **Access, host właściciela** |
 | `/reindex`, `/purge`, `/debug` | administrator | `REINDEX_SECRET` |
 
 Endpointy administracyjne **świadomie zostają na sekrecie**. To narzędzia
@@ -1393,7 +1394,7 @@ formularz.
 
 ### Fail-closed dotyczy też interfejsu, nie tylko danych
 
-Zmierzone zaraz po wdrożeniu: host panelowy istniał, aplikacji Access jeszcze nie
+Zmierzone zaraz po wdrożeniu: host właściciela istniał, aplikacji Access jeszcze nie
 było, więc `GET /` **serwowało panel każdemu**. Dane były bezpieczne (`/stats`
 zwracało 503), ale skorupa chronionej powierzchni wisiała publicznie.
 
@@ -1409,27 +1410,125 @@ logowania — więc Worker musi umieć odmówić samodzielnie.
 
 | sonda | wynik |
 |---|---|
-| `/stats` ze starym kluczem, `workers.dev` | **404** — „Panel właściciela działa wyłącznie na hoście panelowym" |
+| `/stats` ze starym kluczem, `workers.dev` | **404** — „Panel właściciela działa wyłącznie na hoście właściciela" |
 | `/stats` ze starym kluczem, host publiczny | **404** |
-| `/stats` ze starym kluczem, host panelowy | **503** — brak `ACCESS_AUD_PANEL` |
+| `/stats` ze starym kluczem, host właściciela | **503** — brak `ACCESS_AUD_PANEL` |
 | `/stats-internal` ze starym kluczem | **404** |
 | `/purge?key=…` bez `ids` | **200** z podpowiedzią — klucz nadal autoryzuje, nic nie kasuje |
 | `/reindex?key=…&space=nieistniejaca` | **400** — klucz autoryzuje, indeks nietknięty |
 | `/debug?key=…` | **200** |
 | te same trzy ze złym kluczem | **403** |
-| `/app`, `/panel` na hoście wewnętrznym | **302** na ekran logowania — Access działa |
-| `GET /`, `/panel` na hoście panelowym | **503** z nazwą brakującej zmiennej |
+| `/app`, `/panel` na hoście pracowniczym | **302** na ekran logowania — Access działa |
+| `GET /`, `/panel` na hoście właściciela | **503** z nazwą brakującej zmiennej |
 | `POST /` publiczny | **200**, odpowiedź bez zmian |
 
 `test-access.mjs` urósł z 14 do **20 przypadków** — doszła sekcja 5: token
-panelowy nie otwiera hostu wewnętrznego, token pracownika nie otwiera panelu,
-brak `ACCESS_AUD_PANEL` daje 503 na hoście panelowym i **nie psuje** hostu
+panelowy nie otwiera hostu pracowniczego, token pracownika nie otwiera panelu,
+brak `ACCESS_AUD_PANEL` daje 503 na hoście właściciela i **nie psuje** hostu
 wewnętrznego.
 
 **Uwaga na cache brzegowy — kosztował fałszywy alarm drugi raz.** Pierwsza sonda
 pokazała `/stats` na `workers.dev` odpowiadające **200 z pełnymi danymi**, co
 wyglądało na niewdrożoną zmianę. To była odpowiedź zbuforowana sprzed wdrożenia;
 z `?cb=$RANDOM` jest 404. Każdą sondę po wdrożeniu robić z cache-busterem.
+
+## Zmiana nazw hostów i koniec dopasowania po podciągu (21.08.2026)
+
+Hosty przemianowane w aplikacjach Access, a potem w kodzie:
+
+| było | jest | rola |
+|---|---|---|
+| `budmax-wewnetrzny.know-base.app` | **`budmax-pracownik.know-base.app`** | aplikacja asystenta budowy |
+| `budmax-panel.know-base.app` | **`budmax-wlasciciel.know-base.app`** | oba panele analityczne |
+
+### Dopasowanie po podciągu było miną i właśnie wybuchło
+
+Role rozpoznawały `hostname.includes("wewnetrzny")` i `includes("-panel.")`.
+**Żadna z nowych nazw nie pasuje do żadnego z tych wzorców.** Gdyby zmienić same
+nazwy w Access, oba hosty po cichu straciłyby rolę: aplikacja pracownicza
+przestałaby się serwować, `/stats` odpowiadałoby 404 na własnym hoście, a nic
+w kodzie nie krzyknęłoby o błędzie. To nie jest hipotetyczne — tak wyglądał stan
+między zmianą w Access a wdrożeniem kodu.
+
+Dlatego nazwy hostów są dziś w **jednym miejscu** (`HOSTY` w `worker.js`),
+a dopasowanie jest **dokładne**, nie podciągiem:
+
+```js
+const HOSTY = {
+  publiczny:  "budmax.know-base.app",
+  pracownik:  "budmax-pracownik.know-base.app",
+  wlasciciel: "budmax-wlasciciel.know-base.app",
+};
+function hostPracownika(url)  { return url.hostname === HOSTY.pracownik; }
+function hostWlasciciela(url) { return url.hostname === HOSTY.wlasciciel; }
+```
+
+Dokładne dopasowanie ma lepszą stronę awaryjną: **host, którego nie ma w `HOSTY`,
+nie dostaje żadnej roli.** Nieznana albo porzucona nazwa nie odsłoni ani aplikacji
+pracowniczej, ani panelu — w najgorszym razie odpowie 404.
+
+### Dziura, która była otwarta przez chwilę — i czego uczy
+
+Zmierzone **przed** wdrożeniem kodu, gdy aplikacje Access były już przepięte
+na nowe nazwy:
+
+```
+budmax-wewnetrzny.know-base.app/app  ->  HTTP 200
+```
+
+Aplikacja pracownicza serwowała się **publicznie, bez logowania**. Mechanizm:
+aplikacja Access zeszła ze starego hosta, ale trasa w `wrangler.toml` została,
+a `includes("wewnetrzny")` nadal pasowało — więc Worker chętnie oddał HTML.
+Dane pozostały bezpieczne (`POST /internal` bez tokenu to 401), ale skorupa
+interfejsu była odsłonięta.
+
+**Reguła: host w Access i host w `wrangler.toml` to dwie różne rzeczy i trzeba
+je zmieniać razem.** Przepięcie samego Access zostawia stary adres podpięty do
+Workera, tyle że bez ochrony. Kolejność bezpieczna to: najpierw kod i trasy,
+potem Access — albo obie naraz, ale nigdy sam Access.
+
+### Stare trasy znikają same — sprawdzone, nie założone
+
+Pytanie brzmiało, czy po starych hostach zostaną wiszące trasy bez ochrony.
+**Nie zostają.** Usunięcie wpisu `[[routes]]` z `custom_domain = true` i
+`wrangler deploy` odpina custom domain **razem z rekordem DNS**:
+
+```
+budmax-wewnetrzny.know-base.app  ->  NXDOMAIN
+budmax-panel.know-base.app       ->  NXDOMAIN
+```
+
+Przez kilkadziesiąt sekund po wdrożeniu stare adresy oddawały jeszcze `522`
+(rekord DNS żył, Worker już go nie obsługiwał) — to okno propagacji, nie stan
+docelowy. Nic nie zostało do posprzątania w dashboardzie.
+
+To jest zarazem potwierdzenie reguły z `CLAUDE.md`: **`wrangler.toml` jest
+źródłem prawdy** i trasa, której tam nie ma, znika z działającego Workera.
+Tutaj zadziałało to na naszą korzyść, ale ta sama mechanika kasuje bindingi
+dopisane w dashboardzie.
+
+### AUD — sprawdzone, nie założone
+
+Przewidywanie brzmiało: AUD obu aplikacji się nie zmienił, bo zmieniono w nich
+tylko nazwę hosta. **Dla aplikacji pracowniczej to prawda**, dla panelowej
+sprawdzenie było potrzebne z innego powodu — jej AUD nie był jeszcze wpisany.
+
+AUD da się odczytać **bez logowania**: Access przekierowuje niezalogowanego na
+ekran logowania, a w parametrze `kid` tego adresu siedzi AUD aplikacji.
+
+```bash
+curl -s -D - -o /dev/null "https://budmax-pracownik.know-base.app/?cb=$RANDOM" | grep -i '^location:'
+# .../cdn-cgi/access/login/budmax-pracownik.know-base.app?kid=31995d69…f782c1c0
+```
+
+| aplikacja | AUD | stan |
+|---|---|---|
+| BudMax — tryb wewnętrzny (host pracownika) | `31995d69…f782c1c0` | **niezmieniony**, zgodny z `ACCESS_AUD` |
+| BudMax — panel właściciela (host właściciela) | `49c77c8d…e4ddb133` | odczytany i wpisany do `ACCESS_AUD_PANEL` |
+
+AUD **nie jest sekretem** — widać go w adresie ekranu logowania, więc odczytanie
+go tą drogą niczego nie ujawnia. To ta sama wartość, którą dashboard pokazuje
+w polu *Application Audience (AUD) Tag*.
 
 ## Dokumentacja BudMax
 

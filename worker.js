@@ -237,33 +237,54 @@ async function vectorDelete(env, ids) {
 // Kolejność ma znaczenie tylko dla pierwszego wpisu: jest odpowiedzią domyślną,
 // gdy Origin nie pasuje do niczego. Nieznany origin i tak zostanie zablokowany
 // przez przeglądarkę — chodzi o to, żeby nie odsyłać mu jego własnej wartości.
+// ============================================================
+// HOSTY KLIENTA — jedyne miejsce w kodzie z nazwami adresów
+// ============================================================
+//
+// Trzy hosty, trzy role. Nazwa hostu jest jedynym nośnikiem roli: Worker nie ma
+// listy uprawnionych ani pola roli w tokenie — patrz DECYZJE.md → „Panel
+// właściciela na Access".
+//
+// DOPASOWANIE JEST DOKŁADNE, NIE PODCIĄGIEM. Do 21.08.2026 role rozpoznawał
+// `hostname.includes("wewnetrzny")` i `includes("-panel.")`. Zmiana nazw hostów
+// w aplikacjach Access (`budmax-wewnetrzny` → `budmax-pracownik`,
+// `budmax-panel` → `budmax-wlasciciel`) **po cichu odebrałaby rolę obu hostom**:
+// żadna nowa nazwa nie pasowała do żadnego wzorca, więc tryb pracowniczy
+// i panel przestałyby działać, a nikt by tego nie zauważył przed pomiarem.
+// Dokładne dopasowanie ma też lepszą stronę awaryjną: host, którego tu nie ma,
+// **nie dostaje żadnej roli** — także stary adres, gdyby trasa gdzieś została.
+const HOSTY = {
+  publiczny: "budmax.know-base.app",
+  pracownik: "budmax-pracownik.know-base.app",
+  wlasciciel: "budmax-wlasciciel.know-base.app",
+};
+
 const ALLOWED_ORIGINS = [
   "https://p0rk1.github.io",              // widget publiczny — GitHub Pages
-  "https://budmax.know-base.app",         // publiczny host klienta
-  "https://budmax-wewnetrzny.know-base.app", // bot dla pracowników (za Access)
-  "https://budmax-panel.know-base.app",      // panel właściciela (za Access)
+  `https://${HOSTY.publiczny}`,           // publiczny host klienta
+  `https://${HOSTY.pracownik}`,           // bot dla pracowników (za Access)
+  `https://${HOSTY.wlasciciel}`,          // panel właściciela (za Access)
 ];
 
-// Host wewnętrzny to jedyne miejsce, przed którym stoi Cloudflare Access.
-// Interfejsy pracownicze (`/app`, `/panel`) serwujemy wyłącznie stamtąd.
+// Host PRACOWNICZY — aplikacja asystenta budowy, cały host za Access.
 // Osobna funkcja, a nie wklejony warunek: przy multi-tenant zmieni się tu
 // jedno miejsce, nie trzy.
-function hostWewnetrzny(url) {
-  return url.hostname.includes("wewnetrzny");
+function hostPracownika(url) {
+  return url.hostname === HOSTY.pracownik;
 }
 
-// Host PANELOWY — panel właściciela firmy. Osobny host, nie ścieżka na hoście
-// wewnętrznym, i to jest sedno rozwiązania ról: pracownik i właściciel wchodzą
+// Host WŁAŚCICIELA — oba panele analityczne. Osobny host, nie ścieżka na hoście
+// pracowniczym, i to jest sedno rozwiązania ról: pracownik i właściciel wchodzą
 // pod różne adresy, objęte różnymi aplikacjami Access z różnymi politykami.
 // Dzięki temu rola wynika z HOSTA i nie trzeba jej sprawdzać w kodzie — nie
 // powstaje żaden system ról, lista uprawnionych ani pole w tokenie.
 //
-// Wariant „panel na hoście wewnętrznym, rola z polityki" odrzucony: wymagałby
+// Wariant „panel na hoście pracowniczym, rola z polityki" odrzucony: wymagałby
 // albo aplikacji Access na ścieżce (wzorzec odrzucony wcześniej — ochrona
 // stałaby na poprawnie wpisanym polu `Path`), albo listy e-maili w kodzie.
 // Przy One-time PIN token nie niesie grup, więc nie ma się na czym oprzeć.
-function hostPanelowy(url) {
-  return url.hostname.includes("-panel.");
+function hostWlasciciela(url) {
+  return url.hostname === HOSTY.wlasciciel;
 }
 
 // INTERFEJSU CHRONIONEJ POWIERZCHNI NIE SERWUJEMY, DOPÓKI OCHRONY NIE MA.
@@ -279,7 +300,7 @@ function hostPanelowy(url) {
 function odpowiedzBrakKonfiguracji(url, env, request) {
   const { missing } = accessConfig(env, url);
   if (!missing.length) return null;
-  const czego = hostPanelowy(url) ? "Panel właściciela" : "Tryb wewnętrzny";
+  const czego = hostWlasciciela(url) ? "Panel właściciela" : "Tryb wewnętrzny";
   return new Response(
     `${czego} nie jest jeszcze skonfigurowany.\n\n` +
     `Brakujące zmienne: ${missing.join(", ")}\n` +
@@ -370,7 +391,7 @@ function accessConfig(env, url = null) {
     .trim()
     .replace(/^https?:\/\//, "")
     .replace(/\/+$/, "");
-  const panelowy = url ? hostPanelowy(url) : false;
+  const panelowy = url ? hostWlasciciela(url) : false;
   const nazwaAud = panelowy ? "ACCESS_AUD_PANEL" : "ACCESS_AUD";
   const aud = (env[nazwaAud] || "").trim();
   const missing = [];
@@ -406,7 +427,7 @@ async function verifyAccessJwt(request, env) {
   let urlZadania = null;
   try { urlZadania = new URL(request.url); } catch { urlZadania = null; }
   const { teamDomain, aud, missing } = accessConfig(env, urlZadania);
-  const czegoDotyczy = urlZadania && hostPanelowy(urlZadania) ? "Panel właściciela" : "Tryb wewnętrzny";
+  const czegoDotyczy = urlZadania && hostWlasciciela(urlZadania) ? "Panel właściciela" : "Tryb wewnętrzny";
 
   // Ścieżka awaryjna: Access nieskonfigurowany. 503, nie 403 — to nie jest
   // odmowa dostępu, tylko brak konfiguracji, i komunikat ma to mówić wprost.
@@ -1283,8 +1304,8 @@ export default {
     // Host panelowy jest warunkiem, nie ozdobnikiem: na nim stoi aplikacja Access
     // z polityką dopuszczającą właściciela, a nie cały zespół.
     if (url.pathname === "/stats" && request.method === "GET") {
-      if (!hostPanelowy(url)) {
-        return jsonResponse({ error: "Panel właściciela działa wyłącznie na hoście panelowym." }, corsHeaders(request), 404);
+      if (!hostWlasciciela(url)) {
+        return jsonResponse({ error: "Panel właściciela działa wyłącznie na jego własnym hoście." }, corsHeaders(request), 404);
       }
       const auth = await verifyAccessJwt(request, env);
       if (!auth.ok) {
@@ -1362,7 +1383,7 @@ export default {
     // wystawiało — obie strony wołają `/internal` i `/stats-internal`, które bez
     // tokenu zwracają 401 — ale interfejs pracowniczy nie ma czego szukać pod
     // adresem, na który wchodzi klient.
-    if ((url.pathname === "/app" || url.pathname === "/") && hostWewnetrzny(url) && request.method === "GET") {
+    if ((url.pathname === "/app" || url.pathname === "/") && hostPracownika(url) && request.method === "GET") {
       const brak = odpowiedzBrakKonfiguracji(url, env, request);
       if (brak) return brak;
       return new Response(APP_INTERNAL_HTML, {
@@ -1374,7 +1395,7 @@ export default {
     }
 
     // Panel właściciela — analityka publicznego widgetu. Wejście na host panelowy.
-    if (url.pathname === "/" && hostPanelowy(url) && request.method === "GET") {
+    if (url.pathname === "/" && hostWlasciciela(url) && request.method === "GET") {
       const brak = odpowiedzBrakKonfiguracji(url, env, request);
       if (brak) return brak;
       return new Response(PANEL_HTML, {
@@ -1388,7 +1409,7 @@ export default {
     // Panel analityczny bota wewnętrznego (Etap 6) — przeniesiony 21.08.2026
     // z hostu wewnętrznego na PANELOWY. Treść jest dla właściciela, więc ma
     // stać za polityką właściciela, a nie za polityką zespołu.
-    if (url.pathname === "/panel" && hostPanelowy(url) && request.method === "GET") {
+    if (url.pathname === "/panel" && hostWlasciciela(url) && request.method === "GET") {
       const brak = odpowiedzBrakKonfiguracji(url, env, request);
       if (brak) return brak;
       return new Response(PANEL_INTERNAL_HTML, {
@@ -1406,8 +1427,8 @@ export default {
     // hoście wewnętrznym, wystarczyło być pracownikiem: każdy z dostępu do bota
     // mógł zobaczyć luki szkoleniowe, eskalacje i listę zadanych pytań.
     if (url.pathname === "/stats-internal" && request.method === "GET") {
-      if (!hostPanelowy(url)) {
-        return jsonResponse({ error: "Panel właściciela działa wyłącznie na hoście panelowym." }, corsHeaders(request), 404);
+      if (!hostWlasciciela(url)) {
+        return jsonResponse({ error: "Panel właściciela działa wyłącznie na jego własnym hoście." }, corsHeaders(request), 404);
       }
       const auth = await verifyAccessJwt(request, env);
       if (!auth.ok) {

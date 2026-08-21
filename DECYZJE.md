@@ -31,6 +31,7 @@ zapis wraca jako ten sam błąd za trzy sesje.
 - [Problem 4 — diagnoza i zamknięcie](#problem-4--nowa-diagnoza-20082026-i-zamknięcie-21082026)
 - [Panel wlasciciela na Access](#panel-właściciela-na-access--trzeci-host-rola-z-adresu-21082026)
 - [Zmiana nazw hostow i koniec dopasowania po podciagu](#zmiana-nazw-hostów-i-koniec-dopasowania-po-podciągu-21082026)
+- [Test na realnych pytaniach z budowy](#test-na-realnych-pytaniach-z-budowy--cztery-naprawy-i-jedna-ślepa-uliczka-21082026)
 - [Dokumentacja BudMax](#dokumentacja-budmax)
 
 ## Decyzje, do których nie wracać
@@ -1529,6 +1530,178 @@ curl -s -D - -o /dev/null "https://budmax-pracownik.know-base.app/?cb=$RANDOM" |
 AUD **nie jest sekretem** — widać go w adresie ekranu logowania, więc odczytanie
 go tą drogą niczego nie ujawnia. To ta sama wartość, którą dashboard pokazuje
 w polu *Application Audience (AUD) Tag*.
+
+## Test na realnych pytaniach z budowy — cztery naprawy i jedna ślepa uliczka (21.08.2026)
+
+Test na pytaniach zadanych tak, jak pyta pracownik, ujawnił trzy klasy problemów.
+Diagnoza pokazała, że pod trzema etykietami siedziały **cztery różne przyczyny**,
+a czwarta zgłoszona klasa okazała się artefaktem pomiaru.
+
+### Eskalacja: homonimy były problemem systemowym, nie wyjątkiem
+
+Zgłoszony objaw: „pismo z kancelarii… potrąci nam 20 000 zł" dostawało ramkę
+wypadkową z numerem 112. Przegląd wzorców pokazał, że `potrac` jest jednym
+z pięciu, nie wyjątkiem. Zmierzone na dziesięciu zwykłych zdaniach z budowy:
+
+| przed | po |
+|---|---|
+| **7/10 fałszywych alarmów PILNE** | **0/10** |
+
+Wyzwalały: „potrącamy zaliczkę z faktury", „brygadzista złamał procedurę",
+„podwykonawca **zawalił termin**", „ekipa zawaliła robotę", „majster ma do mnie
+**urazę**", „koszt materiału **spadł z** 40 do 32 zł". To jest dokładnie ten
+rodzaj szumu, który uczy ignorować ramkę — a więc kosztuje przy prawdziwym
+wypadku.
+
+**Rozwiązanie: rdzeń dwuznaczny wyzwala dopiero ze swoim DOPEŁNIENIEM.**
+Złamana część ciała, potrącony człowiek, upadek z wysokości, zawalenie
+konstrukcji. To warunek, nie lista sformułowań wypadku: wypadków wyliczyć się
+nie da, części ciała i wysokości owszem.
+
+Pierwsza wersja warunku — „czy w zdaniu występuje jakikolwiek człowiek" —
+**została odrzucona po pomiarze**: na budowie ktoś występuje prawie w każdym
+zdaniu, więc „brygadzista złamał procedurę" nadal wyzwalało ramkę.
+
+`uraz` rozbrojony inaczej, **morfologicznie**: `uraz(?![ae])` odróżnia
+*uraz/urazu/urazie* od *uraza/urazę*. Warunek kontekstowy gubił tu przypadek
+z zestawu regresyjnego — „Pracownika ukąsiła żmija, doznał urazu" nie nazywa
+części ciała.
+
+### Rozstrzyganie przy wielu trafieniach — zasada, nie kolejność
+
+Do tej pory wygrywała pierwsza pasująca kategoria w tablicy. Zasada wynika
+z kosztu pomyłki:
+
+1. Kategoria z **większą liczbą niezależnych sygnałów** wygrywa — więcej
+   przesłanek to mniejsza szansa, że trafiliśmy na homonim.
+2. Przy remisie wygrywa kategoria **pilna**, czyli kierująca do człowieka szybciej.
+3. Przy dalszym remisie decyduje kolejność w tablicy.
+
+**Punkt 1 działa WEWNĄTRZ poziomu pilności** i to jest istotne zabezpieczenie.
+Bez niego „pracownik złamał nogę, przyjechała PIP" wybrałoby `kontrola`, bo ta
+ma dwa sygnały z definicji — a to błąd, którego koszt mierzy się zdrowiem.
+
+**Uwaga do zapamiętania:** sama zasada NIE naprawiłaby zgłoszonego przypadku.
+W zdaniu o kancelarii obie kategorie miały po jednym sygnale, więc remis
+rozstrzygnąłby na korzyść pilnej — czyli nadal `wypadek`. Kolejność była
+ujawniaczem, nie przyczyną; przyczyną był homonim. Zasada zostaje, bo zapobiega
+kolizjom w przyszłości, ale nie należy jej przypisywać tej naprawy.
+
+### Rzeczowniki urazowe — jeden przyjęty kompromis, jeden kandydat odrzucony
+
+Wzorzec miał wyłącznie rdzenie czasownikowe i przymiotnikowe: `krwaw` łapie
+„krwawi", ale gubi **„leci krew"** — najczęstszą formę potoczną. Pytanie
+„wbił sobie gwóźdź w stopę… leci krew" nie zawierało ani nazwy urazu, ani
+rdzenia `krwaw`.
+
+**Sam rzeczownik wystarcza** — warunek kontekstowy jak przy rdzeniach
+dwuznacznych nie jest tu potrzebny. Mierzone przeciw pełnym 26 przypadkom
+negatywnym plus sześciu zdaniom dopisanym jako podejrzane:
+
+| kandydat | fałszywe alarmy | decyzja |
+|---|---|---|
+| `krew\|krwi` | **1** — „zachowaj zimną krew" | przyjęty **z jawnym wyjątkiem** |
+| `wbil sobie` | **1** — „wbił sobie do głowy" | **ODRZUCONY** |
+| `ran[aey]`, `rozciec`, `obrazen`, `opatrun`, `nadzia`, `krwotok` | 0 | przyjęte |
+
+Drugi idiom, „krew z nosa" („robimy to krew z nosa na jutro"), wyszedł przy
+sprawdzaniu i też jest wyłączony. Oba wyjątki żyją w kodzie jako
+`(?<!zimna )(krew|krwi)(?! z nosa)`.
+
+`wbil sobie` odrzucony mimo że łapie zgłoszony przypadek — „wbił sobie do głowy,
+że zdążymy" to zdanie, które na budowie padnie.
+
+Zestaw testowy: **53 → 79 przypadków**.
+
+### ŚLEPA ULICZKA: reguła promptu „prostuj wartość spoza zakresu"
+
+Hipoteza brzmiała: przy „marża 11%" model podaje progi i zostawia wniosek
+pracownikowi, więc prompt wewnętrzny ma kazać mu powiedzieć wprost, że wartość
+jest poza zakresem. Reguła została napisana **warunkiem**, z jawną klauzulą
+hamującą, wdrożona i zmierzona. **Cofnięta tego samego dnia.**
+
+| | przed | z regułą | po cofnięciu |
+|---|---|---|---|
+| sprostowania przy wartości poza zakresem | 12/16 | **11/16** | 10/16 |
+| fałszywe sprostowania na pytaniach neutralnych | 0/24 | **0/24** | 0/24 |
+
+**Wniosek pierwszy: reguła nie ma zmierzonego efektu.** Rozrzut między trzema
+przebiegami (12 → 11 → 10) jest większy niż jakikolwiek efekt reguły. Klauzula
+hamująca działała — zero fałszywych sprostowań, więc wpadka reguły adresata się
+nie powtórzyła — ale korzyści nie widać. Model prostuje sam: powtórzony pomiar
+na „marża 11%" dał **4/4 odpowiedzi zaczynających się od „Nie, nie możesz dać
+marży 11%"**, bez żadnej reguły.
+
+**Wniosek drugi, ważniejszy: pierwotna diagnoza była artefaktem metryki.**
+Diagnoza mówiła „3/6 przebiegów prostuje". Liczyła jednak dosłowne
+sformułowanie — „mówi wprost, że 11% nie wolno" — a nie sens odpowiedzi. Gdy
+policzyć naturalne „nie możesz dać marży 11%", wychodzi 12/16 **bez żadnej
+zmiany w kodzie**. Reguła powstała pod problem, którego skala była zmyślona
+przez licznik.
+
+To samo powtórzyło się **w środku pomiaru zaprojektowanego po wyciągnięciu tej
+lekcji**: klasa „limit godzin pracy 0/4" wyglądała na jedyną otwartą. Sprawdzenie
+pokazało, że odpowiedź jest poprawna i pełna w 3/3 przebiegach — „Nie, tygodniowy
+czas pracy łącznie z nadgodzinami nie może przekroczyć przeciętnie 48 godzin",
+lider `i18` za każdym razem. Licznik wymagał, żeby w odpowiedzi padła liczba
+**60** z pytania, a bot jej nie powtarza. **Luki w treści nie ma, limit jest
+w `i18`.**
+
+### Reguła na przyszłość, po trzecim takim przypadku
+
+To jest trzeci raz w tym projekcie, gdy metryka mierzyła co innego, niż chcieliśmy
+wiedzieć:
+
+1. mierzenie tego, co widzi użytkownik, przez `/debug` — który omija gałąź
+   „nie mam takich informacji" → fallback;
+2. utożsamienie braku oczekiwanej liczby w odpowiedzi z błędną odpowiedzią
+   (pytanie o rabat, gdzie klauzula o marży nie ma zastosowania);
+3. mierzenie dosłownego sformułowania sprostowania zamiast jego sensu — dwukrotnie
+   w jednej sesji, raz przy diagnozie i raz przy pomiarze kontrolnym.
+
+**Zasada: przed pomiarem sprawdź, czy metryka mierzy to, co chcesz wiedzieć,
+a nie to, co łatwo policzyć.** Praktycznie: zanim policzysz przebiegi, przeczytaj
+kilka odpowiedzi w całości i sprawdź, czy licznik zgadza się z Twoją oceną.
+Wszystkie trzy przypadki miały ten sam kształt — licznik szukał ciągu znaków,
+a pytanie dotyczyło znaczenia.
+
+### Trzy fragmenty treści
+
+| id | fragment | co domyka |
+|---|---|---|
+| `i42` | Trzeźwość na budowie — pracownik, napoje bezalkoholowe, kontrola | bot odpowiadał z `i32` „Klient na terenie budowy", czyli regułą dla **gościa** |
+| `i43` | Nocleg w delegacji bez faktury i bez poniesionego kosztu | `i15` znał tylko „ryczałt bez faktury 67,50" |
+| `i44` | Staż urlopowy — ile lat dolicza się za wykształcenie | `i14` mówił tylko „wlicza się lata nauki", bez liczb |
+
+`i42` mówi wprost „ten fragment dotyczy NAS, pracowników", a `i32` dostał
+odsyłacz zwrotny „ten fragment dotyczy GOŚCIA" — rozgraniczenie idzie w obie
+strony, bo to `i32` przechwytywało te pytania. Odsyłacze zwrotne dopisane też
+do `i14` i `i15`. **41 → 44 fragmenty.**
+
+### Wynik końcowy na pytaniach z testu (po 3 przebiegi)
+
+| pytanie | wynik |
+|---|---|
+| gwóźdź w stopie, leci krew | 3/3 ramka eskalacji, 3/3 procedura powypadkowa |
+| pismo z kancelarii, potrąci 20 000 zł | 3/3 `spor_prawny`, **3/3 bez numeru 112** |
+| piwo bezalkoholowe 0,0 | 3/3 cytuje `i42`, 3/3 rozróżnia 0,0 od alkoholu |
+| nocleg u rodziny | 3/3 „nie przysługuje", 3/3 cytuje `i43` |
+| technikum a staż urlopowy | 3/3 podaje **5 lat**, 3/3 cytuje `i44` |
+| zdjęcia w mediach społecznościowych | 3/3 |
+
+### Czego ten test NIE potwierdził
+
+Dwa zgłoszone objawy **nie odtworzyły się** i zostały zapisane jako
+niepotwierdzone, a nie naprawione:
+
+- **odpowiedź o kasku na pytanie o wpis do dziennika budowy** — 4 sformułowania
+  × 3 przebiegi, za każdym razem lider `Dziennik budowy` (0.590) i poprawna
+  odpowiedź. Czynnik ryzyka jest jednak realny i zmierzony: odskok lidera wynosi
+  **0.022**, a `Klient na terenie budowy` siedzi na trzecim miejscu z 0.566.
+  Znaleziono wariant, w którym pytanie faktycznie odjeżdża: gdy zniknie słowo
+  „dziennik", liderem zostaje `Inspektor nadzoru inwestorskiego` (0/3 o dzienniku).
+- **brak odpowiedzi o zdjęciach z budowy** — 6/6 poprawnych odpowiedzi z właściwym
+  fragmentem.
 
 ## Dokumentacja BudMax
 

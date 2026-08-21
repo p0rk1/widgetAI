@@ -18,7 +18,7 @@ każdej sesji, a historia decyzji jest potrzebna kilka razy w miesiącu.
 
 **Co działa w produkcji:**
 - Publiczny bot FAQ — 53 fragmenty, weryfikacja zdanie po zdaniu, model 70B
-- Bot dla pracowników — 41 fragmentów w sześciu obszarach, osobny prompt, za Access
+- Bot dla pracowników — **44 fragmenty** w sześciu obszarach, osobny prompt, za Access
 - **Eskalacja** — trzeci stan odpowiedzi przy wypadku, zagrożeniu życia, sporze
   prawnym, kontroli i decyzji finansowej powyżej progu: kroki z dokumentacji
   **plus** skierowanie do przełożonego, oznaczone osobnym polem w JSON
@@ -40,6 +40,7 @@ każdej sesji, a historia decyzji jest potrzebna kilka razy w miesiącu.
 | 20.08 | **Uziemienie liczb po trybie (R3)** — defekt zamknięty wewnętrznie, publicznie zostaje | `DECYZJE.md` → Uziemienie liczb (R3) |
 | 21.08 | Panel właściciela na Access (trzeci host), problem 4 i defekt publiczny zamknięte | `DECYZJE.md` → Panel właściciela na Access |
 | 21.08 | **Zmiana nazw hostów**, koniec dopasowania po podciągu | `DECYZJE.md` → Zmiana nazw hostów |
+| 21.08 | Test na realnych pytaniach: homonimy w eskalacji, rzeczowniki urazowe, 3 nowe fragmenty | `DECYZJE.md` → Test na realnych pytaniach |
 
 **Gdzie jesteśmy:** treści nie brakuje nigdzie, a z pięciu problemów z pomiaru
 **trzy są naprawione** (próg zależny od długości zdania z cytatem dosłownym,
@@ -99,7 +100,7 @@ wystarcza do testów i jednego użytkownika, nie wystarcza dla zespołu klienta.
 |---|---|---|
 | `worker.js` | Backend — RAG, weryfikacja, prompty, tożsamość, routing | Cloudflare Worker `knowbase-budmax` |
 | `content-public.js` | `CHUNKS` — 53 fragmenty publiczne | importowane przez `worker.js` |
-| `content-internal.js` | `INTERNAL_CHUNKS` — 41 fragmentów wewnętrznych | importowane przez `worker.js` |
+| `content-internal.js` | `INTERNAL_CHUNKS` — 44 fragmenty wewnętrzne | importowane przez `worker.js` |
 | `app-internal.js` | `APP_INTERNAL_HTML` — aplikacja asystenta budowy PWA | importowane przez `worker.js` dla `GET /app` |
 | `panel-internal.js` | `PANEL_INTERNAL_HTML` — szablon panelu wewnętrznego | importowane przez `worker.js` dla `GET /panel` |
 | `index.html` | Strona firmy z osadzonym widgetem | GitHub Pages |
@@ -258,6 +259,23 @@ milczeć, bo ktoś musi wiedzieć, co zrobić w pierwszej minucie.
 | `finanse_prog` | pieniądze **oraz** decyzja **oraz** przekroczony próg (3% / 300 zł) | po treści |
 
 **Reguły, których nie wolno rozluźnić:**
+- **Rdzeń dwuznaczny wyzwala dopiero ze swoim DOPEŁNIENIEM** (od 21.08.2026).
+  `potrac`, `zlama`, `spadl z`, `zawali` znaczą na budowie także „potrącimy
+  z faktury", „złamał procedurę", „koszt spadł z 40 zł", „zawalił termin".
+  Zmierzone: **7 na 10 zwykłych zdań z budowy dostawało ramkę PILNE**, dziś 0.
+  Warunkiem jest część ciała / człowiek / wysokość / konstrukcja — nie lista
+  sformułowań wypadku. Wariant „jakikolwiek człowiek w zdaniu" **odrzucony
+  pomiarem**: na budowie ktoś występuje prawie zawsze.
+- `uraz(?![ae])` rozbrojony **morfologicznie**, nie kontekstem — *uraz/urazu*
+  kontra *uraza/urazę*. Warunek kontekstowy gubił „doznał urazu" bez części ciała.
+- **Rzeczowniki urazowe wyzwalają same** (`krew`, `rana`, `obrażenia`,
+  `rozcięcie`, `opatrunek`). Dwa idiomy wyłączone jawnie:
+  `(?<!zimna )(krew|krwi)(?! z nosa)`. Kandydat `wbil sobie` **odrzucony** —
+  łapie „wbił sobie do głowy".
+- **Przy wielu trafieniach rozstrzyga zasada, nie kolejność w tablicy:**
+  (1) więcej niezależnych sygnałów, (2) przy remisie kategoria **pilna**,
+  (3) potem kolejność. Punkt 1 działa **wewnątrz** poziomu pilności — inaczej
+  „wypadek + PIP" wybrałby `kontrola`, bo ta ma dwa sygnały z definicji.
 - Wyzwalanie jest **deterministyczne, wzorcami w kodzie** — nie oceną modelu.
   Z tego samego powodu co `numbersAreGrounded()`: przy BHP błąd nie kosztuje
   złej recenzji, tylko zdrowia.
@@ -283,7 +301,7 @@ milczeć, bo ktoś musi wiedzieć, co zrobić w pierwszej minucie.
 - Eskalacja działa też, gdy **dokumentacja nie ma odpowiedzi**. Wtedy jest
   potrzebna bardziej, nie mniej.
 
-**Test:** `node test-eskalacja.mjs` — 53 przypadki, w tym 17 negatywnych
+**Test:** `node test-eskalacja.mjs` — **79 przypadków**, w tym 26 negatywnych
 (pytania tematycznie bliskie, które wyzwolić nie mogą), zestaw bez ogonków
 i sprawdzenie pozycji ramki. Warstwa jest deterministyczna, więc testuje się ją
 lokalnie, bez wywoływania modelu.
@@ -534,6 +552,13 @@ Lista jest tutaj, bo zniknięty zapis wraca jako ten sam błąd za trzy sesje.
 - **Utożsamianie „brak oczekiwanej liczby w odpowiedzi" z „błędna odpowiedź"** —
   przy pomiarze pominięć sprawdź najpierw, czy pominięta treść w ogóle należy
   do odpowiedzi na zadane pytanie. Kosztowało jeden fałszywy wniosek 21.08.2026
+- **Reguła promptu „prostuj wartość spoza zakresu"** — sprawdzona i cofnięta
+  21.08.2026. Bez efektu (12/16 → 11/16 → 10/16, rozrzut większy niż efekt),
+  a model prostuje sam. Diagnoza, która ją zamówiła, była **artefaktem metryki**
+- **Mierzenie dosłownego sformułowania zamiast sensu odpowiedzi** — trzeci
+  przypadek tej samej pomyłki w projekcie. **Przed pomiarem sprawdź, czy metryka
+  mierzy to, co chcesz wiedzieć, a nie to, co łatwo policzyć**: przeczytaj kilka
+  odpowiedzi w całości i sprawdź, czy licznik zgadza się z Twoją oceną
 - **Rozpoznawanie roli hosta po podciągu nazwy** (`includes("wewnetrzny")`) —
   zmiana nazw hostów 21.08.2026 odebrałaby rolę obu hostom po cichu. Nazwy żyją
   w `HOSTY`, dopasowanie jest dokładne

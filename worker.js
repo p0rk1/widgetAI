@@ -997,13 +997,45 @@ const KATEGORIE_ESKALACJI = [
     // Słownictwo ZDARZENIOWE, nie tematyczne. Nie ma tu „rusztowania",
     // „wysokości" ani „szkolenia" — to tematy, przy których nikt nie leży
     // na ziemi. Właśnie ta różnica ma odsiewać fałszywe wyzwolenia.
-    zdarzenie: /(?<![a-z0-9])(wypad(ek|ku|kiem|ki)|poszkodowan|uraz|ranny|zrani|skalecz|zlama|przygniot|potrac|poparz|oparzen|krwaw|nieprzytomn|stracil przytomnosc|zaslab|zemdla|doznal|spadl z|upadl z|karetk|pogotowi)/,
+    // Rdzenie JEDNOZNACZNE — wyzwalają same, bo w mowie budowlanej nie znaczą
+    // nic innego niż zdarzenie z człowiekiem.
+    // `uraz(?![ae])` rozbraja homonim morfologicznie, nie kontekstem: uraz jako
+    // szkoda na zdrowiu odmienia się „uraz/urazu/urazie", a uraza jako pretensja
+    // — „uraza/urazę" (po zdjęciu ogonków: „uraze"). Warunek kontekstowy był tu
+    // za wąski: „Pracownika ukąsiła żmija, doznał urazu" nie nazywa części ciała.
+    // RZECZOWNIKI URAZOWE dodane 21.08.2026. Wzorzec miał wyłącznie rdzenie
+    // czasownikowe i przymiotnikowe (`krwaw` łapie „krwawi"), więc gubił
+    // najczęstszą formę potoczną: „leci krew". Pytanie o gwóźdź w stopie nie
+    // zawierało ani nazwy urazu, ani rdzenia `krwaw` — tylko rzeczownik.
+    //
+    // `krew` NIE wymaga warunku kontekstowego jak rdzenie dwuznaczne: sam
+    // rzeczownik wystarcza, bo poza dwoma idiomami nie znaczy nic innego.
+    // Oba idiomy są wyłączone jawnie i zmierzone: „zachowaj zimną krew"
+    // (rozmowa z klientem) oraz „krew z nosa" (byle na jutro).
+    zdarzenie: /(?<![a-z0-9])(wypad(ek|ku|kiem|ki)|poszkodowan|uraz(?![ae])|doznal|ranny|zrani|skalecz|przygniot|poparz|oparzen|krwaw|krwotok|(?<!zimna )(krew|krwi)(?! z nosa)|ran[aey]|rozcie(c|t)|obrazen|opatrun|nadzia|nieprzytomn|stracil przytomnosc|zaslab|zemdla|karetk|pogotowi)/,
+    // Rdzenie DWUZNACZNE — te same litery znaczą na budowie coś innego:
+    // „potrącimy z faktury", „złamał procedurę", „ma do mnie urazę", „koszt
+    // spadł z 40 zł". Zmierzone 21.08.2026: siedem na dziesięć zwykłych zdań
+    // z budowy dostawało ramkę PILNE. Dlatego wyzwalają dopiero z drugim
+    // sygnałem — obecnością człowieka albo części ciała.
+    // Każdy rdzeń z własnym warunkiem — patrz CIALO / OFIARA / WYSOKOSC wyżej.
+    dwuznaczne: [
+      { wzorzec: /(?<![a-z0-9])zlama/, kontekst: () => CIALO },
+      { wzorzec: /(?<![a-z0-9])potrac/, kontekst: () => OFIARA },
+      { wzorzec: /(?<![a-z0-9])(spadl z|upadl z|spadl ze|upadl ze)/, kontekst: () => WYSOKOSC },
+    ],
     tekst: `NAJPIERW POWIADOM: przy urazie zagrażającym życiu dzwoń pod 112, zaraz potem do kierownika budowy — zanim wykonasz cokolwiek z poniższego. Wypadku nie rozliczasz sam: o zgłoszeniach i terminach decyduje kierownik budowy.`,
   },
   {
     id: "zagrozenie_zycia",
     pilne: true,
-    zdarzenie: /(?<![a-z0-9])(zagrozenie zycia|zagraza zyciu|nie oddycha|reanimac|pozar|pali sie|ulatnia sie|(czuc|zapach|wyciek|ulatnia).{0,20}gaz|porazeni|porazi|iskrzy|grozi zawaleniem|zawali|osuna|osune|osunal|zerwal sie|urwal sie|uwiezion|przysypa|zasypa)/,
+    zdarzenie: /(?<![a-z0-9])(zagrozenie zycia|zagraza zyciu|nie oddycha|reanimac|pozar|pali sie|ulatnia sie|(czuc|zapach|wyciek|ulatnia).{0,20}gaz|porazeni|porazi|iskrzy|grozi zawaleniem|osuna|osune|osunal|zerwal sie|urwal sie|uwiezion|przysypa|zasypa)/,
+    // „zawalił termin" i „ekipa zawaliła robotę" to najczęstsze zdania na
+    // budowie, a nie katastrofa budowlana. Samo „grozi zawaleniem" zostaje
+    // wyżej jako jednoznaczne.
+    dwuznaczne: [
+      { wzorzec: /(?<![a-z0-9])(zawali|zawal[ae])/, kontekst: () => PODMIOT_KONSTRUKCJA },
+    ],
     tekst: `NAJPIERW POWIADOM: dzwoń pod 112, zaraz potem do kierownika budowy — natychmiast, zanim zrobisz cokolwiek innego. Przy bezpośrednim zagrożeniu życia decyzję podejmują służby i kierownik budowy, nie ten bot.`,
   },
   {
@@ -1050,13 +1082,72 @@ function przekroczonyProgDecyzyjny(pytanie) {
 // co znalazł retrieval. Dzięki temu wynik nie zależy od tego, czy dokumentacja
 // akurat coś na ten temat zawiera: przy wypadku bez pokrycia w dokumentacji
 // skierowanie do przełożonego jest potrzebne bardziej, nie mniej.
+// Drugi sygnał dla rdzeni dwuznacznych: czy w zdaniu w ogóle występuje CZŁOWIEK
+// albo część ciała. „Potrącimy z faktury" nie ma podmiotu ludzkiego, „wózek
+// potrącił pracownika" ma. To jest warunek, nie lista sformułowań wypadku —
+// wypadków nie da się wyliczyć, ludzi i części ciała owszem.
+// Sama obecność człowieka NIE wystarcza jako drugi sygnał: na budowie ktoś
+// występuje prawie w każdym zdaniu, więc „brygadzista złamał procedurę" nadal
+// wyzwalałoby ramkę wypadkową. Zmierzone 21.08.2026 — to była pierwsza,
+// odrzucona wersja tego warunku.
+//
+// Rozstrzyga DOPEŁNIENIE: czym jest to, co zostało złamane, potrącone albo
+// z czego ktoś spadł. Dlatego każdy rdzeń dwuznaczny ma własny warunek, a nie
+// wspólną listę. To nadal warunek, nie lista sformułowań wypadku: wypadków
+// wyliczyć się nie da, części ciała i wysokości owszem.
+const CIALO = /(?<![a-z0-9])(nog[aeię]|rek[aeęi]|reka|dlon|palec|palca|palce|glow[aęy]|stop[aeęy]|kregoslup|zebro|zebra|obojczyk|kostk|kolano|bark|nadgarstek|kark|klatk|oko|oczy|plecy|czaszk|krwi|krew|ran[aęy]|opatrun|szpital|karetk|pogotowi|bol[iu]|zwichn|siniak)/;
+const OFIARA = /(?<![a-z0-9])(pracownik|pracownic|koleg|brygadzist|majstr|majster|monter|murarz|ciesl|elektryk|dekarz|operator|mlod|czlowiek|osob|poszkodowan|kogos|ktos)/;
+const WYSOKOSC = /(?<![a-z0-9])(rusztowani|drabin|dach|stropu|stropie|wysokosc|pietr|schod|podest|wykop|pomost)/;
+const PODMIOT_KONSTRUKCJA = /(?<![a-z0-9])(scian|strop|wykop|skarp|rusztowani|budynek|budynku|budynkiem|dach|mur|nasyp|szalunek|szalunk|konstrukcj|belk|nadproz)/;
+
+// Ile NIEZALEŻNYCH sygnałów przemawia za tą kategorią.
+// Liczymy różne dopasowania, nie liczbę znaków: dwa różne słowa alarmowe to
+// mocniejsza przesłanka niż jedno powtórzone.
+function liczbaSygnalow(k, t, pytanie) {
+  let ile = 0;
+  if (k.zdarzenie && k.zdarzenie.test(t)) ile++;
+  if (dwuznacznyZKontekstem(k, t)) ile++;
+  if (k.drugiSygnal && k.drugiSygnal.test(t)) ile++;
+  if (k.prog && przekroczonyProgDecyzyjny(pytanie)) ile++;
+  return ile;
+}
+
+// Czy któryś rdzeń dwuznaczny tej kategorii wystąpił RAZEM ze swoim warunkiem.
+function dwuznacznyZKontekstem(k, t) {
+  if (!k.dwuznaczne) return false;
+  return k.dwuznaczne.some((d) => d.wzorzec.test(t) && d.kontekst().test(t));
+}
+
+// ROZSTRZYGANIE PRZY WIELU TRAFIENIACH — zasada, nie kolejność w tablicy.
+//
+// Do 21.08.2026 wygrywała pierwsza pasująca kategoria, więc „pismo z kancelarii,
+// że potrąci nam 20 000 zł" dostawało ramkę wypadkową z numerem 112: `potrac`
+// pasowało do wypadku, a wypadek stał wyżej w tablicy. Odwrócenie kolejności
+// przeniosłoby tylko problem gdzie indziej.
+//
+// Reguła wynika z kosztu pomyłki:
+//  1. Kategoria z WIĘKSZĄ liczbą niezależnych sygnałów wygrywa — więcej
+//     przesłanek to mniejsza szansa, że trafiliśmy na homonim.
+//  2. Przy remisie wygrywa kategoria PILNA, czyli ta kierująca do człowieka
+//     szybciej. Przy równych przesłankach koszt przeoczenia wypadku jest
+//     wyższy niż koszt jednej ramki za dużo.
+//  3. Przy dalszym remisie decyduje kolejność w tablicy — jest stabilna
+//     i przewidywalna.
+//
+// Uwaga: punkt 1 NIE pozwala kategorii niepilnej wygrać z pilną samą liczbą
+// sygnałów. Gdyby tak było, „wypadek, przyjechała PIP" wybrałoby kontrolę,
+// bo ta ma dwa sygnały z definicji. Dlatego porównanie liczby sygnałów
+// odbywa się WEWNĄTRZ tego samego poziomu pilności.
 function wykryjEskalacje(pytanie, askedFrom) {
   if (askedFrom !== SPACE_INTERNAL) return null; // publiczny bot nie eskaluje do brygadzisty
   const t = bezOgonkow(pytanie);
   const informacyjne = RAMA_INFORMACYJNA.test(t);
 
+  const trafione = [];
   for (const k of KATEGORIE_ESKALACJI) {
-    if (!k.zdarzenie.test(t)) continue;
+    const jednoznaczne = k.zdarzenie && k.zdarzenie.test(t);
+    const przezDwuznaczny = dwuznacznyZKontekstem(k, t);
+    if (!jednoznaczne && !przezDwuznaczny) continue;
     if (k.drugiSygnal && !k.drugiSygnal.test(t)) continue;
     if (k.prog && !przekroczonyProgDecyzyjny(pytanie)) continue;
     // Weto ramy informacyjnej obowiązuje TYLKO tam, gdzie fałszywy alarm boli
@@ -1064,9 +1155,17 @@ function wykryjEskalacje(pytanie, askedFrom) {
     // „kto zgłasza wypadek śmiertelny" dostanie ramkę i dobrze, bo koszt to
     // jedno zdanie za dużo, a koszt przeoczenia to zdrowie.
     if (!k.pilne && informacyjne) continue;
-    return { id: k.id, pilne: k.pilne, tekst: k.tekst };
+    trafione.push({ k, sygnaly: liczbaSygnalow(k, t, pytanie), kolejnosc: trafione.length });
   }
-  return null;
+  if (!trafione.length) return null;
+
+  trafione.sort((a, b) => {
+    if (a.k.pilne !== b.k.pilne) return a.k.pilne ? -1 : 1;   // 2. pilne przed niepilnym
+    if (a.sygnaly !== b.sygnaly) return b.sygnaly - a.sygnaly; // 1. więcej sygnałów
+    return a.kolejnosc - b.kolejnosc;                          // 3. kolejność w tablicy
+  });
+  const w = trafione[0].k;
+  return { id: w.id, pilne: w.pilne, tekst: w.tekst };
 }
 
 // Skleja odpowiedź z ramką eskalacji. Przy kategoriach pilnych skierowanie idzie

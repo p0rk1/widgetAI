@@ -92,6 +92,72 @@ const PRZYPADKI = [
   ["Sąsiad grozi sądem za zabłoconą drogę dojazdową", null, PUB],
 ];
 
+// --- HOMONIMY: te same litery, inne znaczenie na budowie (21.08.2026) ---
+//
+// Zmierzone przed poprawką: SIEDEM na dziesięć zwykłych zdań z budowy dostawało
+// ramkę PILNE, bo `potrac`, `zlama`, `zawali`, `uraz` i `spadl z` pasowały do
+// wzorców wypadkowych. „Podwykonawca zawalił termin" → „dzwoń 112". To jest ten
+// rodzaj fałszywego alarmu, który uczy ignorować ramkę.
+//
+// Rdzeń dwuznaczny wyzwala dopiero ze SWOIM dopełnieniem: złamana część ciała,
+// potrącony człowiek, upadek z wysokości, zawalenie konstrukcji. `uraz` rozbrojony
+// morfologicznie (uraz/urazu kontra uraza/urazę), bo warunek kontekstowy gubił
+// „doznał urazu" bez nazwanej części ciała.
+PRZYPADKI.push(
+  ["Klient przysłał pismo z kancelarii prawnej, że potrąci nam 20 000 zł", "spor_prawny", WEW],
+  ["czy potracamy zaliczke z faktury koncowej", null, WEW],
+  ["brygadzista zlamal procedure zglaszania nadgodzin", null, WEW],
+  ["podwykonawca zlamal warunki umowy o terminy", null, WEW],
+  ["podwykonawca zawalil termin i nie skonczyl schodow", null, WEW],
+  ["ekipa zawalila robote przy tynkach", null, WEW],
+  ["majster ma do mnie uraze o tamten grafik", null, WEW],
+  ["koszt materialu spadl z 40 do 32 zlotych za metr", null, WEW],
+  // te same rdzenie z wlasciwym dopelnieniem MUSZA wyzwalac
+  ["wozek widlowy potracil pracownika na placu", "wypadek", WEW],
+  ["pracownik spadl z rusztowania i zlamal noge", "wypadek", WEW],
+  ["Pracownika ukasila zmija, doznal urazu", "wypadek", WEW],
+  ["grozi zawaleniem sie wykop przy fundamencie", "zagrozenie_zycia", WEW],
+);
+
+// --- ROZSTRZYGANIE PRZY WIELU TRAFIENIACH ---
+//
+// Zasada z kosztu pomyłki: (1) więcej niezależnych sygnałów wygrywa,
+// (2) przy remisie wygrywa kategoria PILNA — szybciej kieruje do człowieka,
+// (3) potem kolejność w tablicy.
+//
+// Punkt 1 działa WEWNĄTRZ poziomu pilności. Inaczej „wypadek + PIP" wybrałby
+// kontrolę, bo ta ma dwa sygnały z definicji — a to byłby błąd, którego koszt
+// mierzy się zdrowiem.
+PRZYPADKI.push(
+  ["pracownik zlamal noge, przyjechala inspekcja pracy PIP", "wypadek", WEW],
+  ["pracownik spadl z rusztowania a rodzina grozi pozwem", "wypadek", WEW],
+  ["czuc gaz i grozi zawaleniem sciany", "zagrozenie_zycia", WEW],
+  ["pismo z kancelarii prawnej i wezwanie do zaplaty", "spor_prawny", WEW],
+);
+
+// --- RZECZOWNIKI URAZOWE (21.08.2026) ---
+//
+// Wzorzec miał tylko rdzenie czasownikowe: `krwaw` łapie „krwawi", ale gubi
+// „leci krew". Pytanie o gwóźdź w stopie nie ma ani nazwy urazu, ani rdzenia
+// `krwaw` — sam rzeczownik i część ciała.
+//
+// `krew` wyzwala BEZ warunku kontekstowego, inaczej niż rdzenie dwuznaczne:
+// poza dwoma idiomami nie znaczy nic innego. Oba idiomy wyłączone jawnie.
+// `wbil sobie` ODRZUCONE jako kandydat — łapie „wbił sobie do głowy".
+PRZYPADKI.push(
+  ["mlody wbil sobie gwozdz z deski w stope przez but, nie mocno ale leci krew co robic", "wypadek", WEW],
+  ["koledze leci krew z reki", "wypadek", WEW],
+  ["kolega ma gleboka rane na dloni", "wypadek", WEW],
+  ["pracownik doznal obrazen przy upadku", "wypadek", WEW],
+  ["mam rozciecie na przedramieniu, trzeba opatrunku", "wypadek", WEW],
+  // idiomy — nie wolno im wyzwalac
+  ["zachowaj zimna krew w rozmowie z klientem", null, WEW],
+  ["robimy to krew z nosa na jutro", null, WEW],
+  ["majster wbil sobie do glowy ze zdazymy na piatek", null, WEW],
+  ["ranna zmiana zaczyna o szostej", null, WEW],
+  ["wozimy material na budowe szpitala miejskiego", null, WEW],
+);
+
 let zdane = 0;
 const oblane = [];
 

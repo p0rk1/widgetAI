@@ -30,6 +30,10 @@ każdej sesji, a historia decyzji jest potrzebna kilka razy w miesiącu.
 - **Wymiar klienta** — `KLIENCI` w `klienci.js`, klient wynika z hosta tak samo
   jak rola. Przestrzeń w Vectorize, treść, prompty, eskalacja, wzorce obietnic
   i nazwy w interfejsach są zależne od klienta. Nieznany host dostaje 404
+- **Drugi klient: kancelaria** — 24 fragmenty publiczne, 25 wewnętrznych,
+  8 kategorii eskalacji, obie przestrzenie zaindeksowane. **Hosty nie mają jeszcze
+  tras w `wrangler.toml` ani aplikacji Access** — to stan zamierzony, diagnostyka
+  chodzi przez `?klient=kancelaria`
 
 **Ostatnie sesje, w skrócie:**
 
@@ -45,6 +49,7 @@ każdej sesji, a historia decyzji jest potrzebna kilka razy w miesiącu.
 | 21.08 | **Zmiana nazw hostów**, koniec dopasowania po podciągu | `DECYZJE.md` → Zmiana nazw hostów |
 | 21.08 | Test na realnych pytaniach: homonimy w eskalacji, rzeczowniki urazowe, 3 nowe fragmenty | `DECYZJE.md` → Test na realnych pytaniach |
 | 22.08 | **Etap 1 drugiej branży: wybór klienta przez host**, słowniki branżowe wyjęte z silnika | `DECYZJE.md` → Wybór klienta: host, nie parametr |
+| 22.08 | **Etap 2: treść kancelarii** (24+25 fragmentów, własny słownik eskalacji), pomiar na 40 pytaniach | `DECYZJE.md` → Kancelaria — pomiar na 40 pytaniach |
 
 **Gdzie jesteśmy:** treści nie brakuje nigdzie, a z pięciu problemów z pomiaru
 **trzy są naprawione** (próg zależny od długości zdania z cytatem dosłownym,
@@ -110,6 +115,9 @@ wystarcza do testów i jednego użytkownika, nie wystarcza dla zespołu klienta.
 | `worker.js` | Backend — RAG, weryfikacja, prompty, tożsamość, routing, **silnik niezależny od branży** | Cloudflare Worker `knowbase-budmax` |
 | `klienci.js` | `KLIENCI` — tablica klientów i indeks `host → {klient, rola}`. **Wszystko, co zależy od firmy** | importowane przez `worker.js` |
 | `eskalacja-budowlana.js` | `ESKALACJA_BUDOWLANA` — słownik branżowy eskalacji (kategorie, dopełnienia, progi, teksty) | importowane przez `klienci.js` |
+| `content-kancelaria-public.js` | `CHUNKS_KANCELARIA` — 24 fragmenty publiczne kancelarii | importowane przez `klienci.js` |
+| `content-kancelaria-internal.js` | `INTERNAL_CHUNKS_KANCELARIA` — 25 fragmentów wewnętrznych kancelarii | importowane przez `klienci.js` |
+| `eskalacja-prawna.js` | `ESKALACJA_PRAWNA` — słownik eskalacji kancelarii, 8 kategorii | importowane przez `klienci.js` |
 | `content-public.js` | `CHUNKS` — 53 fragmenty publiczne | importowane przez `worker.js` |
 | `content-internal.js` | `INTERNAL_CHUNKS` — 44 fragmenty wewnętrzne | importowane przez `worker.js` |
 | `app-internal.js` | `APP_INTERNAL_HTML` — aplikacja asystenta budowy PWA | importowane przez `worker.js` dla `GET /app` |
@@ -127,6 +135,7 @@ wystarcza do testów i jednego użytkownika, nie wystarcza dla zespołu klienta.
 | `test-weryfikacja.mjs` | Test deduplikacji, progów i cytatu dosłownego | repo |
 | `test-stats-internal.mjs`| Test statystyk wewnętrznych i zliczania eskalacji | repo |
 | `test-klienci.mjs` | Test wymiaru klienta: host, przestrzenie, obowiązkowość klienta, szablony | repo |
+| `test-eskalacja-prawna.mjs` | Test słownika eskalacji kancelarii (`node test-eskalacja-prawna.mjs`) | repo |
 
 **Treść jest w osobnych plikach od 19.08.2026** — stanowiła ponad połowę wagi
 `worker.js`, a zadanie dotyczące logiki nigdy jej nie potrzebuje. Bundler
@@ -720,6 +729,27 @@ też poprawne parafrazy.
   pytania. Nie wracać bez nowych danych. **Warunek utrzymania R3:** stoi na zachowaniu modelu (6/6 odmów), nie
   na gwarancji strukturalnej — przy zmianie modelu albo promptu wewnętrznego
   trzeba go przemierzyć. `DECYZJE.md` → „Uziemienie liczb: rozstrzygnięcie po trybie (R3)"
+- **`numbersAreGrounded()` NIE jest uniwersalny — zmierzone na kancelarii
+  22.08.2026.** Dwa nowe kształty defektu, oba nieobecne w budowlance:
+  (1) dokumentacja prawnicza zapisuje terminy **słownie** („dwóch tygodni"),
+  model odpowiada **cyfrą** („14 dni") i poprawne zdanie wypada;
+  (2) **stała bezpieczeństwa** — „112" wycięte z odpowiedzi o przemocy domowej,
+  bo numeru nie ma w treści publicznej. 3 zdania na 119, ale oba trafienia leżą
+  w najdroższych miejscach tej branży. `DECYZJE.md` → „Kancelaria — pomiar"
+- **Rozpoznawanie braku odpowiedzi po frazie myli „nie wiem" z „świadomie nie
+  mówimy"** — zmierzone 22.08.2026. Fragment, którego treścią jest odmowa
+  informacji (u kancelarii: „nie podajemy przewidywanego czasu trwania sprawy"),
+  zostaje pobrany, model przepisuje go na zdanie odmowne, a `handleAsk()`
+  zamienia CAŁĄ odpowiedź na fallback. Klient traci powód, choć powód był
+  w materiale. W budowlance ten kształt prawie nie występuje
+- **Fragmenty o granicy informacji i porady są nieosiągalne dla retrievalu** —
+  `k18` i `k19` nie weszły do TOP-8 przy żadnym z czterech pytań, dla których
+  powstały. Pytanie jest zdominowane tematem sprawy, fragment mówi o procedurze
+  kancelarii. To nie jest problem progów: próg nie wciągnie fragmentu, którego
+  retrieval nie zwrócił
+- **Wycięcie ZAKAZU odwraca sens odpowiedzi** — warstwa progowa nie odróżnia
+  trybu zdania. Zmierzone: „Aplikant nie może sporządzać skargi kasacyjnej"
+  wycięte przy 0.469 wobec progu 0.48. W budowlance wycinane zdania były opisowe
 - **Ściśnięte grupy na stykach obszarów** (problem 3 z mapy) — **zostawione
   świadomie** 19.08.2026. Odpowiedzi są trafne mimo małego odskoku lidera, a
   rozsuwanie fragmentów oznaczałoby przepisywanie treści pod wyszukiwarkę
@@ -798,12 +828,21 @@ Kolejność jest celowa — uzasadnienie jest częścią decyzji, nie ozdobnikie
      Klient wynika z hosta, przestrzeń ma dwa wymiary, słowniki branżowe wyjęte
      z silnika, log i panele podpisane klientem, przełącznik demo pod `DEMO`.
      Prompt publiczny wyszedł bajt w bajt identyczny. `DECYZJE.md` → „Wybór klienta".
-   - **Etap 2: treść kancelarii** — wpis w `KLIENCI`, `eskalacja-prawna.js`,
-     fragmenty publiczne i wewnętrzne, własne wzorce obietnic (przedawnienie,
-     szanse wygranej). Dopiero ten etap **zmierzy**, czy uziemienie liczb, progi
-     i deduplikacja są naprawdę uniwersalne — dziś to hipoteza z braku dowodu
-     przeciwnego. Wymaga po stronie właściciela: trzech tras i **dwóch aplikacji
-     Access** (host publiczny ich nie ma).
+   - ~~**Etap 2: treść kancelarii**~~ — ✅ **napisana i zmierzona 22.08.2026.**
+     24 fragmenty publiczne, 25 wewnętrznych, 8 kategorii eskalacji, obie
+     przestrzenie zaindeksowane. Pomiar na 40 pytaniach: publiczne 6 luk/20
+     (wszystkie bezpieczne — **zero porad prawnych**), wewnętrzne 0 luk/20.
+     Mapa problemów i werdykt o uniwersalności warstw: `DECYZJE.md` →
+     „Kancelaria — pomiar na 40 pytaniach".
+   - **Etap 3: decyzje po mapie** — nic nie jest jeszcze poprawione. Do
+     rozstrzygnięcia w kolejności kosztu: uziemienie liczb wobec zapisu słownego
+     i stałych bezpieczeństwa, nieosiągalność `k18`/`k19` w retrievalu, odmowa
+     zjadająca własne uzasadnienie, przeoczenie eskalacji przy „przekroczyliśmy
+     termin" bez nazwy pisma. **Wrogie sprawdzenie `obietnicePubliczne`
+     kancelarii** — 0 wyzwoleń na 46 zdaniach nie jest dowodem, że działają.
+   - **Etap 4 (po stronie właściciela): trasy i Access dla kancelarii** — trzy
+     wpisy w `[[routes]]` i dwie aplikacje Access. Dopiero wtedy demo da się
+     pokazać na żywo i zmierzyć przez `POST /`, a nie przez `/debug`.
 3. **Skrypt osadzający** — Shadow DOM, jedna linijka `<script>` do wklejenia na
    dowolnej stronie klienta, izolacja stylów w obie strony.
 4. **Multi-tenant** — dopiero przy 2-3 płacących klientach: D1 z tabelą klientów,
@@ -833,7 +872,8 @@ Kolejność jest celowa — uzasadnienie jest częścią decyzji, nie ozdobnikie
   `wrangler deploy --dry-run`; przy zmianach w weryfikacji tokenu także
   `node test-access.mjs`, przy zmianach w eskalacji `node test-eskalacja.mjs`,
   przy zmianach w warstwach weryfikacji `node test-weryfikacja.mjs`,
-  a przy zmianach w tablicy klientów, hostach lub szablonach `node test-klienci.mjs`
+  przy zmianach w tablicy klientów, hostach lub szablonach `node test-klienci.mjs`,
+  a przy zmianach w słowniku kancelarii `node test-eskalacja-prawna.mjs`
 - **`node --check` nie łapie wszystkiego — zmierzone 22.08.2026.** Dosłowny znak
   nowej linii wstawiony do szablonu promptu (niedomknięty literał) **przeszedł
   przez `node --check` bez zastrzeżeń**, a wywalił się dopiero przy `import`.

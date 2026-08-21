@@ -31,6 +31,9 @@
 import { CHUNKS } from "./content-public.js";
 import { INTERNAL_CHUNKS } from "./content-internal.js";
 import { ESKALACJA_BUDOWLANA } from "./eskalacja-budowlana.js";
+import { CHUNKS_KANCELARIA } from "./content-kancelaria-public.js";
+import { INTERNAL_CHUNKS_KANCELARIA } from "./content-kancelaria-internal.js";
+import { ESKALACJA_PRAWNA } from "./eskalacja-prawna.js";
 
 // Zdanie odmowne. MUSI zawierać frazę „nie mam takich informacji" — handleAsk()
 // rozpoznaje brak odpowiedzi wyrażeniem /nie mam takich informacji/i na surowym
@@ -125,6 +128,96 @@ Zanim odpowiesz, sprawdź, czy fragment, z którego korzystasz, dotyczy DOKŁADN
       tytulPanel: "BudMax — panel asystenta",
       tytulPanelWew: "BudMax — panel procedur i szkoleń",
       domenaLogowania: "@budmax.pl",
+    },
+  },
+
+  // ============================================================
+  // DRUGA BRANŻA — fikcyjna kancelaria adwokacka (22.08.2026)
+  // ============================================================
+  // Istnieje po to, żeby zmierzyć, ile zabezpieczeń tego projektu jest
+  // uniwersalnych. Ryzyko jest tu inne niż w budowlance: najgroźniejsze nie
+  // jest zmyślenie ceny, tylko UDZIELENIE PORADY PRAWNEJ zamiast informacji —
+  // ocena szans, kwalifikacja czynu, interpretacja przepisu pod czyjś stan
+  // faktyczny. Zdanie „ma Pan dobre szanse" kosztuje więcej niż wymyślona
+  // stawka za godzinę.
+  //
+  // TRASY I ACCESS: hosty są tu wpisane, ale w `wrangler.toml` nie ma jeszcze
+  // dla nich `[[routes]]`, a `ACCESS_AUD_KANCELARIA*` nie są ustawione. To jest
+  // stan zamierzony i bezpieczny: host nie odpowiada, a gdyby trasa powstała
+  // przed aplikacją Access, `odpowiedzBrakKonfiguracji()` odda 503 z nazwą
+  // brakującej zmiennej zamiast wystawić interfejs bez ochrony. Diagnostykę
+  // prowadzi się przez `/reindex?klient=kancelaria` i `/debug?klient=kancelaria`,
+  // które nie wymagają ani trasy, ani Access.
+  kancelaria: {
+    id: "kancelaria",
+    nazwa: "Kancelaria Adwokacka Zaremba i Wspólnicy sp.k.",
+    branza: "prawna",
+
+    hosty: {
+      publiczny: "kancelaria.know-base.app",
+      pracownik: "kancelaria-pracownik.know-base.app",
+      wlasciciel: "kancelaria-wlasciciel.know-base.app",
+    },
+
+    audVars: {
+      pracownik: "ACCESS_AUD_KANCELARIA",
+      wlasciciel: "ACCESS_AUD_KANCELARIA_PANEL",
+    },
+
+    przestrzenie: { public: "kancelaria-public", internal: "kancelaria-internal" },
+    tresc: { public: CHUNKS_KANCELARIA, internal: INTERNAL_CHUNKS_KANCELARIA },
+
+    eskalacja: ESKALACJA_PRAWNA,
+
+    // Wzorce obietnic — u kancelarii nie chodzi o rabaty, tylko o zapewnienia
+    // co do WYNIKU, TERMINU i KWALIFIKACJI PRAWNEJ. Te trzy rzeczy klient
+    // usłyszy jako poradę i podejmie na ich podstawie decyzję procesową.
+    //
+    // Wzorce działają na tekście z ogonkami (isUnsupportablePromise używa
+    // toLowerCase, nie bezOgonkow) — inaczej niż wzorce eskalacji.
+    obietnicePubliczne: [
+      // wynik sprawy
+      /(szanse na wygran|dobre szanse|duże szanse|realne szanse|sprawa jest (wygrana|do wygrania)|wygramy|wygra pan|wygra pani|na pewno wygra|sąd przyzna|sąd zasądzi|sąd orzeknie)/,
+      /(gwarantujemy|zapewniamy|obiecujemy).{0,25}(wygran|sukces|skuteczn|korzystn|uniewinnien)/,
+      // termin rozstrzygnięcia
+      /(sprawa potrwa|zakończy się w ciągu|sąd rozstrzygnie w|wyrok zapadnie|potrwa (około|maksymalnie|nie dłużej)|sprawa zakończy się do)/,
+      // kwalifikacja i interpretacja pod pytającego
+      /(przysługuje panu|przysługuje pani|należy się panu|należy się pani|ma pan prawo do|ma pani prawo do|grozi panu|grozi pani|zostanie pan skazan|to jest przestępstw|pana roszczenie|pani roszczenie).{0,40}(przedawni)?/,
+      /(może pan bezpiecznie|może pani bezpiecznie|proszę się nie martwić|nic panu nie grozi|nic pani nie grozi)/,
+    ],
+
+    prompt: {
+      fallback: "Nie mam takich informacji w mojej dokumentacji — proszę o kontakt z sekretariatem kancelarii.",
+      opisFirmy: "kancelarią adwokacką",
+      cenaDopisek: " Przy pytaniu o wysokość honorarium w konkretnej sprawie — poinformuj, że stawkę ustala adwokat przed przyjęciem sprawy, po zapoznaniu się z nią na konsultacji.",
+      rozroznienia: `Zachowaj szczególną ostrożność przy pojęciach, które brzmią podobnie, a znaczą co innego — to częsty błąd, którego musisz unikać:
+- "honorarium kancelarii" to NIE to samo co "koszty sądowe i opłaty" (opłata od pozwu, zaliczka na biegłego, opłata skarbowa od pełnomocnictwa) — te drugie trafiają do sądu, nie do kancelarii.
+- "termin procesowy" (na apelację, zażalenie, sprzeciw — liczony od doręczenia pisma) to NIE to samo co "przedawnienie roszczenia" (liczone od wymagalności, niezależnie od tego, czy sprawa trafiła do sądu).
+- "konsultacja" to NIE to samo co "prowadzenie sprawy" — prowadzenie zaczyna się dopiero od umowy i pełnomocnictwa, a do tego czasu terminami zarządza sam klient.
+- "tajemnica adwokacka" to NIE to samo co "ochrona danych osobowych i RODO" — to dwie różne podstawy i dwa różne zakresy.
+Zanim odpowiedzisz, sprawdź, czy fragment, z którego korzystasz, dotyczy DOKŁADNIE tej instytucji, o którą pyta klient — nie tylko czy brzmi podobnie.`,
+      zakazyBranzowe: [
+        `- NIGDY nie oceniaj szans sprawy, nie przewiduj rozstrzygnięcia sądu i nie mów, ile sprawa potrwa. Nie znasz akt, a klient podejmie na tej podstawie decyzję procesową, której nie da się cofnąć. Przy takim pytaniu wyjaśnij, że ocena sprawy wymaga zapoznania się z dokumentami na konsultacji.`,
+        `- NIGDY nie kwalifikuj czynu, nie interpretuj przepisu pod sytuację pytającego i nie mów, co komu przysługuje, co się przedawniło ani co grozi. To jest porada prawna, której udziela wyłącznie adwokat po zapoznaniu się ze sprawą — Ty podajesz wyłącznie informację o tym, jak wygląda procedura i jak liczy się bieg terminu w typowej sytuacji.`,
+        `- Termin procesowy podawaj ZAWSZE razem ze zdarzeniem, od którego biegnie (najczęściej doręczenie pisma), i nigdy jako liczbę dni pozostałą pytającemu. Sama liczba dni bez zdarzenia początkowego jest informacją fałszywą, choć liczba się zgadza.`,
+        `- Nie myl honorarium kancelarii z kosztami sądowymi ani terminu procesowego z przedawnieniem — to osobne instytucje opisane w osobnych fragmentach.`,
+      ],
+      przykladyRozkazow: `"sprawdź datę doręczenia na potwierdzeniu odbioru", "wpisz termin do kalendarza sprawy tego samego dnia", "powiadom adwokata prowadzącego"`,
+      przykladyRol: `adwokat prowadzący, wspólnik zarządzający, aplikant czy sekretariat`,
+      przykladSprostowania: `na przykład "jak mam ocenić, czy warto składać apelację", podczas gdy fragment mówi, że ocena sprawy i decyzja o zaskarżeniu należą do adwokata prowadzącego, a do sekretariatu — ustalenie i pilnowanie terminu`,
+      przykladyNeutralne: `"kto zakłada teczkę sprawy", "kto odbiera korespondencję z sądu"`,
+      stawkaWewnetrzna: `przy terminach procesowych i tajemnicy adwokackiej zależy od tego sytuacja procesowa klienta i odpowiedzialność zawodowa kancelarii`,
+      zakazUzupelniania: `Nie uzupełniaj procedury ani terminu "zdrowym rozsądkiem" — zmyślony dzień upływu terminu jest groźniejszy niż brak odpowiedzi, bo terminu procesowego nie da się cofnąć inaczej niż wnioskiem o przywrócenie, który ma własny termin i własne przesłanki.`,
+    },
+
+    ui: {
+      marka: "ZAREMBA",
+      nazwaKrotka: "Zaremba",
+      tytulApp: "Zaremba — Asystent kancelarii",
+      naglowekApp: "Asystent kancelarii",
+      tytulPanel: "Zaremba — panel kancelarii",
+      tytulPanelWew: "Zaremba — panel spraw i terminów",
+      domenaLogowania: "@zaremba.przyklad.pl",
     },
   },
 };

@@ -122,16 +122,28 @@ const SZABLONY = [
   ["panel wewnętrzny", PANEL_INTERNAL_HTML, "wlasciciel"],
 ];
 
+// Napis paska sprawdzamy przez stałą, nie przez powtórzony literał: literał
+// wpisany drugi raz rozjeżdża się z kodem przy pierwszej poprawce pisowni
+// i test zaczyna przechodzić dlatego, że szuka czegoś, czego nigdy nie ma.
+const NAPIS_PASKA = "przełącz na";
+
 for (const [nazwa, szablon, rola] of SZABLONY) {
   const bezDema = renderHtml(szablon, B, {}, rola);
   sprawdz(`${nazwa}: żaden placeholder nie został surowy`, /\{\{\w+\}\}/.test(bezDema), false);
   sprawdz(`${nazwa}: nazwa klienta podstawiona`, bezDema.includes(B.ui.marka), true);
   // Bez DEMO paska NIE MA W HTML-u — nie jest ukryty, tylko nieobecny.
-  sprawdz(`${nazwa}: bez DEMO nie ma paska`, bezDema.includes("przelacz na"), false);
+  sprawdz(`${nazwa}: bez DEMO nie ma paska`, bezDema.includes(NAPIS_PASKA), false);
 
-  // Przy jednym kliencie pasek jest pusty także z DEMO — nie ma dokąd przełączać.
+  // Z DEMO i przy więcej niż jednym kliencie pasek prowadzi do hostu tej samej
+  // ROLI u drugiego klienta — panel do panelu, aplikacja do aplikacji.
   const zDemem = renderHtml(szablon, B, { DEMO: "1" }, rola);
-  sprawdz(`${nazwa}: DEMO przy jednym kliencie nie pokazuje paska`, zDemem.includes("przelacz na"), false);
+  const inny = Object.values(KLIENCI).find((k) => k.id !== B.id && k.hosty[rola]);
+  sprawdz(`${nazwa}: DEMO pokazuje pasek, gdy jest dokąd przełączyć`, zDemem.includes(NAPIS_PASKA), Boolean(inny));
+  if (inny) {
+    sprawdz(`${nazwa}: pasek prowadzi do hostu tej samej roli`, zDemem.includes(inny.hosty[rola]), true);
+    sprawdz(`${nazwa}: pasek nie prowadzi do cudzej roli`,
+      Object.entries(inny.hosty).some(([r, h]) => r !== rola && zDemem.includes(h)), false);
+  }
 }
 
 console.log("\n---");

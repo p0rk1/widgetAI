@@ -49,6 +49,18 @@ ACCESS_AUD = "31995d69e22347f8708921b157570232f11113d68beb57edb35b2773f782c1c0" 
 # zmiennej, nie milczące 403.
 ACCESS_AUD_PANEL = "49c77c8db986774c2b12555dbffed0da65324ce50f695a64fe5e8df9e4ddb133"  # aplikacja "BudMax — panel właściciela"
 
+# TRYB DEMONSTRACYJNY — wyłącznie na potrzeby prezentacji.
+#
+# Przy DEMO = "1" interfejsy pracownicze i panele dostają na dole dyskretny pasek
+# z linkami do hostów drugiego klienta. To narzędzie prezentacyjne, nie funkcja
+# produktu: przy wdrożeniu u prawdziwego klienta ta zmienna ma ZNIKNĄĆ z pliku,
+# a nie zostać ustawiona na "0". Wtedy paska nie ma fizycznie w wysłanym HTML-u —
+# nie jest ukryty stylem ani warunkiem w JavaScripcie, który da się obejść konsolą.
+#
+# Sam pasek to lista LINKÓW, a nie kontrolka zmieniająca stan: klient nadal
+# wynika z hosta, więc kliknięcie zmienia adres, a nie przeszukiwaną przestrzeń.
+DEMO = "1"
+
 [ai]
 binding = "AI"
 

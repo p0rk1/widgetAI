@@ -9,7 +9,7 @@ export const APP_INTERNAL_HTML = `<!DOCTYPE html>
 <meta name="theme-color" content="#0A0D11">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>BudMax — Asystent Budowy</title>
+<title>{{tytulApp}}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -192,7 +192,7 @@ textarea::placeholder{color:var(--dim)}
 <div class="top">
   <div class="top-in">
     <span class="mark"></span>
-    <span class="brand">BUDMAX</span>
+    <span class="brand">{{marka}}</span>
     <span class="tag-int">baza procedur</span>
     <div class="nav-links">
       <a href="/panel" class="btn-nav" title="Panel kierownictwa">
@@ -387,6 +387,7 @@ function esc(s){
   return d.innerHTML;
 }
 </script>
+{{przelacznikDemo}}
 </body>
 </html>
 `;

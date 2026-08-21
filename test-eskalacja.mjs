@@ -13,6 +13,11 @@
 // ignorować ją wtedy, gdy będzie potrzebna.
 
 import { wykryjEskalacje, zlozZEskalacja } from "./worker.js";
+import { KLIENCI } from "./klienci.js";
+
+// Słownik eskalacji jest branżowy i przychodzi z tablicy klienta (21.08.2026).
+// Test sprawdza pakiet budowlany — u kancelarii będzie własny zestaw przypadków.
+const KLIENT = KLIENCI.budmax;
 
 const WEW = "internal";
 const PUB = "public";
@@ -162,7 +167,7 @@ let zdane = 0;
 const oblane = [];
 
 for (const [pytanie, oczekiwana, przestrzen] of PRZYPADKI) {
-  const wynik = wykryjEskalacje(pytanie, przestrzen);
+  const wynik = wykryjEskalacje(pytanie, przestrzen, KLIENT);
   const got = wynik ? wynik.id : null;
   const ok = got === oczekiwana;
   if (ok) zdane++;
@@ -184,16 +189,16 @@ const BRAK = "Nie mam takich informacji w mojej dokumentacji — polecam kontakt
 
 const zlozenia = [
   ["pilne: ramka PRZED treścią",
-   zlozZEskalacja(TRESC, wykryjEskalacje("Pracownik spadł z rusztowania", WEW)),
+   zlozZEskalacja(TRESC, wykryjEskalacje("Pracownik spadł z rusztowania", WEW, KLIENT)),
    (s) => s.startsWith("NAJPIERW POWIADOM") && s.trimEnd().endsWith(TRESC)],
   ["niepilne: ramka PO treści",
-   zlozZEskalacja(TRESC, wykryjEskalacje("Sąsiad grozi sądem", WEW)),
+   zlozZEskalacja(TRESC, wykryjEskalacje("Sąsiad grozi sądem", WEW, KLIENT)),
    (s) => s.startsWith(TRESC) && s.trimEnd().endsWith("nie po niej.") === false && s.includes("SKIERUJ DO PRZEŁOŻONEGO")],
   ["brak pokrycia + wypadek: ramka mimo braku odpowiedzi",
-   zlozZEskalacja(BRAK, wykryjEskalacje("Pracownika ukąsiła żmija, doznał urazu", WEW)),
+   zlozZEskalacja(BRAK, wykryjEskalacje("Pracownika ukąsiła żmija, doznał urazu", WEW, KLIENT)),
    (s) => s.startsWith("NAJPIERW POWIADOM") && s.includes(BRAK)],
   ["brak eskalacji: tekst nietknięty",
-   zlozZEskalacja(TRESC, wykryjEskalacje("Kto może wpisywać do dziennika budowy?", WEW)),
+   zlozZEskalacja(TRESC, wykryjEskalacje("Kto może wpisywać do dziennika budowy?", WEW, KLIENT)),
    (s) => s === TRESC],
 ];
 

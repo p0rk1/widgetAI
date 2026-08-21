@@ -6,7 +6,7 @@ export const PANEL_INTERNAL_HTML = `<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BudMax — panel procedur i szkoleń</title>
+<title>{{tytulPanelWew}}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -115,7 +115,7 @@ body::before{
     <div class="wrap top-in">
       <span class="mark"></span>
       <div>
-        <b>BUDMAX</b>
+        <b>{{marka}}</b>
         <span class="badge-internal">wewnętrzny</span>
         <div class="sub">procedury, bhp i luki szkoleniowe</div>
       </div>
@@ -162,7 +162,7 @@ async function load(){
   try{
     const r = await fetch('/stats-internal', { credentials: 'same-origin' });
     if(r.status === 401 || r.status === 403){
-      $('out').innerHTML=\`<div class="empty">Brak autoryzacji Cloudflare Access.<br><span class="mono">Zaloguj się na konto firmowe (@budmax.pl), aby wyświetlić panel.</span></div>\`;
+      $('out').innerHTML=\`<div class="empty">Brak autoryzacji Cloudflare Access.<br><span class="mono">Zaloguj się na konto firmowe ({{domenaLogowania}}), aby wyświetlić panel.</span></div>\`;
       return;
     }
     if(r.status === 503){
@@ -274,6 +274,7 @@ function draw(d){
 
 load();
 </script>
+{{przelacznikDemo}}
 </body>
 </html>
 `;

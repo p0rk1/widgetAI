@@ -1703,6 +1703,146 @@ niepotwierdzone, a nie naprawione:
 - **brak odpowiedzi o zdjęciach z budowy** — 6/6 poprawnych odpowiedzi z właściwym
   fragmentem.
 
+## Wybór klienta: host, nie parametr — etap 1 drugiej branży (22.08.2026)
+
+Cel nie był prezentacyjny, tylko poznawczy: dołożyć drugiego klienta, żeby
+zobaczyć, **ile zabezpieczeń tego projektu jest uniwersalnych, a ile było
+protezą pod budowlankę**. Przełączanie demo jest skutkiem ubocznym, nie zamówieniem.
+
+### Trzy drogi przekazania wyboru klienta i dlaczego wygrała trzecia
+
+**Parametr w żądaniu (`?klient=`) — odrzucony.** Dziś publiczny widget nie ma
+fizycznej możliwości poprosić o przestrzeń `internal`, bo nie ma czym: nazwa
+przestrzeni jest wpisana na sztywno w routingu. To jest cała siła obecnej
+separacji — błąd w autoryzacji **nadal nie otwiera** dostępu do cudzej wiedzy.
+Parametr odtwarza dokładnie tę samą drogę w drugim wymiarze: od tej chwili
+rozłączność klientów wisiałaby na poprawności kodu sprawdzającego uprawnienia.
+Przy jednym najemcy to teoria, przy dwóch to wyciek dokumentacji nie tej firmy.
+
+**Furtka `?klient=` na `workers.dev` pod flagą DEMO — odrzucona.** Kusząca, bo
+zerowa w kosztach konfiguracji. Nie działa z powodu, który widać dopiero po
+sprawdzeniu: na `workers.dev` tryb wewnętrzny **nigdy nie zadziała** (i to jest
+poprawne fail-closed, nie usterka). Demo obejmowałoby więc wyłącznie tryb
+publiczny — a eskalacja i wzorce branżowe, czyli dokładnie to, po co ten etap
+powstał, żyją w trybie wewnętrznym.
+
+**Host → klient — wybrane.** Ta sama zasada, którą 21.08.2026 rozwiązano role:
+klient wynika z adresu, a nie z pola w żądaniu ani z listy w kodzie. `CLAUDE.md`
+nazywał braki multi-tenanta wprost — „mapy `host → klient`, mapy `host → AUD`
+i odmowy dla nieznanego hosta". Ten etap buduje wszystkie trzy, więc nie powstaje
+nic równoległego do docelowego rozwiązania: tablica `KLIENCI` staje się później
+tabelą w D1, a `rozpoznajKlienta()` zapytaniem do niej. Reszta systemu nie widzi
+różnicy, bo nikt poza tą funkcją nie wie, skąd klient się wziął.
+
+Koszt policzony uczciwie: publiczny host nowego klienta to jeden wpis w trasach
+(Access na nim nie stoi), ale host pracowniczy i panelowy wymagają **dwóch
+wyklikanych aplikacji Access** — AUD jest per host i musi być, bo inaczej token
+pracownika otwierałby panel właściciela. To nie jest praca do wyrzucenia: to
+próba generalna procedury onboardingu klienta, wykonana zanim klient zapłaci.
+
+### Dwa wymiary przestrzeni zamiast przemianowania
+
+Odrzucono ujednolicenie nazw na `budmax-public` / `budmax-internal`. Zostały dwa
+niezależne wymiary: **rodzaj** (`public`/`internal`) przychodzi z routingu jak
+dotąd, **klient** z hosta, a fizyczną nazwę składa `przestrzenFizyczna()` wewnątrz
+granicy dostawcy. Dzięki temu `askedFrom`, pole `space` w logu, filtr w `/stats`
+i `trybPromptu()` **znaczą dokładnie to samo, co przed zmianą** — nie trzeba było
+ruszać ani jednej z tych ścieżek.
+
+Nazwy przestrzeni są w tablicy klienta **wpisane jawnie, nie generowane ze
+wzorca**, więc BudMax został przy `public`/`internal`: zero reindeksu, zero
+migracji wektorów na działającej produkcji, zero okazji do pomyłki. Niesymetrycznie
+wobec kolejnego klienta, ale w D1 i tak będzie to kolumna z konkretną wartością.
+
+Przy okazji do metadanych fragmentów dochodzi pole `klient` — dziś nic po nim nie
+filtruje, dokładnie jak `role`. Powód ten sam: dopisanie go później oznacza
+reindeks u każdego klienta.
+
+### Co okazało się protezą, a co produktem
+
+To jest właściwy wynik etapu — granica przebiegła inaczej, niż sugerowała intuicja.
+
+| Warstwa | Zostało w silniku | Wyszło do klienta |
+|---|---|---|
+| Eskalacja | weto ramy informacyjnej, zasada „rdzeń dwuznaczny wyzwala dopiero ze swoim dopełnieniem", rozstrzyganie (pilne → liczba sygnałów → kolejność), pozycja ramki, normalizacja bez ogonków | tablica kategorii, dopełnienia (`CIALO`, `OFIARA`, `WYSOKOSC`, `PODMIOT_KONSTRUKCJA`), teksty ramek, progi 3% / 300 zł, nazwa stanowiska |
+| Obietnice | wyjątek dla zaprzeczeń i odesłań do biura, deklaracja wolnego terminu, „zdążymy" | rabaty, hurtownie, VAT, płatność z góry |
+| Instrukcje w odpowiedzi | całość | nic |
+| Uziemienie liczb, progi, deduplikacja, cytat dosłowny | **całość** | nic |
+| Prompty | struktura, kolejność akapitów, `PROMPT_RDZEN`, reguła adresata, „kroki tylko przy procedurze" | nazwa firmy, rozróżnienia mylonych usług, zakazy branżowe, przykłady stanowisk, zdanie odmowne |
+
+Wniosek: **protezą były wzorce, nie reguły.** Ani jedna zasada nie okazała się
+budowlana — u kancelarii zmienia się to, co wypełnia tablicę, a nie sposób jej
+czytania. Jedyne, co niesie ze sobą prawdziwe ryzyko przy zmianie branży, to
+znaczenie pola `pilne`: u BudMaksu znaczy „ktoś leży na ziemi", u kancelarii
+będzie znaczyć „termin jest nieodwracalny". Mechanizm to udźwignie, kalibracja
+progów będzie nowa.
+
+Zastrzeżenie, którego ta tabela nie rozstrzyga: uziemienie liczb, progi i cytat
+dosłowny zostały w silniku **na podstawie braku dowodu przeciwnego**, nie pomiaru
+na drugiej branży. Ten pomiar jest treścią etapu 2.
+
+### Brak klienta jest błędem, nie ciszą
+
+Wszystkie warstwy zależne od klienta **rzucają wyjątkiem**, gdy go nie dostaną:
+`wymagajKlienta()`, `przestrzenFizyczna()`, `wykryjEskalacje()`, `buildSystemPrompt()`
+i `isUnsupportablePromise()` w trybie publicznym. Powód jest ten sam, dla którego
+`vectorSearch()` nie ma wartości domyślnej dla przestrzeni: eskalacja bez pakietu
+branżowego zwracałaby `null`, czyli **wyłączyłaby się w całości bez jednego śladu
+w logu** — przy wypadku. Warstwa obietnic bez wzorców klienta pracowałaby na
+połowie zestawu, na powierzchni klienckiej, przez wiele sesji niezauważona.
+To dokładnie te dwa kształty błędu, które ten projekt już raz zapłacił
+(`isDuplicate()`, `numbersAreGrounded()`).
+
+Pilnuje tego `test-klienci.mjs` — 38 przypadków, w tym wrogie: podszywający się
+podciąg hosta, prefiks, brak klienta w każdej z tych warstw, kolizja hostów
+w tablicy i sprawdzenie, że zdanie odmowne każdego klienta zawiera frazę
+`nie mam takich informacji` rozpoznawaną przez `handleAsk()`.
+
+### Nieznany host przestaje dostawać BudMaksa
+
+Do tej zmiany żądanie `POST /` z hosta spoza tablicy wpadało na koniec routingu
+i dostawało dokumentację BudMaksu. Przy jednym kliencie była to teoria; przy
+dwóch byłby to wyciek treści nie tej firmy. Teraz nieznany host dostaje **404**,
+tak samo jak nie dostaje żadnej roli. Stary `knowbase-budmax.rezi7608.workers.dev`
+jest wpisany **jawnie** w polu `stare` w tablicy BudMaksu, więc działa jak dotąd.
+
+Log pytań też jest od tej zmiany podpisany klientem, a `/stats` i `/stats-internal`
+filtrują po nim. Bez tego panel jednej firmy pokazywałby pytania zadane drugiej —
+KV jest jedno na Workera. Wpisy sprzed 22.08.2026 nie mają tego pola i przypadają
+klientowi oznaczonemu `przejmujeStareWpisy`, jawnie w tablicy, a nie przez
+zgadywanie po hoście. Kolejny klient tego pola mieć nie może.
+
+### Przełącznik demonstracyjny — czego nie może zepsuć
+
+Renderowany wyłącznie przy `DEMO = "1"` w `[vars]`. U klienta tej zmiennej nie
+ma, więc paska **nie ma fizycznie w wysłanym HTML-u** — nie jest ukryty stylem
+ani warunkiem w JavaScripcie, który da się obejść konsolą. Sam pasek to lista
+linków do hostów drugiego klienta, a nie kontrolka zmieniająca stan: klient nadal
+wynika z hosta, więc kliknięcie zmienia adres, a nie przeszukiwaną przestrzeń.
+Najgorsze, co potrafi zrobić, to zaprowadzić pod adres, który odpowie 404.
+
+Podstawianie nazw w interfejsach jest celowo prymitywne: `{{klucz}}` wypełniane
+z `klient.ui`, bez frameworka i bez logiki w szablonie. Nieznany placeholder
+zostaje w tekście, więc widać go od razu na ekranie, zamiast zniknąć po cichu.
+
+### Kryterium akceptacji: prompt publiczny bajt w bajt
+
+Przed refaktorem zapisano migawkę obu promptów, po refaktorze porównano `diff`-em.
+**Oba wyszły identyczne bajt w bajt** — to był warunek, bo prompt publiczny jest
+kalibrowany od wielu sesji, a `CLAUDE.md` zakazuje ruszania go przy okazji.
+Testy: eskalacja 79/79, weryfikacja 26/26, Access 20/20, klienci 38/38,
+`wrangler deploy --dry-run` bunduje wszystkie moduły.
+
+### `node --check` nie wystarcza — zmierzone przy tej zmianie
+
+Skrypt refaktoryzujący wstawił w szablon promptu **dosłowny znak nowej linii**
+zamiast sekwencji ucieczki, czyli niedomknięty literał. `node --check worker.js`
+**przeszedł bez zastrzeżeń**; błąd wyszedł dopiero przy `import`, gdy plik był
+parsowany jako moduł ES. Kontrolą, która to łapie, jest uruchomienie testów albo
+`wrangler deploy --dry-run` — nie `node --check`. Stąd stała `NOWA_LINIA`
+w miejscu sklejania listy zakazów: sekwencja ucieczki wewnątrz szablonu jest
+trudna do odczytania i łatwa do zepsucia edycją skryptową.
+
 ## Dokumentacja BudMax
 
 53 fragmenty w tablicy `CHUNKS`, oparte na realnych przepisach:

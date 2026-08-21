@@ -14,7 +14,7 @@ i ślepe uliczki mieszkają w [`DECYZJE.md`](DECYZJE.md)** — czytanym wybiórc
 na żądanie, po nagłówkach. Rozdzielone 19.08.2026, bo ten plik wczytuje się przy
 każdej sesji, a historia decyzji jest potrzebna kilka razy w miesiącu.
 
-## Stan na 20.08.2026 — zacznij stąd
+## Stan na 22.08.2026 — zacznij stąd
 
 **Co działa w produkcji:**
 - Publiczny bot FAQ — 53 fragmenty, weryfikacja zdanie po zdaniu, model 70B
@@ -27,6 +27,9 @@ każdej sesji, a historia decyzji jest potrzebna kilka razy w miesiącu.
 - Separacja przestrzeni `public` / `internal` w Vectorize, szczelność przetestowana
 - Tryb wewnętrzny na tożsamości z Cloudflare Access, pełna ścieżka potwierdzona
   pomiarem na żywo prawdziwym tokenem (18.08.2026)
+- **Wymiar klienta** — `KLIENCI` w `klienci.js`, klient wynika z hosta tak samo
+  jak rola. Przestrzeń w Vectorize, treść, prompty, eskalacja, wzorce obietnic
+  i nazwy w interfejsach są zależne od klienta. Nieznany host dostaje 404
 
 **Ostatnie sesje, w skrócie:**
 
@@ -41,6 +44,7 @@ każdej sesji, a historia decyzji jest potrzebna kilka razy w miesiącu.
 | 21.08 | Panel właściciela na Access (trzeci host), problem 4 i defekt publiczny zamknięte | `DECYZJE.md` → Panel właściciela na Access |
 | 21.08 | **Zmiana nazw hostów**, koniec dopasowania po podciągu | `DECYZJE.md` → Zmiana nazw hostów |
 | 21.08 | Test na realnych pytaniach: homonimy w eskalacji, rzeczowniki urazowe, 3 nowe fragmenty | `DECYZJE.md` → Test na realnych pytaniach |
+| 22.08 | **Etap 1 drugiej branży: wybór klienta przez host**, słowniki branżowe wyjęte z silnika | `DECYZJE.md` → Wybór klienta: host, nie parametr |
 
 **Gdzie jesteśmy:** treści nie brakuje nigdzie, a z pięciu problemów z pomiaru
 **trzy są naprawione** (próg zależny od długości zdania z cytatem dosłownym,
@@ -90,7 +94,12 @@ wystarcza do testów i jednego użytkownika, nie wystarcza dla zespołu klienta.
 2. Binding albo trasa, których nie ma w `wrangler.toml`, znikają przy deployu
 3. `/reindex` po każdej zmianie treści — i odczekać, zapis do Vectorize jest
    asynchroniczny
-4. **Cloudflare buforuje odpowiedzi na brzegu.** Sonda zaraz po wdrożeniu potrafi
+4. **Host dopisany w `wrangler.toml`, ale nie w `KLIENCI`** (albo odwrotnie) —
+   trasa istnieje, a Worker odpowiada na niej 404, bo host nie ma klienta.
+   Oba miejsca zmienia się razem
+5. **`DEMO = "1"` zostawione przy wdrożeniu u klienta** — doda mu na dole ekranu
+   pasek z linkiem do cudzego dema. Przy wdrożeniu zmienną się USUWA, nie zeruje
+6. **Cloudflare buforuje odpowiedzi na brzegu.** Sonda zaraz po wdrożeniu potrafi
    pokazać stan sprzed niego — kosztowało dwa fałszywe alarmy (20 i 21.08.2026).
    Każdą sondę rób z `?cb=$RANDOM`
 
@@ -98,7 +107,9 @@ wystarcza do testów i jednego użytkownika, nie wystarcza dla zespołu klienta.
 
 | Plik | Co to | Gdzie żyje |
 |---|---|---|
-| `worker.js` | Backend — RAG, weryfikacja, prompty, tożsamość, routing | Cloudflare Worker `knowbase-budmax` |
+| `worker.js` | Backend — RAG, weryfikacja, prompty, tożsamość, routing, **silnik niezależny od branży** | Cloudflare Worker `knowbase-budmax` |
+| `klienci.js` | `KLIENCI` — tablica klientów i indeks `host → {klient, rola}`. **Wszystko, co zależy od firmy** | importowane przez `worker.js` |
+| `eskalacja-budowlana.js` | `ESKALACJA_BUDOWLANA` — słownik branżowy eskalacji (kategorie, dopełnienia, progi, teksty) | importowane przez `klienci.js` |
 | `content-public.js` | `CHUNKS` — 53 fragmenty publiczne | importowane przez `worker.js` |
 | `content-internal.js` | `INTERNAL_CHUNKS` — 44 fragmenty wewnętrzne | importowane przez `worker.js` |
 | `app-internal.js` | `APP_INTERNAL_HTML` — aplikacja asystenta budowy PWA | importowane przez `worker.js` dla `GET /app` |
@@ -115,6 +126,7 @@ wystarcza do testów i jednego użytkownika, nie wystarcza dla zespołu klienta.
 | `test-eskalacja.mjs` | Test warstwy eskalacji (`node test-eskalacja.mjs`) | repo |
 | `test-weryfikacja.mjs` | Test deduplikacji, progów i cytatu dosłownego | repo |
 | `test-stats-internal.mjs`| Test statystyk wewnętrznych i zliczania eskalacji | repo |
+| `test-klienci.mjs` | Test wymiaru klienta: host, przestrzenie, obowiązkowość klienta, szablony | repo |
 
 **Treść jest w osobnych plikach od 19.08.2026** — stanowiła ponad połowę wagi
 `worker.js`, a zadanie dotyczące logiki nigdy jej nie potrzebuje. Bundler
@@ -131,8 +143,9 @@ Adresy:
 
 **Trzy hosty na klienta** od 21.08.2026, jednopoziomowe, bez wildcardu — powody
 w `DECYZJE.md` → „Adresy i domeny" oraz „Panel właściciela na Access". Nowy klient
-to **trzy** wpisy w `[[routes]]`, **trzy** aplikacje Access (publiczny host jej nie
-ma) plus jego domeny w `ALLOWED_ORIGINS` (lista samych domen bez ścieżek).
+to **wpis w `KLIENCI`**, **trzy** wpisy w `[[routes]]` i **dwie** aplikacje Access
+(host publiczny jej nie ma). `ALLOWED_ORIGINS` składa się już samo z tablicy
+klientów — nie ma tam czego dopisywać.
 
 ## Infrastruktura (Cloudflare, plan darmowy)
 
@@ -198,8 +211,9 @@ narzędzia wdrożeniowe, do których klient nie ma mieć dostępu nawet zalogowa
   nie usterka.
 - `email` i `domena` z tokenu są odczytywane i zwracane w polu `zalogowany`.
   **Nic po nich jeszcze nie filtruje** — to fundament pod multi-tenant.
-- **Nazwy hostów są w `HOSTY` w `worker.js` — jedynym miejscu w kodzie.**
-  Dopasowanie jest **dokładne** (`hostname === HOSTY.pracownik`), nie podciągiem.
+- **Nazwy hostów są w `KLIENCI` w `klienci.js` — jedynym miejscu w kodzie**
+  (do 22.08.2026 w `HOSTY` w `worker.js`). Dopasowanie jest **dokładne**
+  (`HOSTY_INDEX.get(hostname)`), nie podciągiem.
   Do 21.08.2026 było przez `includes()` i zmiana nazw hostów w Access **po cichu
   odebrałaby rolę obu hostom**. Host spoza `HOSTY` nie dostaje żadnej roli.
 - **Rola wynika z HOSTA, nie z kodu.** Pracownik i właściciel wchodzą pod różne
@@ -207,8 +221,8 @@ narzędzia wdrożeniowe, do których klient nie ma mieć dostępu nawet zalogowa
   pojęcia roli, nie ma listy uprawnionych i nie sprawdza pola w tokenie. Pole
   `role` w metadanych fragmentów **nadal nic nie filtruje**. Dlaczego nie rola
   w polityce na ścieżce: `DECYZJE.md` → „Panel właściciela na Access".
-- **AUD zależy od hosta.** `accessConfig(env, url)` wybiera `ACCESS_AUD` albo
-  `ACCESS_AUD_PANEL`. Sprawdzanie „którykolwiek ze znanych AUD-ów" byłoby dziurą:
+- **AUD zależy od hosta.** `accessConfig(env, url)` bierze nazwę zmiennej
+  z `klient.audVars[rola]` — dla BudMaksu `ACCESS_AUD` albo `ACCESS_AUD_PANEL`. Sprawdzanie „którykolwiek ze znanych AUD-ów" byłoby dziurą:
   token pracownika otwierałby panel właściciela. Pilnuje tego sekcja 5
   w `test-access.mjs`.
 - **Fail-closed dotyczy też HTML-a.** `odpowiedzBrakKonfiguracji()` nie wyda
@@ -220,14 +234,54 @@ narzędzia wdrożeniowe, do których klient nie ma mieć dostępu nawet zalogowa
 więc sprawdza także przypadek pozytywny. Uruchamiać po każdej zmianie
 w weryfikacji tokenu.
 
+## Klient — drugi wymiar, od 22.08.2026
+
+`KLIENCI` w `klienci.js` to jedyne miejsce, w którym mieszka cokolwiek zależnego
+od firmy: hosty, nazwy zmiennych z AUD-ami, przestrzenie, treść, słownik
+eskalacji, wzorce obietnic publicznych, fragmenty promptów i nazwy w interfejsach.
+Docelowo ta tablica staje się tabelą w D1, a `rozpoznajKlienta()` zapytaniem do
+niej — reszta systemu tej zmiany nie zobaczy.
+
+**Reguły, których nie wolno rozluźnić:**
+- **Klient wynika z HOSTA**, tak samo jak rola. Nie przychodzi z ciała żądania,
+  z query ani z nagłówka. Jedyny wyjątek to `?klient=` na `/reindex` i `/debug` —
+  narzędzia administracyjne za `REINDEX_SECRET`, wybierające **wpis z zamkniętej
+  tablicy**, nigdy nazwę przestrzeni.
+- **Host spoza `KLIENCI` nie dostaje klienta, roli ani odpowiedzi** — `POST /`
+  zwraca tam 404. Do 22.08.2026 dostawał dokumentację BudMaksu.
+- Stare adresy (`knowbase-budmax.rezi7608.workers.dev`) są wpisane **jawnie**
+  w polu `stare`. Nic nie wpada tam przez podciąg.
+- **Brak klienta jest błędem, nie ciszą.** `wymagajKlienta()`,
+  `przestrzenFizyczna()`, `wykryjEskalacje()`, `buildSystemPrompt()`
+  i `isUnsupportablePromise()` w trybie publicznym **rzucają wyjątkiem**.
+  Cicha praca bez pakietu branżowego wyłączyłaby eskalację w całości bez śladu.
+- **Zdanie odmowne każdego klienta musi zawierać frazę „nie mam takich
+  informacji"** — `handleAsk()` rozpoznaje po niej brak odpowiedzi. Sprawdza to
+  asercja przy starcie modułu, więc błąd wychodzi przy `--dry-run`.
+- Log pytań jest **podpisany klientem**, a oba panele filtrują po nim. KV jest
+  jedno na Workera. Wpisy sprzed 22.08.2026 przypadają klientowi z flagą
+  `przejmujeStareWpisy` — dokładnie jednemu.
+- **Przełącznik demo istnieje tylko przy `DEMO = "1"` w `[vars]`.** U klienta tej
+  zmiennej nie ma i wtedy paska nie ma **fizycznie w HTML-u**. To lista linków,
+  nie kontrolka: klient nadal wynika z hosta.
+
+Co jest branżowe, a co produktowe (pełna tabela: `DECYZJE.md` → „Wybór klienta"):
+protezą okazały się **wzorce**, nie reguły. Uziemienie liczb, progi, deduplikacja
+i cytat dosłowny zostały w silniku bez wymiaru klienta — ale to hipoteza z braku
+dowodu przeciwnego, nie wynik pomiaru na drugiej branży.
+
 ## Separacja przestrzeni wiedzy
 
-Jeden indeks, **rozłączne przestrzenie nazw** w Vectorize.
+Jeden indeks, **rozłączne przestrzenie nazw** w Vectorize. Od 22.08.2026 nazwa
+przestrzeni ma **dwa wymiary**: `rodzaj` z routingu × `klient` z hosta. Fizyczną
+nazwę składa `przestrzenFizyczna()` wewnątrz granicy dostawcy i tylko tam.
+BudMax został przy nazwach `public` / `internal` — jawnie wpisanych w jego wierszu
+tablicy, dzięki czemu zmiana nie wymagała reindeksu ani migracji wektorów.
 
 | Endpoint | Przeszukuje | Skąd bierze zakres |
 |---|---|---|
-| `POST /` | `public` | stała `SPACES_FOR_PUBLIC` |
-| `POST /internal` | `public` + `internal` | stała `SPACES_FOR_INTERNAL` |
+| `POST /` | `public` klienta z hosta | stała `SPACES_FOR_PUBLIC` |
+| `POST /internal` | `public` + `internal` klienta z hosta | stała `SPACES_FOR_INTERNAL` |
 
 Pracownik widzi obie przestrzenie celowo — musi wiedzieć także to, co firma
 obiecuje klientom.
@@ -241,7 +295,9 @@ obiecuje klientom.
 - Separacja stoi **na danych, nie na prompcie**. Uzasadnienie i wynik testu
   szczelności: `DECYZJE.md` → „Separacja przestrzeni wiedzy".
 - Pole `role` w metadanych jest zawsze `"all"` i nic po nim nie filtruje — jest
-  teraz, bo dopisanie go później oznacza reindeks u każdego klienta.
+  teraz, bo dopisanie go później oznacza reindeks u każdego klienta. Od 22.08.2026
+  dochodzi obok niego pole `klient` — z tego samego powodu i też jeszcze bez
+  żadnego filtrowania (rozłączność stoi na przestrzeniach, nie na metadanych).
 
 ## Eskalacja — trzeci stan odpowiedzi (tylko tryb wewnętrzny)
 
@@ -257,6 +313,11 @@ milczeć, bo ktoś musi wiedzieć, co zrobić w pierwszej minucie.
 | `spor_prawny` | groźba sądu, roszczenie, odszkodowanie, adwokat | po treści |
 | `kontrola` | organ (PIP, PINB, sanepid) **oraz** jego obecność/żądanie | po treści |
 | `finanse_prog` | pieniądze **oraz** decyzja **oraz** przekroczony próg (3% / 300 zł) | po treści |
+
+**Wzorce są branżowe i mieszkają w `eskalacja-budowlana.js`** (od 22.08.2026),
+a przychodzą przez `klient.eskalacja`. W `worker.js` został sam mechanizm.
+Poniższe reguły dotyczą mechanizmu i obowiązują każdą branżę; kalibracja wzorców
+jest osobna dla każdej.
 
 **Reguły, których nie wolno rozluźnić:**
 - **Rdzeń dwuznaczny wyzwala dopiero ze swoim DOPEŁNIENIEM** (od 21.08.2026).
@@ -301,7 +362,7 @@ milczeć, bo ktoś musi wiedzieć, co zrobić w pierwszej minucie.
 - Eskalacja działa też, gdy **dokumentacja nie ma odpowiedzi**. Wtedy jest
   potrzebna bardziej, nie mniej.
 
-**Test:** `node test-eskalacja.mjs` — **79 przypadków**, w tym 26 negatywnych
+**Test:** `node test-eskalacja.mjs` — **79 przypadków** na słowniku budowlanym, w tym 26 negatywnych
 (pytania tematycznie bliskie, które wyzwolić nie mogą), zestaw bez ogonków
 i sprawdzenie pozycji ramki. Warstwa jest deterministyczna, więc testuje się ją
 lokalnie, bez wywoływania modelu.
@@ -325,7 +386,12 @@ lokalnie, bez wywoływania modelu.
   rozpoznaje brak odpowiedzi wyrażeniem `/nie mam takich informacji/i` na surowym
   tekście modelu. Inne sformułowanie po cichu rozjeżdża tę ścieżkę.
 - **Publicznego promptu nie rusza się przy okazji zmian w wewnętrznym** — jest
-  kalibrowany od wielu sesji.
+  kalibrowany od wielu sesji. Przy zmianie rozdzielającej cokolwiek na klientów
+  kryterium jest **wynik bajt w bajt identyczny** — sprawdzalne migawką promptu
+  sprzed zmiany (tak domknięto etap 1 drugiej branży).
+- **Z promptu wychodzi do klienta tylko to, co MÓWI O BRANŻY**: nazwa firmy,
+  rozróżnienia mylonych usług, zakazy branżowe, przykłady stanowisk i zdanie
+  odmowne. Struktura, kolejność akapitów i `PROMPT_RDZEN` są wspólne.
 - `/debug` pokazuje w polu `tryb_promptu`, który wariant poszedł do modelu.
 
 Co zmienia wariant wewnętrzny i jak został skalibrowany: `DECYZJE.md` → „Prompty".
@@ -340,7 +406,7 @@ które jako jedyne dotykają `env.AI` i `env.VECTORIZE`.
 | `embed(env, texts)` | tablica tekstów → tablica wektorów, w kolejności wejścia |
 | `generate(env, systemPrompt, messages, opts)` | → gotowy tekst odpowiedzi |
 | `vectorSearch(env, vector, opts)` | → tablica dopasowań z `score`, `values`, `metadata` |
-| `vectorUpsert(env, vectors, namespace)` | zapis do indeksu (`/reindex`) |
+| `vectorUpsert(env, vectors, klient, rodzaj)` | zapis do indeksu (`/reindex`) |
 | `vectorDelete(env, ids)` | usunięcie z indeksu (`/purge`) |
 
 **Czego nie wolno przez nią przepuszczać:**
@@ -350,7 +416,8 @@ które jako jedyne dotykają `env.AI` i `env.VECTORIZE`.
 - Literał `@cf/...` żyje wyłącznie w `PROVIDER`.
 - Kształt odpowiedzi dostawcy (`res.data`, `res.response`, `results.matches`)
   nie wychodzi na zewnątrz.
-- `vectorSearch` wymaga `opts.namespaces` — bez wartości domyślnej.
+- `vectorSearch` wymaga `opts.klient` i `opts.rodzaje` — bez wartości domyślnych.
+- Fizyczną nazwę przestrzeni składa `przestrzenFizyczna(klient, rodzaj)` i nikt poza nią.
 
 Po co to istnieje i dlaczego `upsert`, a nie `insert`: `DECYZJE.md` → „Granica dostawcy".
 
@@ -416,13 +483,13 @@ Uprawnienia są **rozdzielone na dwa niezależne mechanizmy** — patrz sekcja
   zdarzenia/eskalacje). **Host właściciela + token Access.** Do 21.08.2026 stało na samym
   „token jest ważny" na hoście pracowniczym, więc **każdy pracownik** mógł czytać
   analitykę właściciela
-- `GET /reindex?key=…&space=public|internal` — **uruchom po każdej zmianie CHUNKS
-  lub INTERNAL_CHUNKS**. Bez `space` indeksuje `public` (zgodnie z dotychczasowym
+- `GET /reindex?key=…&space=public|internal&klient=…` — **uruchom po każdej zmianie
+  CHUNKS lub INTERNAL_CHUNKS**. Bez `klient` indeksuje klienta z hosta. Bez `space` indeksuje `public` (zgodnie z dotychczasowym
   zachowaniem). Każdą przestrzeń indeksuje się osobno
 - `GET /stats` — dane dla panelu właściciela. **Wyłącznie host właściciela + tożsamość
   z Access**; `REINDEX_SECRET` tu **nie działa** od 21.08.2026. Poza hostem panelowym
   zwraca 404. Pytania z `/internal` są **odfiltrowane**
-- `GET /debug?key=…&q=pytanie&space=public|internal|obie` — diagnostyka: co znalazło,
+- `GET /debug?key=…&q=pytanie&space=public|internal|obie&klient=…` — diagnostyka: co znalazło,
   z jakim wynikiem, **z której przestrzeni**, które zdania przechodzą weryfikację
   i **w polu `tryb_promptu`, który wariant promptu poszedł do modelu**
   (`internal`/`obie` → wewnętrzny). Bez `space` sprawdza `public`.
@@ -559,6 +626,17 @@ Lista jest tutaj, bo zniknięty zapis wraca jako ten sam błąd za trzy sesje.
   przypadek tej samej pomyłki w projekcie. **Przed pomiarem sprawdź, czy metryka
   mierzy to, co chcesz wiedzieć, a nie to, co łatwo policzyć**: przeczytaj kilka
   odpowiedzi w całości i sprawdź, czy licznik zgadza się z Twoją oceną
+- **Parametr w żądaniu jako źródło wyboru KLIENTA** — odrzucony 22.08.2026 z tego
+  samego powodu, dla którego nazwa przestrzeni nie przychodzi z żądania: cała
+  rozłączność klientów wisiałaby wtedy na poprawności sprawdzenia uprawnień.
+  Wyjątek dla `/reindex` i `/debug` jest świadomy — sekret, zamknięta tablica
+- **Furtka `?klient=` na `workers.dev` pod flagą demo** — sprawdzona i odrzucona
+  22.08.2026: na `workers.dev` tryb wewnętrzny nigdy nie zadziała (poprawne
+  fail-closed), więc demo obejmowałoby wyłącznie tryb publiczny — czyli nie to,
+  co ten etap miał zmierzyć
+- **Przemianowanie przestrzeni BudMaksu na `budmax-public`** — odrzucone:
+  kosztowałoby reindeks i migrację na działającej produkcji, a zysk jest wyłącznie
+  estetyczny. Nazwy są wpisane jawnie w tablicy klienta i mogą być niesymetryczne
 - **Rozpoznawanie roli hosta po podciągu nazwy** (`includes("wewnetrzny")`) —
   zmiana nazw hostów 21.08.2026 odebrałaby rolę obu hostom po cichu. Nazwy żyją
   w `HOSTY`, dopasowanie jest dokładne
@@ -714,10 +792,18 @@ Kolejność jest celowa — uzasadnienie jest częścią decyzji, nie ozdobnikie
      „pod problem 4" zostaje w mocy także po zamknięciu.** Naturalny moment
      ponownego sprawdzenia to **zmiana modelu bazowego** — zjawisko jest
      własnością modelu, nie naszego kodu. `DECYZJE.md` → „Problem 4".
-2. **Druga branża** — kancelaria albo gabinet. Sprawdzenie, ile zabezpieczeń jest
-   uniwersalnych, a ile to protezy pod budowlankę (wzorce mówią o rabatach
-   w hurtowniach — u kancelarii groźne będą terminy przedawnienia i szanse wygranej).
-   Ważne poznawczo, ale **nie blokuje sprzedaży** — dlatego po bocie dla pracowników.
+2. **Druga branża** — kancelaria. Sprawdzenie, ile zabezpieczeń jest uniwersalnych,
+   a ile to protezy pod budowlankę. Ważne poznawczo, ale **nie blokuje sprzedaży**.
+   - ~~**Etap 1: mechanizm wyboru klienta**~~ — ✅ **wykonane 22.08.2026.**
+     Klient wynika z hosta, przestrzeń ma dwa wymiary, słowniki branżowe wyjęte
+     z silnika, log i panele podpisane klientem, przełącznik demo pod `DEMO`.
+     Prompt publiczny wyszedł bajt w bajt identyczny. `DECYZJE.md` → „Wybór klienta".
+   - **Etap 2: treść kancelarii** — wpis w `KLIENCI`, `eskalacja-prawna.js`,
+     fragmenty publiczne i wewnętrzne, własne wzorce obietnic (przedawnienie,
+     szanse wygranej). Dopiero ten etap **zmierzy**, czy uziemienie liczb, progi
+     i deduplikacja są naprawdę uniwersalne — dziś to hipoteza z braku dowodu
+     przeciwnego. Wymaga po stronie właściciela: trzech tras i **dwóch aplikacji
+     Access** (host publiczny ich nie ma).
 3. **Skrypt osadzający** — Shadow DOM, jedna linijka `<script>` do wklejenia na
    dowolnej stronie klienta, izolacja stylów w obie strony.
 4. **Multi-tenant** — dopiero przy 2-3 płacących klientach: D1 z tabelą klientów,
@@ -746,7 +832,13 @@ Kolejność jest celowa — uzasadnienie jest częścią decyzji, nie ozdobnikie
 - Przed commitem → `node --check` na **wszystkich** plikach źródłowych plus
   `wrangler deploy --dry-run`; przy zmianach w weryfikacji tokenu także
   `node test-access.mjs`, przy zmianach w eskalacji `node test-eskalacja.mjs`,
-  a przy zmianach w warstwach weryfikacji `node test-weryfikacja.mjs`
+  przy zmianach w warstwach weryfikacji `node test-weryfikacja.mjs`,
+  a przy zmianach w tablicy klientów, hostach lub szablonach `node test-klienci.mjs`
+- **`node --check` nie łapie wszystkiego — zmierzone 22.08.2026.** Dosłowny znak
+  nowej linii wstawiony do szablonu promptu (niedomknięty literał) **przeszedł
+  przez `node --check` bez zastrzeżeń**, a wywalił się dopiero przy `import`.
+  Plik jest sprawdzany jako skrypt, nie jako moduł ES. Prawdziwą kontrolą są
+  testy i `wrangler deploy --dry-run`
 - `ALLOWED_ORIGINS` to lista samych domen bez ścieżek. Nowy klient = nowe wpisy
 - Nie dodawać warstw zabezpieczeń bez zmierzenia problemu na `/debug` —
   projekt ma za sobą kilka rund łatania objawów zamiast przyczyn

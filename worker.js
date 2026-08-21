@@ -24,8 +24,10 @@
 // teraz WSZYSTKIE pliki: node --check na każdym plus wrangler deploy --dry-run,
 // bo sam node --check worker.js nie złapie błędu w module treści ani
 // literówki w ścieżce importu.
-import { CHUNKS } from "./content-public.js";
-import { INTERNAL_CHUNKS } from "./content-internal.js";
+// KLIENCI — tablica klientów i indeks host → klient. Treść (CHUNKS,
+// INTERNAL_CHUNKS) wchodzi teraz przez nią, bo należy do konkretnej firmy,
+// a nie do produktu. Docelowo ten jeden import zastąpi zapytanie do D1.
+import { KLIENCI, HOSTY_INDEX } from "./klienci.js";
 import { PANEL_INTERNAL_HTML } from "./panel-internal.js";
 import { PANEL_HTML } from "./panel.js";
 import { APP_INTERNAL_HTML } from "./app-internal.js";
@@ -58,8 +60,18 @@ const TOP_K_LONG = 10; // przy długich, wielowątkowych pytaniach pobierz więc
 const LONG_QUESTION_CHARS = 400; // od tylu znaków traktujemy pytanie jako złożone
 const RATE_LIMIT_PER_HOUR = 30;
 const LOG_RETENTION_DAYS = 90; // po tylu dniach wpisy w logu wygasają automatycznie
-const COMPANY_NAME = "BudMax Sp. z o.o.";
-const FALLBACK_MESSAGE = "Nie mam takich informacji w mojej dokumentacji — polecam kontakt z biurem.";
+// Nazwa firmy i zdanie odmowne ZALEŻĄ OD KLIENTA — mieszkają w klienci.js.
+// Została po nich jedna reguła, której złamanie jest niewidoczne aż do pomiaru:
+// handleAsk() rozpoznaje brak odpowiedzi wyrażeniem /nie mam takich informacji/i
+// na SUROWYM tekście modelu, więc zdanie odmowne KAŻDEGO klienta musi tę frazę
+// zawierać. Sprawdzamy to przy starcie modułu, żeby błąd konfiguracji nowego
+// klienta wyszedł przy `wrangler deploy --dry-run`, a nie u niego na stronie.
+const FRAZA_ODMOWY = /nie mam takich informacji/i;
+for (const k of Object.values(KLIENCI)) {
+  if (!FRAZA_ODMOWY.test(k.prompt.fallback)) {
+    throw new Error(`Klient ${k.id}: zdanie odmowne musi zawierać frazę „nie mam takich informacji".`);
+  }
+}
 
 // ============================================================
 // PRZESTRZENIE WIEDZY — separacja na poziomie danych, nie promptu
@@ -84,6 +96,13 @@ const FALLBACK_MESSAGE = "Nie mam takich informacji w mojej dokumentacji — pol
 // w którym da się zrobić błąd. Przy wpisaniu na sztywno błąd w autoryzacji
 // **nadal nie otwiera** dostępu do wiedzy wewnętrznej: publiczny widget nie ma
 // fizycznej możliwości poprosić o `internal`, bo nie ma czym.
+//
+// DRUGI WYMIAR — KLIENT (od 21.08.2026)
+// Poniższe nazwy to RODZAJE przestrzeni, nie ich fizyczne nazwy w Vectorize.
+// Rodzaj przychodzi z routingu (jak dotąd), klient — z hosta. Fizyczną nazwę
+// składa `przestrzenFizyczna()` wewnątrz granicy dostawcy i nigdzie indziej.
+// Dzięki temu `askedFrom`, pole `space` w logu, filtr w /stats i tryb promptu
+// znaczą dokładnie to samo, co przed dodaniem drugiego klienta.
 const SPACE_PUBLIC = "public";
 const SPACE_INTERNAL = "internal";
 const SPACES_ALLOWED = [SPACE_PUBLIC, SPACE_INTERNAL];
@@ -163,34 +182,56 @@ async function generate(env, systemPrompt, messages, opts = {}) {
 // Sprawdza, że przestrzeń jest jedną ze znanych. Rzuca zamiast zwracać wartość
 // domyślną: cicha zamiana nieznanej przestrzeni na `public` byłaby dokładnie tym
 // błędem, który mógłby kiedyś pokazać treść wewnętrzną nie tej stronie.
-function assertSpaces(namespaces) {
-  if (!Array.isArray(namespaces) || namespaces.length === 0) {
+function assertSpaces(rodzaje) {
+  if (!Array.isArray(rodzaje) || rodzaje.length === 0) {
     throw new Error("Nie podano przestrzeni wiedzy do przeszukania.");
   }
-  for (const ns of namespaces) {
-    if (!SPACES_ALLOWED.includes(ns)) {
-      throw new Error(`Nieznana przestrzeń wiedzy: ${ns}`);
+  for (const r of rodzaje) {
+    if (!SPACES_ALLOWED.includes(r)) {
+      throw new Error(`Nieznana przestrzeń wiedzy: ${r}`);
     }
   }
-  return namespaces;
+  return rodzaje;
+}
+
+// Klient jest OBOWIĄZKOWY wszędzie, gdzie w grę wchodzi treść. Rzucamy zamiast
+// podstawiać cokolwiek domyślnego — z tego samego powodu, dla którego nie ma
+// wartości domyślnej dla przestrzeni: cichy wybór klienta to dokładnie ten błąd,
+// który kiedyś pokazałby dokumentację jednej firmy komuś z drugiej.
+function wymagajKlienta(klient) {
+  if (!klient || !klient.id) {
+    throw new Error("Brak klienta — bez niego nie da się wskazać przestrzeni wiedzy.");
+  }
+  return klient;
+}
+
+// Fizyczna nazwa przestrzeni w Vectorize: dwa wymiary w jednym stringu.
+// Nazwy są WPISANE w tablicy klienta, nie generowane ze wzorca — dzięki temu
+// BudMax mógł zostać przy `public`/`internal` bez reindeksu i migracji.
+function przestrzenFizyczna(klient, rodzaj) {
+  const [r] = assertSpaces([rodzaj]);
+  const ns = wymagajKlienta(klient).przestrzenie[r];
+  if (!ns) throw new Error(`Klient ${klient.id} nie ma przestrzeni „${r}".`);
+  return ns;
 }
 
 // vectorSearch(env, vector, opts) → tablica dopasowań: { id, score, values, metadata }.
 // Wektory (`values`) są potrzebne weryfikacji zdanie-po-zdaniu, metadane —
 // budowie promptu. Zwracamy zawsze tablicę, nigdy undefined.
 //
-// `opts.namespaces` jest OBOWIĄZKOWE i nie ma wartości domyślnej — wywołujący
-// musi świadomie powiedzieć, którą przestrzeń przeszukuje. Vectorize przeszukuje
+// `opts.rodzaje` i `opts.klient` są OBOWIĄZKOWE i nie mają wartości domyślnych —
+// wywołujący musi świadomie powiedzieć, CZYJĄ i KTÓRĄ przestrzeń przeszukuje. Vectorize przeszukuje
 // jedną przestrzeń na zapytanie, więc przy kilku robimy tyle zapytań i scalamy
 // wyniki po wyniku podobieństwa, jakby przyszły z jednego.
 async function vectorSearch(env, vector, opts = {}) {
-  const namespaces = assertSpaces(opts.namespaces);
+  const klient = wymagajKlienta(opts.klient);
+  const rodzaje = assertSpaces(opts.rodzaje);
   const topK = opts.topK ?? TOP_K;
 
   const perSpace = await Promise.all(
-    namespaces.map((ns) =>
+    rodzaje.map((rodzaj) =>
       env.VECTORIZE.query(vector, {
-        namespace: ns,
+        namespace: przestrzenFizyczna(klient, rodzaj),
         topK,
         returnMetadata: true,
         returnValues: true,
@@ -213,8 +254,8 @@ async function vectorSearch(env, vector, opts = {}) {
 // zmiana treści fragmentu nigdy nie docierała do indeksu — poprawka wymagała
 // wcześniej usunięcia wpisu przez /purge. Upsert nadpisuje, dzięki czemu
 // /reindex jest idempotentny i faktycznie odzwierciedla CHUNKS.
-async function vectorUpsert(env, vectors, namespace) {
-  const [ns] = assertSpaces([namespace]);
+async function vectorUpsert(env, vectors, klient, rodzaj) {
+  const ns = przestrzenFizyczna(klient, rodzaj);
   await env.VECTORIZE.upsert(vectors.map((v) => ({ ...v, namespace: ns })));
 }
 
@@ -253,24 +294,42 @@ async function vectorDelete(env, ids) {
 // i panel przestałyby działać, a nikt by tego nie zauważył przed pomiarem.
 // Dokładne dopasowanie ma też lepszą stronę awaryjną: host, którego tu nie ma,
 // **nie dostaje żadnej roli** — także stary adres, gdyby trasa gdzieś została.
-const HOSTY = {
-  publiczny: "budmax.know-base.app",
-  pracownik: "budmax-pracownik.know-base.app",
-  wlasciciel: "budmax-wlasciciel.know-base.app",
-};
+// TABLICA HOSTÓW PRZENIOSŁA SIĘ DO `klienci.js` (21.08.2026), bo host należy
+// do klienta, nie do produktu. Zasada dopasowania NIE ZMIENIŁA SIĘ: jest
+// dokładne (`Map.get` po pełnej nazwie), nigdy przez podciąg. Host, którego
+// w tablicy nie ma, nie dostaje ani klienta, ani roli — i nie dostaje
+// odpowiedzi. To ta sama strona awaryjna co dotąd, tylko szersza.
+//
+// Jedno rozpoznanie daje OBA wymiary naraz: czyj to host i w jakiej roli.
+function rozpoznajHost(url) {
+  return HOSTY_INDEX.get(url.hostname) || null;
+}
+
+// Który KLIENT stoi pod tym adresem. Jedyne miejsce, które o tym decyduje —
+// przy przejściu na D1 zmieni się ta funkcja i nic poza nią.
+function rozpoznajKlienta(url) {
+  const t = rozpoznajHost(url);
+  return t ? t.klient : null;
+}
+
+// Która ROLA: `publiczny`, `pracownik` albo `wlasciciel`.
+function rolaHosta(url) {
+  const t = rozpoznajHost(url);
+  return t ? t.rola : null;
+}
 
 const ALLOWED_ORIGINS = [
   "https://p0rk1.github.io",              // widget publiczny — GitHub Pages
-  `https://${HOSTY.publiczny}`,           // publiczny host klienta
-  `https://${HOSTY.pracownik}`,           // bot dla pracowników (za Access)
-  `https://${HOSTY.wlasciciel}`,          // panel właściciela (za Access)
+  // Hosty wszystkich klientów. Adresy `stare` celowo NIE wchodzą: mają dalej
+  // przyjmować żądania, ale nie są miejscem, z którego ktokolwiek osadza widget.
+  ...[...HOSTY_INDEX.entries()].filter(([, t]) => !t.stary).map(([host]) => `https://${host}`),
 ];
 
 // Host PRACOWNICZY — aplikacja asystenta budowy, cały host za Access.
 // Osobna funkcja, a nie wklejony warunek: przy multi-tenant zmieni się tu
 // jedno miejsce, nie trzy.
 function hostPracownika(url) {
-  return url.hostname === HOSTY.pracownik;
+  return rolaHosta(url) === "pracownik";
 }
 
 // Host WŁAŚCICIELA — oba panele analityczne. Osobny host, nie ścieżka na hoście
@@ -284,7 +343,7 @@ function hostPracownika(url) {
 // stałaby na poprawnie wpisanym polu `Path`), albo listy e-maili w kodzie.
 // Przy One-time PIN token nie niesie grup, więc nie ma się na czym oprzeć.
 function hostWlasciciela(url) {
-  return url.hostname === HOSTY.wlasciciel;
+  return rolaHosta(url) === "wlasciciel";
 }
 
 // INTERFEJSU CHRONIONEJ POWIERZCHNI NIE SERWUJEMY, DOPÓKI OCHRONY NIE MA.
@@ -308,6 +367,39 @@ function odpowiedzBrakKonfiguracji(url, env, request) {
     `Krok po kroku: ZERO-TRUST.md w repozytorium.\n`,
     { status: 503, headers: { "Content-Type": "text/plain; charset=utf-8", ...corsHeaders(request) } }
   );
+}
+
+// PODSTAWIANIE NAZW W SZABLONACH HTML.
+// Szablony są stringami z placeholderami `{{klucz}}`, wypełnianymi z `klient.ui`.
+// Bez frameworka i bez logiki w szablonie: to ma zamieniać nazwy, a nie budować
+// widoki. Nieznany placeholder zostaje w tekście — widać go od razu na ekranie,
+// zamiast cicho zniknąć.
+function renderHtml(szablon, klient, env, rola) {
+  const dane = { ...klient.ui, przelacznikDemo: przelacznikDemo(env, klient, rola) };
+  return szablon.replace(/\{\{(\w+)\}\}/g, (m, k) => (k in dane ? dane[k] : m));
+}
+
+// PRZEŁĄCZNIK DEMONSTRACYJNY — narzędzie prezentacyjne, nie funkcja produktu.
+//
+// Istnieje WYŁĄCZNIE przy `DEMO = "1"` w [vars]. U klienta tej zmiennej nie ma,
+// więc przełącznika nie ma FIZYCZNIE w wysłanym HTML-u — nie jest ukryty CSS-em
+// ani schowany za warunkiem w JavaScripcie, który da się obejść konsolą.
+//
+// To LISTA LINKÓW do hostów drugiego klienta, a nie kontrolka zmieniająca stan.
+// Nie istnieje ścieżka, w której kliknięcie zmienia przeszukiwaną przestrzeń:
+// zmienia adres, a klient nadal wynika z hosta. Dzięki temu przełącznik nie ma
+// czym niczego zepsuć — najgorsze, co robi, to prowadzi pod adres, który
+// odpowie 404.
+function przelacznikDemo(env, klient, rola) {
+  if (env.DEMO !== "1") return "";
+  const inni = Object.values(KLIENCI).filter((k) => k.id !== klient.id && k.hosty[rola]);
+  if (!inni.length) return "";
+  const linki = inni
+    .map((k) => `<a href="https://${k.hosty[rola]}/" style="color:inherit">${k.ui.nazwaKrotka}</a>`)
+    .join(" · ");
+  return `<div style="position:fixed;left:0;right:0;bottom:0;padding:4px 10px;font:11px/1.4 ui-monospace,monospace;` +
+    `color:#8a8a8a;background:rgba(0,0,0,.55);text-align:center;letter-spacing:.04em;z-index:9999">` +
+    `demo · ${klient.ui.nazwaKrotka} · przełącz na ${linki}</div>`;
 }
 
 function corsHeaders(request) {
@@ -391,8 +483,14 @@ function accessConfig(env, url = null) {
     .trim()
     .replace(/^https?:\/\//, "")
     .replace(/\/+$/, "");
-  const panelowy = url ? hostWlasciciela(url) : false;
-  const nazwaAud = panelowy ? "ACCESS_AUD_PANEL" : "ACCESS_AUD";
+  // Nazwa zmiennej z AUD-em przychodzi z tablicy klienta, po ROLI hosta.
+  // Host nierozpoznany dostaje `ACCESS_AUD` — dokładnie jak przed wprowadzeniem
+  // klientów. To nie jest furtka: żadna trasa nie woła weryfikacji tokenu
+  // wcześniej niż po ustaleniu roli hosta, więc ta gałąź jest osiągalna tylko
+  // w teście jednostkowym, który podstawia własny host.
+  const klient = url ? rozpoznajKlienta(url) : null;
+  const rola = url ? rolaHosta(url) : null;
+  const nazwaAud = (klient && rola && klient.audVars && klient.audVars[rola]) || "ACCESS_AUD";
   const aud = (env[nazwaAud] || "").trim();
   const missing = [];
   if (!teamDomain) missing.push("ACCESS_TEAM_DOMAIN");
@@ -575,14 +673,15 @@ async function embedText(env, text) {
 
 // Która tablica zasila którą przestrzeń. Mapa jest jawna, żeby nie dało się
 // przypadkiem zaindeksować treści wewnętrznej do przestrzeni publicznej.
-function chunksForSpace(space) {
-  if (space === SPACE_PUBLIC) return CHUNKS;
-  if (space === SPACE_INTERNAL) return INTERNAL_CHUNKS;
-  throw new Error(`Nieznana przestrzeń wiedzy: ${space}`);
+function chunksForSpace(klient, rodzaj) {
+  const [r] = assertSpaces([rodzaj]);
+  const tresc = wymagajKlienta(klient).tresc[r];
+  if (!tresc) throw new Error(`Klient ${klient.id} nie ma treści dla przestrzeni „${r}".`);
+  return tresc;
 }
 
-async function handleReindex(env, space) {
-  const source = chunksForSpace(space);
+async function handleReindex(env, klient, rodzaj) {
+  const source = chunksForSpace(klient, rodzaj);
   const BATCH_SIZE = 10; // grupujemy, żeby nie przekroczyć limitu subrequestów na jedno wywołanie Workera
   let inserted = 0;
   for (let i = 0; i < source.length; i += BATCH_SIZE) {
@@ -595,11 +694,15 @@ async function handleReindex(env, space) {
       metadata: {
         title: chunk.title,
         text: chunk.text,
-        space,
+        space: rodzaj,
+        // Pole `klient` w metadanych jest dopisywane teraz, choć nic po nim
+        // jeszcze nie filtruje — dokładnie z tego samego powodu co `role`:
+        // dopisanie go później znaczy reindeks u każdego klienta.
+        klient: klient.id,
         role: chunk.role || DEFAULT_ROLE,
       },
     }));
-    await vectorUpsert(env, vectors, space);
+    await vectorUpsert(env, vectors, klient, rodzaj);
     inserted += batch.length;
   }
   return inserted;
@@ -747,7 +850,7 @@ function progCytowania(sentence) {
 // te same zdania trzeba podać: „Przysługuje ci rabat do 3 procent" to dokładnie
 // treść i39, po którą przyszedł. Wzorce o wolnych terminach i o zdążeniu
 // zostają w OBU trybach — zmyślony termin szkodzi wewnątrz tak samo.
-function isUnsupportablePromise(s, tryb = PROMPT_PUBLICZNY) {
+function isUnsupportablePromise(s, tryb = PROMPT_PUBLICZNY, klient = null) {
   const t = s.toLowerCase();
 
   // Zdanie zaprzeczające ("nie oferujemy rabatów") albo odsyłające do biura
@@ -763,14 +866,21 @@ function isUnsupportablePromise(s, tryb = PROMPT_PUBLICZNY) {
     /(będziemy się starać|postaramy się|zdążymy|jesteśmy w stanie zdążyć)/,
   ];
 
-  // Wyłącznie tryb publiczny: rabaty, upusty i stawki. Wewnątrz to nie jest
-  // obietnica złożona klientowi, tylko informacja o progach decyzyjnych.
-  const tylkoPubliczne = [
-    /(oferujemy|udzielamy|mamy|przysługuj|możemy zaoferować).{0,30}(rabat|zniżk|upust)/,
-    /(rabat|zniżk|upust).{0,30}(oferujemy|udzielamy|możliwe|dostępn)/,
-    /niższy vat|lepsze ceny w hurtown|taniej w hurtown/,
-    /płacisz z góry|płatność z góry/,
-  ];
+  // Wyłącznie tryb publiczny: wzorce BRANŻOWE, z tablicy klienta. Wewnątrz to
+  // nie jest obietnica złożona klientowi, tylko informacja o progach decyzyjnych.
+  //
+  // Od 21.08.2026 nie ma ich w tym pliku: rabat w hurtowni i „niższy VAT" to
+  // proteza pod budowlankę, a nie własność produktu. U kancelarii tę samą rolę
+  // pełnią szanse wygranej i zapewnienia o przedawnieniu. Wspólne wzorce wyżej
+  // zostały — deklaracja wolnego terminu jest groźna w każdej branży.
+  //
+  // Brak klienta w trybie publicznym jest BŁĘDEM, nie powodem do pobłażliwości:
+  // cicha praca z połową wzorców to dokładnie ten rodzaj osłabienia warstwy,
+  // którego przez pół roku nikt by nie zauważył.
+  if (tryb !== PROMPT_WEWNETRZNY && !klient) {
+    throw new Error("Tryb publiczny wymaga klienta — bez niego nie ma wzorców branżowych.");
+  }
+  const tylkoPubliczne = klient ? (klient.obietnicePubliczne || []) : [];
 
   const patterns = tryb === PROMPT_WEWNETRZNY ? wspolne : [...wspolne, ...tylkoPubliczne];
   return patterns.some((p) => p.test(t));
@@ -839,7 +949,7 @@ function isDuplicate(sentence, alreadyKept) {
   return false;
 }
 
-async function verifyClaims(fullText, filtered, env, tryb = PROMPT_PUBLICZNY, userQuestion = "") {
+async function verifyClaims(fullText, filtered, env, klient, tryb = PROMPT_PUBLICZNY, userQuestion = "") {
   const claims = splitSentences(fullText);
   const toCheck = claims.length ? claims : [fullText];
 
@@ -858,7 +968,7 @@ async function verifyClaims(fullText, filtered, env, tryb = PROMPT_PUBLICZNY, us
     }
 
     const numbersOk = numbersAreGrounded(toCheck[i], filtered, tryb, userQuestion);
-    const promiseOk = !isUnsupportablePromise(toCheck[i], tryb);
+    const promiseOk = !isUnsupportablePromise(toCheck[i], tryb, klient);
 
     // Zdania zdradzające instrukcje lub powtarzające już powiedzianą treść
     // usuwamy po cichu — to defekt formy, nie brak pokrycia w dokumentacji,
@@ -897,7 +1007,7 @@ async function verifyClaims(fullText, filtered, env, tryb = PROMPT_PUBLICZNY, us
   // Jeśli po wycięciu nie zostało żadne twierdzenie oparte na dokumentacji,
   // odpowiedź jest pusta merytorycznie — lepiej odesłać do biura.
   if (factualKept === 0) {
-    return { ok: false, fallback: FALLBACK_MESSAGE, cicho };
+    return { ok: false, fallback: wymagajKlienta(klient).prompt.fallback, cicho };
   }
 
   let text = kept.join(" ");
@@ -984,97 +1094,33 @@ function bezOgonkow(s) {
     .replace(/[\u0300-\u036f]/g, "");
 }
 
-const ESKALACJA_KONTAKT = "kierownik budowy";
-
 // Rama informacyjna — pytanie o REGUŁĘ, nie o zdarzenie. Wetuje eskalację
 // wyłącznie w kategoriach o niskiej pilności.
 const RAMA_INFORMACYJNA = /(?<![a-z0-9])(co ile|jak czesto|jakie sa zasady|jaki jest (wymog|termin|limit)|ile wynosi|kto (zglasza|prowadzi|odpowiada)|w jakim (czasie|terminie)|czy musze miec|co obejmuje|jak dokumentujemy|z jakim wyprzedzeniem|jakie srodki ochrony|kiedy odnawiamy)/;
 
-const KATEGORIE_ESKALACJI = [
-  {
-    id: "wypadek",
-    pilne: true,
-    // Słownictwo ZDARZENIOWE, nie tematyczne. Nie ma tu „rusztowania",
-    // „wysokości" ani „szkolenia" — to tematy, przy których nikt nie leży
-    // na ziemi. Właśnie ta różnica ma odsiewać fałszywe wyzwolenia.
-    // Rdzenie JEDNOZNACZNE — wyzwalają same, bo w mowie budowlanej nie znaczą
-    // nic innego niż zdarzenie z człowiekiem.
-    // `uraz(?![ae])` rozbraja homonim morfologicznie, nie kontekstem: uraz jako
-    // szkoda na zdrowiu odmienia się „uraz/urazu/urazie", a uraza jako pretensja
-    // — „uraza/urazę" (po zdjęciu ogonków: „uraze"). Warunek kontekstowy był tu
-    // za wąski: „Pracownika ukąsiła żmija, doznał urazu" nie nazywa części ciała.
-    // RZECZOWNIKI URAZOWE dodane 21.08.2026. Wzorzec miał wyłącznie rdzenie
-    // czasownikowe i przymiotnikowe (`krwaw` łapie „krwawi"), więc gubił
-    // najczęstszą formę potoczną: „leci krew". Pytanie o gwóźdź w stopie nie
-    // zawierało ani nazwy urazu, ani rdzenia `krwaw` — tylko rzeczownik.
-    //
-    // `krew` NIE wymaga warunku kontekstowego jak rdzenie dwuznaczne: sam
-    // rzeczownik wystarcza, bo poza dwoma idiomami nie znaczy nic innego.
-    // Oba idiomy są wyłączone jawnie i zmierzone: „zachowaj zimną krew"
-    // (rozmowa z klientem) oraz „krew z nosa" (byle na jutro).
-    zdarzenie: /(?<![a-z0-9])(wypad(ek|ku|kiem|ki)|poszkodowan|uraz(?![ae])|doznal|ranny|zrani|skalecz|przygniot|poparz|oparzen|krwaw|krwotok|(?<!zimna )(krew|krwi)(?! z nosa)|ran[aey]|rozcie(c|t)|obrazen|opatrun|nadzia|nieprzytomn|stracil przytomnosc|zaslab|zemdla|karetk|pogotowi)/,
-    // Rdzenie DWUZNACZNE — te same litery znaczą na budowie coś innego:
-    // „potrącimy z faktury", „złamał procedurę", „ma do mnie urazę", „koszt
-    // spadł z 40 zł". Zmierzone 21.08.2026: siedem na dziesięć zwykłych zdań
-    // z budowy dostawało ramkę PILNE. Dlatego wyzwalają dopiero z drugim
-    // sygnałem — obecnością człowieka albo części ciała.
-    // Każdy rdzeń z własnym warunkiem — patrz CIALO / OFIARA / WYSOKOSC wyżej.
-    dwuznaczne: [
-      { wzorzec: /(?<![a-z0-9])zlama/, kontekst: () => CIALO },
-      { wzorzec: /(?<![a-z0-9])potrac/, kontekst: () => OFIARA },
-      { wzorzec: /(?<![a-z0-9])(spadl z|upadl z|spadl ze|upadl ze)/, kontekst: () => WYSOKOSC },
-    ],
-    tekst: `NAJPIERW POWIADOM: przy urazie zagrażającym życiu dzwoń pod 112, zaraz potem do kierownika budowy — zanim wykonasz cokolwiek z poniższego. Wypadku nie rozliczasz sam: o zgłoszeniach i terminach decyduje kierownik budowy.`,
-  },
-  {
-    id: "zagrozenie_zycia",
-    pilne: true,
-    zdarzenie: /(?<![a-z0-9])(zagrozenie zycia|zagraza zyciu|nie oddycha|reanimac|pozar|pali sie|ulatnia sie|(czuc|zapach|wyciek|ulatnia).{0,20}gaz|porazeni|porazi|iskrzy|grozi zawaleniem|osuna|osune|osunal|zerwal sie|urwal sie|uwiezion|przysypa|zasypa)/,
-    // „zawalił termin" i „ekipa zawaliła robotę" to najczęstsze zdania na
-    // budowie, a nie katastrofa budowlana. Samo „grozi zawaleniem" zostaje
-    // wyżej jako jednoznaczne.
-    dwuznaczne: [
-      { wzorzec: /(?<![a-z0-9])(zawali|zawal[ae])/, kontekst: () => PODMIOT_KONSTRUKCJA },
-    ],
-    tekst: `NAJPIERW POWIADOM: dzwoń pod 112, zaraz potem do kierownika budowy — natychmiast, zanim zrobisz cokolwiek innego. Przy bezpośrednim zagrożeniu życia decyzję podejmują służby i kierownik budowy, nie ten bot.`,
-  },
-  {
-    id: "spor_prawny",
-    pilne: false,
-    zdarzenie: /(?<![a-z0-9])(grozi (sadem|pozwem)|pozew|pozwie|do sadu|roszczen|odszkodowan|zadoscuczynien|adwokat|radc[aey] prawn|kancelari|wezwanie do zaplaty|przedsadow|sprawa sadowa|poda[c] nas do sadu)/,
-    tekst: `SKIERUJ DO PRZEŁOŻONEGO: nie odpowiadaj na roszczenie ani groźbę na własną rękę i nie składaj żadnych oświadczeń. Zgłoś sprawę kierownikowi budowy tego samego dnia — to on decyduje o kontakcie z biurem i obsługą prawną.`,
-  },
-  {
-    id: "kontrola",
-    pilne: false,
-    // DWA sygnały naraz: organ ORAZ jego obecność albo żądanie. Sam „PIP"
-    // w pytaniu o terminy zgłoszeń to pytanie o regułę, nie kontrola na placu.
-    zdarzenie: /(?<![a-z0-9])(pip(?![a-z])|inspekcj[aie] pracy|inspektor(a|owi|em)? pracy|nadzor(u|owi|em)? budowlan|pinb(?![a-z])|sanepid|straz(y)? pozarn)/,
-    // `zada` z ograniczonym ogonem, żeby „żąda" nie łapało „zadanie" i „zadaj".
-    drugiSygnal: /(?<![a-z0-9])(przyjecha[l]|przysz(edl|la)|jest na budowie|na miejscu|kontrol|zada(c|l|la|ja)?(?![a-z])|wezwa|zjawi[l]|legitymuje|zabezpiecz(a|yl) dokument)/,
-    tekst: `SKIERUJ DO PRZEŁOŻONEGO: rozmowę z kontrolą prowadzi wyłącznie kierownik budowy. Powiadom go natychmiast i nie ustalaj niczego z kontrolującym samodzielnie.`,
-  },
-  {
-    id: "finanse_prog",
-    pilne: false,
-    // Trzy sygnały: pieniądze + decyzja + przekroczony próg z dokumentacji
-    // (3% rabatu handlowca, 300 zł zakupu drobnego brygadzisty).
-    zdarzenie: /(?<![a-z0-9])(rabat|upust|znizk|marz|zaliczk|gotowk|kwot|zlot|tysiecy|procent)/,
-    drugiSygnal: /(?<![a-z0-9])(czy moge|mam prawo|moge (zejsc|dac|kupic|zamowic|udzielic)|czy dac|zatwierdz|akceptacj|zgod[aey]|decyduj|podpisa|obniz)/,
-    prog: true,
-    tekst: `SKIERUJ DO PRZEŁOŻONEGO: tej decyzji nie podejmujesz sam. Zgodę wydaje osoba wskazana w progach decyzyjnych — uzyskaj ją PRZED rozmową z klientem, nie po niej.`,
-  },
-];
+// SŁOWNIKI BRANŻOWE PRZENIOSŁY SIĘ DO OSOBNYCH PLIKÓW (21.08.2026).
+// Tablica kategorii, dopełnienia rdzeni dwuznacznych (części ciała, wysokość,
+// konstrukcja), progi decyzyjne i teksty ramek żyją w `eskalacja-budowlana.js`
+// i przychodzą tu przez `klient.eskalacja`. Tutaj został MECHANIZM: weto ramy
+// informacyjnej, zasada „rdzeń dwuznaczny wyzwala dopiero ze swoim
+// dopełnieniem", rozstrzyganie przy wielu trafieniach i pozycja ramki.
+//
+// Rozdzielenie jest zarazem odpowiedzią na pytanie, po co była druga branża:
+// protezą pod budowlankę okazały się WZORCE, nie reguły. Reguły przeniosły się
+// bez zmian — u kancelarii `pilne` przestaje znaczyć „ktoś leży na ziemi"
+// i zaczyna znaczyć „termin jest nieodwracalny", ale sposób rozstrzygania
+// między kategoriami jest ten sam.
 
-// Czy w pytaniu pada kwota powyżej najniższego progu decyzyjnego (300 zł)
-// albo procent powyżej samodzielnego rabatu handlowca (3%). Progi pochodzą
-// z i39 i i41 — gdy tam się zmienią, tu też trzeba je zmienić.
-function przekroczonyProgDecyzyjny(pytanie) {
+// Czy w pytaniu pada kwota albo procent powyżej progu, od którego decyzja
+// przestaje należeć do pracownika. Same wartości są branżowe i przychodzą
+// z `klient.eskalacja.progi` — u BudMaksu 3% i 300 zł, z fragmentów i39 i i41.
+function przekroczonyProgDecyzyjny(pytanie, progi) {
+  if (!progi) throw new Error("Kategoria z progiem decyzyjnym wymaga progów klienta.");
   const t = bezOgonkow(pytanie);
   const procenty = [...t.matchAll(/(\d+(?:[.,]\d+)?)\s*(?:procent|proc\.|%)/g)]
     .map((m) => parseFloat(m[1].replace(",", ".")));
-  if (procenty.some((p) => p > 3)) return true;
-  return extractNumbers(t).map(Number).some((k) => k >= 300);
+  if (procenty.some((p) => p > progi.procent)) return true;
+  return extractNumbers(t).map(Number).some((k) => k >= progi.kwota);
 }
 
 // Wykrywa kategorię eskalacji. Zwraca null albo { id, pilne, tekst }.
@@ -1095,20 +1141,18 @@ function przekroczonyProgDecyzyjny(pytanie) {
 // z czego ktoś spadł. Dlatego każdy rdzeń dwuznaczny ma własny warunek, a nie
 // wspólną listę. To nadal warunek, nie lista sformułowań wypadku: wypadków
 // wyliczyć się nie da, części ciała i wysokości owszem.
-const CIALO = /(?<![a-z0-9])(nog[aeię]|rek[aeęi]|reka|dlon|palec|palca|palce|glow[aęy]|stop[aeęy]|kregoslup|zebro|zebra|obojczyk|kostk|kolano|bark|nadgarstek|kark|klatk|oko|oczy|plecy|czaszk|krwi|krew|ran[aęy]|opatrun|szpital|karetk|pogotowi|bol[iu]|zwichn|siniak)/;
-const OFIARA = /(?<![a-z0-9])(pracownik|pracownic|koleg|brygadzist|majstr|majster|monter|murarz|ciesl|elektryk|dekarz|operator|mlod|czlowiek|osob|poszkodowan|kogos|ktos)/;
-const WYSOKOSC = /(?<![a-z0-9])(rusztowani|drabin|dach|stropu|stropie|wysokosc|pietr|schod|podest|wykop|pomost)/;
-const PODMIOT_KONSTRUKCJA = /(?<![a-z0-9])(scian|strop|wykop|skarp|rusztowani|budynek|budynku|budynkiem|dach|mur|nasyp|szalunek|szalunk|konstrukcj|belk|nadproz)/;
+// Same słowniki dopełnień są w pliku branżowym — każdy rdzeń dwuznaczny niesie
+// swój warunek ze sobą, w polu `kontekst`.
 
 // Ile NIEZALEŻNYCH sygnałów przemawia za tą kategorią.
 // Liczymy różne dopasowania, nie liczbę znaków: dwa różne słowa alarmowe to
 // mocniejsza przesłanka niż jedno powtórzone.
-function liczbaSygnalow(k, t, pytanie) {
+function liczbaSygnalow(k, t, pytanie, progi) {
   let ile = 0;
   if (k.zdarzenie && k.zdarzenie.test(t)) ile++;
   if (dwuznacznyZKontekstem(k, t)) ile++;
   if (k.drugiSygnal && k.drugiSygnal.test(t)) ile++;
-  if (k.prog && przekroczonyProgDecyzyjny(pytanie)) ile++;
+  if (k.prog && przekroczonyProgDecyzyjny(pytanie, progi)) ile++;
   return ile;
 }
 
@@ -1138,24 +1182,32 @@ function dwuznacznyZKontekstem(k, t) {
 // sygnałów. Gdyby tak było, „wypadek, przyjechała PIP" wybrałoby kontrolę,
 // bo ta ma dwa sygnały z definicji. Dlatego porównanie liczby sygnałów
 // odbywa się WEWNĄTRZ tego samego poziomu pilności.
-function wykryjEskalacje(pytanie, askedFrom) {
-  if (askedFrom !== SPACE_INTERNAL) return null; // publiczny bot nie eskaluje do brygadzisty
+function wykryjEskalacje(pytanie, askedFrom, klient) {
+  if (askedFrom !== SPACE_INTERNAL) return null; // publiczny bot nie eskaluje do przełożonego
+  // Pakiet branżowy jest OBOWIĄZKOWY, a jego brak jest błędem, nie ciszą.
+  // Cichy zwrot null przy braku pakietu wyłączyłby całą warstwę bezpieczeństwa
+  // bez jednego śladu — a to jest ta warstwa, przy której koszt milczenia
+  // liczy się w zdrowiu, nie w złej recenzji.
+  const pakiet = wymagajKlienta(klient).eskalacja;
+  if (!pakiet || !Array.isArray(pakiet.kategorie)) {
+    throw new Error(`Klient ${klient.id} nie ma słownika eskalacji.`);
+  }
   const t = bezOgonkow(pytanie);
   const informacyjne = RAMA_INFORMACYJNA.test(t);
 
   const trafione = [];
-  for (const k of KATEGORIE_ESKALACJI) {
+  for (const k of pakiet.kategorie) {
     const jednoznaczne = k.zdarzenie && k.zdarzenie.test(t);
     const przezDwuznaczny = dwuznacznyZKontekstem(k, t);
     if (!jednoznaczne && !przezDwuznaczny) continue;
     if (k.drugiSygnal && !k.drugiSygnal.test(t)) continue;
-    if (k.prog && !przekroczonyProgDecyzyjny(pytanie)) continue;
+    if (k.prog && !przekroczonyProgDecyzyjny(pytanie, pakiet.progi)) continue;
     // Weto ramy informacyjnej obowiązuje TYLKO tam, gdzie fałszywy alarm boli
     // bardziej niż przeoczenie. Przy wypadku i zagrożeniu życia nie obowiązuje:
     // „kto zgłasza wypadek śmiertelny" dostanie ramkę i dobrze, bo koszt to
     // jedno zdanie za dużo, a koszt przeoczenia to zdrowie.
     if (!k.pilne && informacyjne) continue;
-    trafione.push({ k, sygnaly: liczbaSygnalow(k, t, pytanie), kolejnosc: trafione.length });
+    trafione.push({ k, sygnaly: liczbaSygnalow(k, t, pytanie, pakiet.progi), kolejnosc: trafione.length });
   }
   if (!trafione.length) return null;
 
@@ -1195,6 +1247,11 @@ function zlozZEskalacja(tekst, esk) {
 // okazji.
 // ============================================================
 
+// Stała pomocnicza — łamanie linii wewnątrz szablonu promptu. Sekwencja
+// ucieczki w miejscu sklejania listy zakazów jest trudna do odczytania
+// i łatwa do zepsucia przy edycji skryptem.
+const NOWA_LINIA = "\n";
+
 // Rdzeń rzetelności — obowiązuje w OBU trybach. Tryb wewnętrzny zmienia to,
 // co wolno powiedzieć rozmówcy, a nie to, czy wolno to zmyślić.
 const PROMPT_RDZEN = {
@@ -1203,7 +1260,10 @@ const PROMPT_RDZEN = {
   // Zdanie musi zostać dosłowne w obu trybach: handleAsk() rozpoznaje brak
   // odpowiedzi wyrażeniem /nie mam takich informacji/i na surowym tekście
   // modelu. Inne sformułowanie w trybie wewnętrznym rozjechałoby tę ścieżkę.
-  brakInformacji: `Jeśli żaden fragment nie zawiera wprost odpowiedzi na pytanie, powiedz dokładnie: "${FALLBACK_MESSAGE}" i nic więcej.`,
+  // Zdanie odmowne należy do klienta, więc rdzeń dostaje je parametrem zamiast
+  // wklejać stałą. Reguła się nie zmienia: sformułowanie musi być DOSŁOWNE,
+  // bo handleAsk() rozpoznaje po nim brak odpowiedzi.
+  brakInformacji: (fallback) => `Jeśli żaden fragment nie zawiera wprost odpowiedzi na pytanie, powiedz dokładnie: "${fallback}" i nic więcej.`,
 };
 
 const PROMPT_PUBLICZNY = "publiczny";
@@ -1219,9 +1279,10 @@ function trybPromptu(space) {
   throw new Error(`Nieznana przestrzeń dla trybu promptu: ${space}`);
 }
 
-function buildSystemPrompt(contextChunks, tryb) {
-  if (tryb === PROMPT_PUBLICZNY) return buildPublicSystemPrompt(contextChunks);
-  if (tryb === PROMPT_WEWNETRZNY) return buildInternalSystemPrompt(contextChunks);
+function buildSystemPrompt(contextChunks, tryb, klient) {
+  wymagajKlienta(klient);
+  if (tryb === PROMPT_PUBLICZNY) return buildPublicSystemPrompt(contextChunks, klient);
+  if (tryb === PROMPT_WEWNETRZNY) return buildInternalSystemPrompt(contextChunks, klient);
   throw new Error(`Nieznany tryb promptu: ${tryb}`);
 }
 
@@ -1229,34 +1290,34 @@ function formatContext(contextChunks) {
   return contextChunks.map((c) => `[${c.title}]\n${c.text}`).join("\n\n");
 }
 
-function buildPublicSystemPrompt(contextChunks) {
+// Z promptu wyszły tylko te fragmenty, które MÓWIĄ O BRANŻY: nazwa firmy,
+// rozróżnienia mylonych usług, zakazy branżowe i jedno określenie w regule tonu.
+// Struktura, kolejność akapitów i rdzeń rzetelności zostały nietknięte — prompt
+// publiczny jest kalibrowany od wielu sesji i ta zmiana ma być dla niego
+// niewidoczna. Sprawdzone bajt w bajt na migawce sprzed refaktoru.
+function buildPublicSystemPrompt(contextChunks, klient) {
   const contextText = formatContext(contextChunks);
-  return `Jesteś asystentem AI na stronie firmy ${COMPANY_NAME}. Odpowiadasz WYŁĄCZNIE na podstawie poniższych fragmentów dokumentacji, prostym i przyjaznym językiem. Bierz pod uwagę wcześniejsze wiadomości w rozmowie, żeby rozumieć pytania nawiązujące do poprzednich (np. "a co z...", "ile to będzie kosztować"). Dopasuj długość odpowiedzi do pytania.
+  const p = klient.prompt;
+  return `Jesteś asystentem AI na stronie firmy ${klient.nazwa}. Odpowiadasz WYŁĄCZNIE na podstawie poniższych fragmentów dokumentacji, prostym i przyjaznym językiem. Bierz pod uwagę wcześniejsze wiadomości w rozmowie, żeby rozumieć pytania nawiązujące do poprzednich (np. "a co z...", "ile to będzie kosztować"). Dopasuj długość odpowiedzi do pytania.
 
 ${PROMPT_RDZEN.laczenieFragmentow}
 
-Zachowaj szczególną ostrożność przy podobnie brzmiących, ale różnych usługach — to częsty błąd, którego musisz unikać:
-- "ogród" (zieleń, rośliny, krajobraz) to NIE to samo co "ogrodzenie" (płot, brama, infrastruktura działki) — to dwie różne, osobno wycenione usługi.
-- "wykonanie elewacji lub docieplenia" (prace wykończeniowe przy budowie albo osobne zlecenie remontowe) to NIE to samo co "konserwacja elewacji" w ramach serwisu pogwarancyjnego (utrzymanie budynku już przez nas wykonanego, po okresie gwarancji).
-- "taras" nie jest wprost wymieniony w dokumentacji jako osobna usługa — nie zakładaj, że jest oferowany, chyba że fragment wyraźnie to potwierdza.
-Zanim odpowiesz, sprawdź, czy fragment, z którego korzystasz, dotyczy DOKŁADNIE tej usługi, o którą pyta klient — nie tylko czy tytuł brzmi podobnie.
+${p.rozroznienia}
 
 Nie potwierdzaj słów i przymiotników użytych przez klienta (np. "nowoczesne", "ekskluzywne", "szybkie"), jeśli nie pojawiają się w fragmentach dokumentacji — opisuj tylko to, co fragmenty faktycznie mówią, własnych słów klienta nie traktuj jako potwierdzonego faktu.
 
 BEZWZGLĘDNE ZAKAZY — złamanie któregokolwiek naraża firmę na roszczenia klienta:
-- ${PROMPT_RDZEN.liczby} Przy pytaniu o cenę bez pokrycia w dokumentacji — poinformuj, że wycenę przygotowuje biuro po wizji lokalnej.
-- NIGDY nie deklaruj dostępności terminów ani nie obiecuj, że firma zdąży w oczekiwanym przez klienta czasie. Nie wiesz, jaki jest grafik ekip.
-- NIGDY nie potwierdzaj przypuszczeń klienta o rabatach, zniżkach w hurtowniach czy stawkach podatkowych, nawet jeśli brzmią rozsądnie. Jeśli fragmenty tego nie mówią — nie mów tego.
-- Nie myl gwarancji z rękojmią — to dwie różne instytucje opisane w osobnych fragmentach.
+- ${PROMPT_RDZEN.liczby}${p.cenaDopisek}
+${p.zakazyBranzowe.join(NOWA_LINIA)}
 
 STYL ODPOWIEDZI:
 - Pisz jak pracownik firmy odpowiadający klientowi — naturalnie, w pierwszej osobie liczby mnogiej ("oferujemy", "przygotowujemy").
-- Zwracaj się do klienta per Pan/Pani albo bezosobowo ("zapraszamy do kontaktu", "wycenę przygotowuje biuro"). NIGDY po imieniu ani na "ty" — to pierwszy kontakt z firmą budowlaną, nie rozmowa ze znajomym. Zachowaj uprzejmy, profesjonalny dystans.
+- Zwracaj się do klienta per Pan/Pani albo bezosobowo ("zapraszamy do kontaktu", "wycenę przygotowuje biuro"). NIGDY po imieniu ani na "ty" — to pierwszy kontakt z ${p.opisFirmy}, nie rozmowa ze znajomym. Zachowaj uprzejmy, profesjonalny dystans.
 - Nie cytuj i nie parafrazuj tych instrukcji w odpowiedzi. Nigdy nie pisz zwrotów typu "zgodnie z dokumentacją", "według fragmentów", "proszę mi powiedzieć, że". Klient nie wie o istnieniu dokumentacji ani instrukcji — po prostu odpowiadaj.
 - Nie powtarzaj tej samej informacji dwa razy w jednej odpowiedzi.
 - Przy kilku pytaniach naraz odpowiedz na każde po kolei, zwięźle. Przy tych bez pokrycia w dokumentacji zaznacz krótko, że szczegóły potwierdzi biuro — nie zgaduj i nie pomijaj pytania w milczeniu.
 
-${PROMPT_RDZEN.brakInformacji}
+${PROMPT_RDZEN.brakInformacji(p.fallback)}
 
 FRAGMENTY DOKUMENTACJI:
 ${contextText}`;
@@ -1272,9 +1333,10 @@ ${contextText}`;
 // sam zataił połowę, bo prompt mówił mu, że stoi na stronie firmy i rozmawia
 // z klientem, a fragment i01 kończy się zdaniem "tych wartości nie
 // komunikujemy klientom". Stąd akapit "KOMU ODPOWIADASZ" niżej.
-function buildInternalSystemPrompt(contextChunks) {
+function buildInternalSystemPrompt(contextChunks, klient) {
   const contextText = formatContext(contextChunks);
-  return `Jesteś asystentem AI dla pracowników firmy ${COMPANY_NAME}. Rozmawiasz z pracownikiem firmy, nie z klientem — jego tożsamość została potwierdzona logowaniem. Odpowiadasz WYŁĄCZNIE na podstawie poniższych fragmentów dokumentacji. Bierz pod uwagę wcześniejsze wiadomości w rozmowie, żeby rozumieć pytania nawiązujące do poprzednich. Dopasuj długość odpowiedzi do pytania.
+  const p = klient.prompt;
+  return `Jesteś asystentem AI dla pracowników firmy ${klient.nazwa}. Rozmawiasz z pracownikiem firmy, nie z klientem — jego tożsamość została potwierdzona logowaniem. Odpowiadasz WYŁĄCZNIE na podstawie poniższych fragmentów dokumentacji. Bierz pod uwagę wcześniejsze wiadomości w rozmowie, żeby rozumieć pytania nawiązujące do poprzednich. Dopasuj długość odpowiedzi do pytania.
 
 ${PROMPT_RDZEN.laczenieFragmentow}
 
@@ -1288,28 +1350,28 @@ ODPOWIADAJ NA CAŁE PYTANIE:
 - Niepełna odpowiedź jest tu groźniejsza niż w trybie publicznym: pracownik nie wie, czego nie dostał, i podejmie decyzję na połowie danych.
 
 TON — instruktażowy, nie sprzedażowy:
-- Pisz w trybie rozkazującym, do wykonania: "przerwij pracę", "powiadom kierownika budowy", "zgłoś w raporcie tygodniowym do piątku do 14". Nie pisz "firma prowadzi procedurę zgłoszenia" ani "pracownicy powinni rozważyć".
+- Pisz w trybie rozkazującym, do wykonania: ${p.przykladyRozkazow}. Nie pisz "firma prowadzi procedurę zgłoszenia" ani "pracownicy powinni rozważyć".
 - Gdy fragment opisuje CZYNNOŚCI DO WYKONANIA, wypisz je jako kroki w kolejności wykonania — każdy krok w osobnej linii, zaczynając od czasownika.
 - Gdy fragment opisuje stan rzeczy, uprawnienia, definicję albo zakres czyjejś roli, odpowiedz zwykłymi zdaniami. NIE zamieniaj opisu w listę poleceń i nie dorabiaj kroków tam, gdzie fragment żadnej procedury nie zawiera. Lista kroków wyciągnięta z opisu gubi połowę treści i sugeruje procedurę, której nie ma.
-- ZACHOWAJ ADRESATA Z FRAGMENTU, nawet wbrew pytaniu. Jeśli fragment mówi, że coś robi albo coś dostaje kierownik budowy, brygadzista czy kadry — napisz to o nich, nie o rozmówcy. Rozkazujący ton dotyczy tego, co ma zrobić rozmówca, a nie tego, czyje są cudze obowiązki.
-- Pytanie bywa postawione z błędnym założeniem, kogo dotyczy — na przykład "czego inspektor może żądać ODE MNIE", podczas gdy fragment mówi, że polecenia inspektora odbiera kierownik budowy. Wtedy nie przejmuj tego założenia: sprostuj je pierwszym zdaniem, a dopiero potem podaj treść. Powtórzenie cudzego błędu w adresacie jest w instrukcji równie groźne jak zmyślona liczba — pracownik wykona cudzy obowiązek albo zaniecha własnego.
-- Sprostowanie dopisuj WYŁĄCZNIE wtedy, gdy samo pytanie przypisuje rozmówcy obowiązek, który we fragmencie należy do kogoś innego. Gdy pytanie brzmi neutralnie — "kto może wpisywać do dziennika", "kto zamawia materiał" — po prostu odpowiedz, kto. Nie zaczynaj wtedy od zdania o tym, czego rozmówca nie robi, i nie wciągaj do odpowiedzi cudzych obowiązków, o które nikt nie pytał.
+- ZACHOWAJ ADRESATA Z FRAGMENTU, nawet wbrew pytaniu. Jeśli fragment mówi, że coś robi albo coś dostaje ${p.przykladyRol} — napisz to o nich, nie o rozmówcy. Rozkazujący ton dotyczy tego, co ma zrobić rozmówca, a nie tego, czyje są cudze obowiązki.
+- Pytanie bywa postawione z błędnym założeniem, kogo dotyczy — ${p.przykladSprostowania}. Wtedy nie przejmuj tego założenia: sprostuj je pierwszym zdaniem, a dopiero potem podaj treść. Powtórzenie cudzego błędu w adresacie jest w instrukcji równie groźne jak zmyślona liczba — pracownik wykona cudzy obowiązek albo zaniecha własnego.
+- Sprostowanie dopisuj WYŁĄCZNIE wtedy, gdy samo pytanie przypisuje rozmówcy obowiązek, który we fragmencie należy do kogoś innego. Gdy pytanie brzmi neutralnie — ${p.przykladyNeutralne} — po prostu odpowiedz, kto. Nie zaczynaj wtedy od zdania o tym, czego rozmówca nie robi, i nie wciągaj do odpowiedzi cudzych obowiązków, o które nikt nie pytał.
 - Podawaj konkrety dokładnie tak, jak stoją we fragmentach: liczby, progi, terminy, nazwy stanowisk odpowiedzialnych i wymagany sprzęt.
 - Nie zwracaj się per Pan/Pani i nie prowadź rozmowy handlowej. To narzędzie pracy, nie kontakt z klientem.
 
 ŹRÓDŁO — obowiązkowe, ważniejsze niż w trybie publicznym:
 - Zakończ odpowiedź osobną, ostatnią linią w formacie: Podstawa: <tytuł fragmentu>
 - Przy kilku wykorzystanych fragmentach wymień tytuły po przecinku, w tej linii.
-- Pracownik musi móc sprawdzić podstawę w dokumencie — przy BHP i kadrach zależy od tego jego bezpieczeństwo i rozliczenie czasu pracy.
+- Pracownik musi móc sprawdzić podstawę w dokumencie — ${p.stawkaWewnetrzna}.
 - Sam tytuł w linii "Podstawa:" wystarcza. Nie pisz w treści odpowiedzi zwrotów typu "zgodnie z dokumentacją", "według fragmentów" ani "na podstawie fragmentów".
 
 BEZWZGLĘDNE ZAKAZY — obowiązują tak samo jak w trybie publicznym:
 - ${PROMPT_RDZEN.liczby} Zatajać liczb nie wolno, ale wymyślać ich nie wolno tym bardziej — brak liczby we fragmentach znaczy, że jej nie podajesz.
-- NIGDY nie opisuj procedury, kroku ani kolejności, których nie ma we fragmentach. Nie uzupełniaj procedury BHP ani kadrowej "zdrowym rozsądkiem" — brakujący krok w instrukcji jest groźniejszy niż brak instrukcji.
+- NIGDY nie opisuj procedury, kroku ani kolejności, których nie ma we fragmentach. ${p.zakazUzupelniania}
 - NIGDY nie podawaj wartości wewnętrznej, której we fragmentach nie ma, tylko dlatego że rozmawiasz z pracownikiem. Ten tryb zdejmuje zakaz ujawniania, nie zakaz zmyślania.
 - Nie myl wymagań obowiązkowych z zalecanymi — jeśli fragment mówi "wymaga", nie pisz "warto".
 
-${PROMPT_RDZEN.brakInformacji}
+${PROMPT_RDZEN.brakInformacji(p.fallback)}
 
 FRAGMENTY DOKUMENTACJI:
 ${contextText}`;
@@ -1331,7 +1393,7 @@ function sanitizeHistory(rawHistory) {
 //
 // `eskalacja` (opcjonalny) — obiekt eskalacji z wykryjEskalacje(). Zapisujemy
 // tylko ID kategorii, żeby panel wewnętrzny mógł pokazać statystyki zdarzeń.
-async function logQuestion(env, question, gap, source, space = SPACE_PUBLIC, cicho = null, eskalacja = null) {
+async function logQuestion(env, question, gap, source, space = SPACE_PUBLIC, cicho = null, eskalacja = null, klientId = null) {
   if (!env.RATE_LIMIT_KV) return;
   try {
     const key = `log:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
@@ -1340,6 +1402,9 @@ async function logQuestion(env, question, gap, source, space = SPACE_PUBLIC, cic
       gap,
       source: source || null,
       space,
+      // Wpisy są od 21.08.2026 podpisane klientem. Bez tego panel właściciela
+      // jednej firmy pokazywałby pytania zadane drugiej — jeden log, jeden KV.
+      ...(klientId ? { klient: klientId } : {}),
       // Ślad po warstwach usuwających zdania bez informowania pytającego.
       // Zapisujemy tylko wtedy, gdy coś faktycznie zniknęło — pusty obiekt
       // w każdym wpisie logu to koszt bez wartości.
@@ -1353,6 +1418,14 @@ async function logQuestion(env, question, gap, source, space = SPACE_PUBLIC, cic
   } catch {
     // Log jest funkcją poboczną — jego awaria nie może zepsuć odpowiedzi dla klienta.
   }
+}
+
+// Czy wpis w logu należy do tego klienta. Wpisy sprzed 21.08.2026 nie mają
+// pola `klient` i przypadają temu, który ma `przejmujeStareWpisy` — jawnie
+// w tablicy, nie przez zgadywanie po hoście.
+function wpisKlienta(e, klient) {
+  if (e.klient) return e.klient === klient.id;
+  return Boolean(klient.przejmujeStareWpisy);
 }
 
 async function readLog(env, limit = 500) {
@@ -1371,6 +1444,12 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
+    // KLIENT WYNIKA Z HOSTA i jest ustalany RAZ, na wejściu. Wszystko poniżej
+    // dostaje go parametrem — nic nie odczytuje go z żądania po drodze.
+    // Host spoza tablicy nie dostaje żadnego klienta i nie dostaje odpowiedzi:
+    // ta sama zasada, która od 21.08.2026 nie daje mu żadnej roli.
+    const klient = rozpoznajKlienta(url);
+
     if (request.method === "OPTIONS") {
       return new Response(null, { headers: corsHeaders(request) });
     }
@@ -1386,8 +1465,18 @@ export default {
         if (!SPACES_ALLOWED.includes(space)) {
           return new Response(`Nieznana przestrzeń: ${space}. Dozwolone: ${SPACES_ALLOWED.join(", ")}.`, { status: 400, headers: corsHeaders(request) });
         }
-        const n = await handleReindex(env, space);
-        return new Response(`Zaindeksowano ${n} fragmentów w przestrzeni "${space}".`, { headers: corsHeaders(request) });
+        // Klienta wolno tu wskazać parametrem — i tylko tu. To narzędzie
+        // wdrożeniowe za sekretem, a nie powierzchnia kliencka: indeksować
+        // trzeba móc także tego klienta, którego host jeszcze nie odpowiada.
+        // Parametr wybiera WPIS Z ZAMKNIĘTEJ TABLICY, nigdy nazwę przestrzeni —
+        // nazwę i tak składa `przestrzenFizyczna()`, po stronie serwera.
+        const idKlienta = url.searchParams.get("klient");
+        const doIndeksu = idKlienta ? KLIENCI[idKlienta] : klient;
+        if (!doIndeksu) {
+          return new Response(`Nieznany klient: ${idKlienta || "(brak — host nierozpoznany)"}. Znani: ${Object.keys(KLIENCI).join(", ")}.`, { status: 400, headers: corsHeaders(request) });
+        }
+        const n = await handleReindex(env, doIndeksu, space);
+        return new Response(`Zaindeksowano ${n} fragmentów klienta "${doIndeksu.id}" w przestrzeni "${space}".`, { headers: corsHeaders(request) });
       } catch (e) {
         return new Response(`Błąd indeksowania: ${e.message}.`, { status: 500, headers: corsHeaders(request) });
       }
@@ -1414,7 +1503,7 @@ export default {
         // Panel należy do właściciela firmy i dotyczy publicznego widgetu.
         // Pytania pracowników z /internal odfiltrowujemy — wpisy sprzed
         // separacji nie mają pola `space` i liczą się jako publiczne.
-        const wszystkie = await readLog(env);
+        const wszystkie = (await readLog(env)).filter((e) => wpisKlienta(e, klient));
         const entries = wszystkie.filter((e) => (e.space || SPACE_PUBLIC) !== SPACE_INTERNAL);
 
         // Diagnostyka warstw usuwających zdania po cichu — SAME LICZBY, bez
@@ -1485,7 +1574,7 @@ export default {
     if ((url.pathname === "/app" || url.pathname === "/") && hostPracownika(url) && request.method === "GET") {
       const brak = odpowiedzBrakKonfiguracji(url, env, request);
       if (brak) return brak;
-      return new Response(APP_INTERNAL_HTML, {
+      return new Response(renderHtml(APP_INTERNAL_HTML, klient, env, "pracownik"), {
         headers: {
           "Content-Type": "text/html; charset=utf-8",
           ...corsHeaders(request),
@@ -1497,7 +1586,7 @@ export default {
     if (url.pathname === "/" && hostWlasciciela(url) && request.method === "GET") {
       const brak = odpowiedzBrakKonfiguracji(url, env, request);
       if (brak) return brak;
-      return new Response(PANEL_HTML, {
+      return new Response(renderHtml(PANEL_HTML, klient, env, "wlasciciel"), {
         headers: {
           "Content-Type": "text/html; charset=utf-8",
           ...corsHeaders(request),
@@ -1511,7 +1600,7 @@ export default {
     if (url.pathname === "/panel" && hostWlasciciela(url) && request.method === "GET") {
       const brak = odpowiedzBrakKonfiguracji(url, env, request);
       if (brak) return brak;
-      return new Response(PANEL_INTERNAL_HTML, {
+      return new Response(renderHtml(PANEL_INTERNAL_HTML, klient, env, "wlasciciel"), {
         headers: {
           "Content-Type": "text/html; charset=utf-8",
           ...corsHeaders(request),
@@ -1534,7 +1623,7 @@ export default {
         return jsonResponse({ error: auth.error, szczegoly: auth.szczegoly }, corsHeaders(request), auth.status);
       }
       try {
-        const wszystkie = await readLog(env);
+        const wszystkie = (await readLog(env)).filter((e) => wpisKlienta(e, klient));
         // Bierzemy wyłącznie pytania zadane do bota wewnętrznego
         const entries = wszystkie.filter((e) => (e.space || SPACE_PUBLIC) === SPACE_INTERNAL);
 
@@ -1628,15 +1717,21 @@ export default {
         // ale też wyłącznie do tych wskazanych jawnie: ?space=public|internal|obie
         const spaceParam = url.searchParams.get("space") || SPACE_PUBLIC;
         const spaces = spaceParam === "obie" ? SPACES_FOR_INTERNAL : [spaceParam];
-        const matches = await vectorSearch(env, qVector, { topK: TOP_K, namespaces: spaces });
+        // Jak w /reindex: klient z parametru albo z hosta, wpis z zamkniętej tablicy.
+        const idKlientaDbg = url.searchParams.get("klient");
+        const klientDbg = idKlientaDbg ? KLIENCI[idKlientaDbg] : klient;
+        if (!klientDbg) {
+          return new Response(`Nieznany klient: ${idKlientaDbg || "(brak — host nierozpoznany)"}. Znani: ${Object.keys(KLIENCI).join(", ")}.`, { status: 400, headers: corsHeaders(request) });
+        }
+        const matches = await vectorSearch(env, qVector, { topK: TOP_K, klient: klientDbg, rodzaje: spaces });
         const filtered = matches.filter((m, idx) => idx < MIN_CHUNKS || m.score >= MIN_SIMILARITY);
 
         // Tryb promptu bierze się z zakresu przeszukania: gdy w grze jest
         // przestrzeń wewnętrzna, /debug pokazuje to, co zobaczyłby pracownik.
         const przestrzenPytania = spaces.includes(SPACE_INTERNAL) ? SPACE_INTERNAL : SPACE_PUBLIC;
         const trybProm = trybPromptu(przestrzenPytania);
-        const eskalacjaDbg = wykryjEskalacje(q, przestrzenPytania);
-        const systemPrompt = buildSystemPrompt(filtered.map((m) => m.metadata), trybProm);
+        const eskalacjaDbg = wykryjEskalacje(q, przestrzenPytania, klientDbg);
+        const systemPrompt = buildSystemPrompt(filtered.map((m) => m.metadata), trybProm, klientDbg);
         const answer = await generate(env, systemPrompt, [{ role: "user", content: q }]);
 
         const sentences = splitSentences(answer);
@@ -1656,7 +1751,7 @@ export default {
           const prog = progCytowania(s);
           const doslownie = wystepujeDoslownie(s, filtered);
           const liczbyOk = numbersAreGrounded(s, filtered, trybProm, q);
-          const obietnica = isUnsupportablePromise(s, trybProm);
+          const obietnica = isUnsupportablePromise(s, trybProm, klientDbg);
           const instrukcje = leaksInstructions(s, trybProm);
           const duplikat = isDuplicate(s, juzZachowane);
           const passes = (best >= prog || doslownie) && liczbyOk && !obietnica;
@@ -1693,6 +1788,7 @@ export default {
 
         return jsonResponse({
           pytanie: q,
+          klient: klientDbg.id,
           przeszukane_przestrzenie: spaces,
           tryb_promptu: trybProm,
           eskalacja: eskalacjaDbg ? { kategoria: eskalacjaDbg.id, pilne: eskalacjaDbg.pilne } : null,
@@ -1721,16 +1817,25 @@ export default {
     // Dostęp wyłącznie na tożsamość z Cloudflare Access — REINDEX_SECRET tu
     // nie działa, celowo: pracownik nie ma mieć prawa do /reindex ani /purge.
     if (url.pathname === "/internal") {
+      if (!klient) {
+        return jsonResponse({ error: "Nieznany adres." }, corsHeaders(request), 404);
+      }
       const auth = await verifyAccessJwt(request, env);
       if (!auth.ok) {
         return jsonResponse({ error: auth.error, szczegoly: auth.szczegoly }, corsHeaders(request), auth.status);
       }
-      return handleAsk(request, env, SPACES_FOR_INTERNAL, SPACE_INTERNAL, auth.identity);
+      return handleAsk(request, env, klient, SPACES_FOR_INTERNAL, SPACE_INTERNAL, auth.identity);
     }
 
     // Publiczny widget. `SPACES_FOR_PUBLIC` to stała modułowa — nie ma ścieżki,
     // którą żądanie mogłoby wpłynąć na zakres przeszukiwania.
-    return handleAsk(request, env, SPACES_FOR_PUBLIC, SPACE_PUBLIC);
+    // Host spoza tablicy klientów nie dostaje odpowiedzi. Do 21.08.2026
+    // wpadał tutaj i dostawał dokumentację BudMaksu — przy jednym kliencie
+    // to była teoria, przy dwóch byłby to wyciek treści nie tej firmy.
+    if (!klient) {
+      return jsonResponse({ error: "Nieznany adres." }, corsHeaders(request), 404);
+    }
+    return handleAsk(request, env, klient, SPACES_FOR_PUBLIC, SPACE_PUBLIC);
   },
 };
 
@@ -1740,7 +1845,7 @@ export default {
 // `identity` przychodzi tylko z /internal (z zweryfikowanego tokenu Access).
 // Na razie jest wyłącznie odczytane i odsyłane w odpowiedzi — nic po nim nie
 // filtruje. Będzie podstawą rozpoznawania klienta przy wielu firmach.
-async function handleAsk(request, env, spaces, askedFrom, identity = null) {
+async function handleAsk(request, env, klient, rodzaje, askedFrom, identity = null) {
   let question, history;
   try {
     const body = await request.json();
@@ -1762,7 +1867,7 @@ async function handleAsk(request, env, spaces, askedFrom, identity = null) {
   // endpointu przyszło — nie od tego, co znalazł retrieval ani co napisał model.
   // Przy wypadku, którego dokumentacja nie pokrywa, skierowanie do przełożonego
   // jest potrzebne bardziej, nie mniej.
-  const eskalacja = wykryjEskalacje(question, askedFrom);
+  const eskalacja = wykryjEskalacje(question, askedFrom, klient);
   const poleEskalacji = eskalacja ? { eskalacja: { kategoria: eskalacja.id, pilne: eskalacja.pilne } } : {};
 
   if (env.RATE_LIMIT_KV) {
@@ -1784,12 +1889,12 @@ async function handleAsk(request, env, spaces, askedFrom, identity = null) {
     const topK = isLongQuestion ? TOP_K_LONG : TOP_K;
 
     const qVector = await embedText(env, retrievalQuery);
-    const allMatches = await vectorSearch(env, qVector, { topK, namespaces: spaces });
+    const allMatches = await vectorSearch(env, qVector, { topK, klient, rodzaje });
     const filtered = allMatches.filter((m, idx) => idx < MIN_CHUNKS || m.score >= MIN_SIMILARITY);
 
     if (filtered.length === 0) {
-      await logQuestion(env, question, true, null, askedFrom, null, eskalacja);
-      return jsonResponse({ answer: zlozZEskalacja(FALLBACK_MESSAGE, eskalacja), source: null, gap: true, ...poleEskalacji }, corsHeaders(request));
+      await logQuestion(env, question, true, null, askedFrom, null, eskalacja, klient.id);
+      return jsonResponse({ answer: zlozZEskalacja(klient.prompt.fallback, eskalacja), source: null, gap: true, ...poleEskalacji }, corsHeaders(request));
     }
 
     // Tryb promptu, jak przestrzenie, przychodzi wyłącznie z routingu.
@@ -1797,28 +1902,28 @@ async function handleAsk(request, env, spaces, askedFrom, identity = null) {
     // że model dostaje polecenie podania wartości wewnętrznej, a warstwa
     // weryfikacji wycina mu ją z odpowiedzi.
     const tryb = trybPromptu(askedFrom);
-    const systemPrompt = buildSystemPrompt(filtered.map((m) => m.metadata), tryb);
+    const systemPrompt = buildSystemPrompt(filtered.map((m) => m.metadata), tryb, klient);
     const messages = [...history, { role: "user", content: question }];
 
     const rawAnswer = await generate(env, systemPrompt, messages);
 
     if (!rawAnswer || /nie mam takich informacji/i.test(rawAnswer)) {
-      await logQuestion(env, question, true, null, askedFrom, null, eskalacja);
-      return jsonResponse({ answer: zlozZEskalacja(FALLBACK_MESSAGE, eskalacja), source: null, gap: true, ...poleEskalacji }, corsHeaders(request));
+      await logQuestion(env, question, true, null, askedFrom, null, eskalacja, klient.id);
+      return jsonResponse({ answer: zlozZEskalacja(klient.prompt.fallback, eskalacja), source: null, gap: true, ...poleEskalacji }, corsHeaders(request));
     }
 
-    const verdict = await verifyClaims(rawAnswer, filtered, env, tryb, question);
+    const verdict = await verifyClaims(rawAnswer, filtered, env, klient, tryb, question);
     if (!verdict.ok) {
       // Licznik `cicho` MUSI dostać dane także tutaj. To jest ścieżka, na której
       // po weryfikacji nie zostało ani jedno twierdzenie — czyli jedyny przypadek,
       // w którym deduplikacja mogła zjeść CAŁĄ odpowiedź. Przekazywanie tu `null`
       // (stan sprzed 20.08.2026) wycinało z metryk dokładnie ten przypadek,
       // dla którego licznik powstał.
-      await logQuestion(env, question, true, null, askedFrom, verdict.cicho, eskalacja);
+      await logQuestion(env, question, true, null, askedFrom, verdict.cicho, eskalacja, klient.id);
       return jsonResponse({ answer: zlozZEskalacja(verdict.fallback, eskalacja), source: null, gap: true, ...poleEskalacji }, corsHeaders(request));
     }
 
-    await logQuestion(env, question, false, verdict.source, askedFrom, verdict.cicho, eskalacja);
+    await logQuestion(env, question, false, verdict.source, askedFrom, verdict.cicho, eskalacja, klient.id);
     return jsonResponse({
       answer: zlozZEskalacja(verdict.text, eskalacja),
       source: verdict.source,
@@ -1847,8 +1952,15 @@ export {
   verifyAccessJwt, accessConfig, resetAccessCertsCache,
   isUnsupportablePromise, leaksInstructions, isDuplicate, numbersAreGrounded,
   wystepujeDoslownie, progCytowania, splitSentences, isConnectiveSentence,
-  wykryjEskalacje, zlozZEskalacja, KATEGORIE_ESKALACJI,
+  wykryjEskalacje, zlozZEskalacja,
   PROMPT_PUBLICZNY, PROMPT_WEWNETRZNY,
+  // Rozpoznanie klienta i składanie nazwy przestrzeni — testowalne osobno,
+  // bo to jedyne dwa miejsca decydujące, czyją dokumentację widzi pytający.
+  rozpoznajKlienta, rolaHosta, przestrzenFizyczna,
+  // Podstawianie nazw w szablonach — test pilnuje, żeby nowy klient nie zostawił
+  // w interfejsie surowego `{{placeholdera}}` ani cudzej nazwy.
+  renderHtml,
+  buildSystemPrompt,
 };
 
 function resetAccessCertsCache() {

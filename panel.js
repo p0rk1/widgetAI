@@ -13,7 +13,7 @@ export const PANEL_HTML = `<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BudMax — panel asystenta</title>
+<title>{{tytulPanel}}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -120,7 +120,7 @@ body::before{
     <div class="wrap top-in">
       <span class="mark"></span>
       <div>
-        <b>BUDMAX</b>
+        <b>{{marka}}</b>
         <div class="sub">panel asystenta</div>
       </div>
       <button class="reload" id="rl">
@@ -224,6 +224,7 @@ function draw(d){
 
 load();
 </script>
+{{przelacznikDemo}}
 </body>
 </html>
 `;

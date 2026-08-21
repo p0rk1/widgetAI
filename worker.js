@@ -27,6 +27,7 @@
 import { CHUNKS } from "./content-public.js";
 import { INTERNAL_CHUNKS } from "./content-internal.js";
 import { PANEL_INTERNAL_HTML } from "./panel-internal.js";
+import { PANEL_HTML } from "./panel.js";
 import { APP_INTERNAL_HTML } from "./app-internal.js";
 
 const TOP_K = 8; // podniesione z 6 — krótkie, ogólne pytania miały za mało kandydatów
@@ -240,6 +241,7 @@ const ALLOWED_ORIGINS = [
   "https://p0rk1.github.io",              // widget publiczny — GitHub Pages
   "https://budmax.know-base.app",         // publiczny host klienta
   "https://budmax-wewnetrzny.know-base.app", // bot dla pracowników (za Access)
+  "https://budmax-panel.know-base.app",      // panel właściciela (za Access)
 ];
 
 // Host wewnętrzny to jedyne miejsce, przed którym stoi Cloudflare Access.
@@ -248,6 +250,43 @@ const ALLOWED_ORIGINS = [
 // jedno miejsce, nie trzy.
 function hostWewnetrzny(url) {
   return url.hostname.includes("wewnetrzny");
+}
+
+// Host PANELOWY — panel właściciela firmy. Osobny host, nie ścieżka na hoście
+// wewnętrznym, i to jest sedno rozwiązania ról: pracownik i właściciel wchodzą
+// pod różne adresy, objęte różnymi aplikacjami Access z różnymi politykami.
+// Dzięki temu rola wynika z HOSTA i nie trzeba jej sprawdzać w kodzie — nie
+// powstaje żaden system ról, lista uprawnionych ani pole w tokenie.
+//
+// Wariant „panel na hoście wewnętrznym, rola z polityki" odrzucony: wymagałby
+// albo aplikacji Access na ścieżce (wzorzec odrzucony wcześniej — ochrona
+// stałaby na poprawnie wpisanym polu `Path`), albo listy e-maili w kodzie.
+// Przy One-time PIN token nie niesie grup, więc nie ma się na czym oprzeć.
+function hostPanelowy(url) {
+  return url.hostname.includes("-panel.");
+}
+
+// INTERFEJSU CHRONIONEJ POWIERZCHNI NIE SERWUJEMY, DOPÓKI OCHRONY NIE MA.
+//
+// `/app`, `/panel` i `GET /` na hostach za Access są tylko skorupą — dane i tak
+// wymagają tokenu. Ale zanim aplikacja Access powstanie, host odpowiada bez
+// żadnego logowania, więc skorupa wisi publicznie. Zmierzone 21.08.2026 zaraz
+// po utworzeniu hostu panelowego: `GET /` oddawało panel każdemu.
+//
+// Dlatego HTML też jest zależny od konfiguracji: brak zmiennych = 503 z nazwą
+// tego, czego brakuje. To ta sama reguła, co przy `/internal` — czytelny błąd
+// konfiguracji zamiast cichej odmowy albo, co gorsza, cichej zgody.
+function odpowiedzBrakKonfiguracji(url, env, request) {
+  const { missing } = accessConfig(env, url);
+  if (!missing.length) return null;
+  const czego = hostPanelowy(url) ? "Panel właściciela" : "Tryb wewnętrzny";
+  return new Response(
+    `${czego} nie jest jeszcze skonfigurowany.\n\n` +
+    `Brakujące zmienne: ${missing.join(", ")}\n` +
+    `Co zrobić: uzupełnij [vars] w wrangler.toml i wdroż ponownie.\n` +
+    `Krok po kroku: ZERO-TRUST.md w repozytorium.\n`,
+    { status: 503, headers: { "Content-Type": "text/plain; charset=utf-8", ...corsHeaders(request) } }
+  );
 }
 
 function corsHeaders(request) {
@@ -316,16 +355,28 @@ function base64UrlToJson(input) {
 
 // Konfiguracja Access. Obie wartości są jawne (nie są sekretami) i mieszkają
 // w [vars] w wrangler.toml — dzięki temu deploy z CLI ich nie zgubi.
-function accessConfig(env) {
+// AUD zależy od HOSTA, nie jest jedną wartością na Workera.
+//
+// Każda aplikacja Access ma własny AUD, a mamy ich teraz dwie: host wewnętrzny
+// (pracownicy) i host panelowy (właściciel). Sprawdzanie „którykolwiek ze znanych
+// AUD-ów" byłoby dziurą — token pracownika z hosta wewnętrznego otwierałby panel
+// właściciela. Dlatego oczekiwany AUD wybiera host, a nie lista.
+//
+// To jest pierwsza rata długu zapisanego w DECYZJE.md → „Adresy i domeny":
+// przy multi-tenant `ACCESS_AUD` i tak musi stać się mapą `host → AUD`.
+// Tutaj jest minimalna, dwuelementowa wersja tej mapy.
+function accessConfig(env, url = null) {
   const teamDomain = (env.ACCESS_TEAM_DOMAIN || "")
     .trim()
     .replace(/^https?:\/\//, "")
     .replace(/\/+$/, "");
-  const aud = (env.ACCESS_AUD || "").trim();
+  const panelowy = url ? hostPanelowy(url) : false;
+  const nazwaAud = panelowy ? "ACCESS_AUD_PANEL" : "ACCESS_AUD";
+  const aud = (env[nazwaAud] || "").trim();
   const missing = [];
   if (!teamDomain) missing.push("ACCESS_TEAM_DOMAIN");
-  if (!aud) missing.push("ACCESS_AUD");
-  return { teamDomain, aud, missing };
+  if (!aud) missing.push(nazwaAud);
+  return { teamDomain, aud, missing, nazwaAud };
 }
 
 async function fetchAccessCerts(teamDomain, { force = false } = {}) {
@@ -351,7 +402,11 @@ async function fetchAccessCerts(teamDomain, { force = false } = {}) {
 // Zwraca { ok: true, identity } albo { ok: false, status, error, szczegoly }.
 // Nigdy nie rzuca — wywołujący ma dostać czytelny powód, nie milczące 403.
 async function verifyAccessJwt(request, env) {
-  const { teamDomain, aud, missing } = accessConfig(env);
+  // Host z żądania wybiera, którą aplikację Access uznajemy za właściwą.
+  let urlZadania = null;
+  try { urlZadania = new URL(request.url); } catch { urlZadania = null; }
+  const { teamDomain, aud, missing } = accessConfig(env, urlZadania);
+  const czegoDotyczy = urlZadania && hostPanelowy(urlZadania) ? "Panel właściciela" : "Tryb wewnętrzny";
 
   // Ścieżka awaryjna: Access nieskonfigurowany. 503, nie 403 — to nie jest
   // odmowa dostępu, tylko brak konfiguracji, i komunikat ma to mówić wprost.
@@ -359,7 +414,7 @@ async function verifyAccessJwt(request, env) {
     return {
       ok: false,
       status: 503,
-      error: "Tryb wewnętrzny nie jest jeszcze skonfigurowany — brak połączenia z Cloudflare Zero Trust Access.",
+      error: `${czegoDotyczy} nie jest jeszcze skonfigurowany — brak połączenia z Cloudflare Zero Trust Access.`,
       szczegoly: {
         brakujace_zmienne: missing,
         co_zrobic: "Uzupełnij [vars] w wrangler.toml i wdroż ponownie. Krok po kroku: ZERO-TRUST.md w repozytorium.",
@@ -1218,9 +1273,22 @@ export default {
       }
     }
 
+    // Panel właściciela firmy — analityka publicznego widgetu.
+    //
+    // OD 21.08.2026 NA TOŻSAMOŚCI Z ACCESS, NIE NA `REINDEX_SECRET`. Wcześniej
+    // właściciel firmy dostawał ten sam klucz, który otwiera `/purge` i `/reindex`,
+    // czyli mógł skasować własną bazę wiedzy pomyłką albo przez kogoś, kto podejrzy
+    // mu ekran. To jest ta sama zmiana, którą `/internal` przeszedł 18.08.2026.
+    //
+    // Host panelowy jest warunkiem, nie ozdobnikiem: na nim stoi aplikacja Access
+    // z polityką dopuszczającą właściciela, a nie cały zespół.
     if (url.pathname === "/stats" && request.method === "GET") {
-      if (!isAdmin(url, env)) {
-        return jsonResponse({ error: "Brak dostępu." }, corsHeaders(request), 403);
+      if (!hostPanelowy(url)) {
+        return jsonResponse({ error: "Panel właściciela działa wyłącznie na hoście panelowym." }, corsHeaders(request), 404);
+      }
+      const auth = await verifyAccessJwt(request, env);
+      if (!auth.ok) {
+        return jsonResponse({ error: auth.error, szczegoly: auth.szczegoly }, corsHeaders(request), auth.status);
       }
       try {
         // Panel należy do właściciela firmy i dotyczy publicznego widgetu.
@@ -1295,6 +1363,8 @@ export default {
     // tokenu zwracają 401 — ale interfejs pracowniczy nie ma czego szukać pod
     // adresem, na który wchodzi klient.
     if ((url.pathname === "/app" || url.pathname === "/") && hostWewnetrzny(url) && request.method === "GET") {
+      const brak = odpowiedzBrakKonfiguracji(url, env, request);
+      if (brak) return brak;
       return new Response(APP_INTERNAL_HTML, {
         headers: {
           "Content-Type": "text/html; charset=utf-8",
@@ -1303,9 +1373,24 @@ export default {
       });
     }
 
-    // Panel analityczny dla bota wewnętrznego (Etap 6).
-    // Jak wyżej: tylko host wewnętrzny, bo tylko przed nim stoi Access.
-    if (url.pathname === "/panel" && hostWewnetrzny(url) && request.method === "GET") {
+    // Panel właściciela — analityka publicznego widgetu. Wejście na host panelowy.
+    if (url.pathname === "/" && hostPanelowy(url) && request.method === "GET") {
+      const brak = odpowiedzBrakKonfiguracji(url, env, request);
+      if (brak) return brak;
+      return new Response(PANEL_HTML, {
+        headers: {
+          "Content-Type": "text/html; charset=utf-8",
+          ...corsHeaders(request),
+        },
+      });
+    }
+
+    // Panel analityczny bota wewnętrznego (Etap 6) — przeniesiony 21.08.2026
+    // z hostu wewnętrznego na PANELOWY. Treść jest dla właściciela, więc ma
+    // stać za polityką właściciela, a nie za polityką zespołu.
+    if (url.pathname === "/panel" && hostPanelowy(url) && request.method === "GET") {
+      const brak = odpowiedzBrakKonfiguracji(url, env, request);
+      if (brak) return brak;
       return new Response(PANEL_INTERNAL_HTML, {
         headers: {
           "Content-Type": "text/html; charset=utf-8",
@@ -1316,7 +1401,14 @@ export default {
 
     // Statystyki dla panelu bota wewnętrznego (pytania pracowników, luki szkoleniowe, eskalacje).
     // Dostęp wyłącznie przez token Cloudflare Access (JWT) — brak logowania hasłem/kluczem admina.
+    // Analityka bota wewnętrznego — też należy do WŁAŚCICIELA, nie do zespołu.
+    // Do 21.08.2026 stała na samym „token Access jest ważny", a że mieszkała na
+    // hoście wewnętrznym, wystarczyło być pracownikiem: każdy z dostępu do bota
+    // mógł zobaczyć luki szkoleniowe, eskalacje i listę zadanych pytań.
     if (url.pathname === "/stats-internal" && request.method === "GET") {
+      if (!hostPanelowy(url)) {
+        return jsonResponse({ error: "Panel właściciela działa wyłącznie na hoście panelowym." }, corsHeaders(request), 404);
+      }
       const auth = await verifyAccessJwt(request, env);
       if (!auth.ok) {
         return jsonResponse({ error: auth.error, szczegoly: auth.szczegoly }, corsHeaders(request), auth.status);

@@ -71,6 +71,11 @@ tryby**, reguła syntezy jako lista przykładów, zmiana w `PROMPT_RDZEN`) — p
 w „Ślepe uliczki". Pierwsza z nich wróciła tego samego dnia w postaci zawężonej
 do trybu wewnętrznego i **w tej postaci jest wdrożona**.
 
+**DO WYKLIKANIA TERAZ:** krok 9 z `ZERO-TRUST.md` — druga aplikacja Access dla
+`budmax-panel.know-base.app`, polityka na **jeden e-mail** (nie na domenę firmy),
+i `ACCESS_AUD_PANEL` w `[vars]`. Kod jest wdrożony; do tego czasu host panelowy
+zwraca 503 z nazwą brakującej zmiennej.
+
 **Zostało po stronie właściciela, nie kodu:** kroki 2 i 3 z `ZERO-TRUST.md`
 (Google i Microsoft jako metody logowania). Dziś działa wyłącznie One-time PIN —
 wystarcza do testów i jednego użytkownika, nie wystarcza dla zespołu klienta.
@@ -81,6 +86,9 @@ wystarcza do testów i jednego użytkownika, nie wystarcza dla zespołu klienta.
 2. Binding albo trasa, których nie ma w `wrangler.toml`, znikają przy deployu
 3. `/reindex` po każdej zmianie treści — i odczekać, zapis do Vectorize jest
    asynchroniczny
+4. **Cloudflare buforuje odpowiedzi na brzegu.** Sonda zaraz po wdrożeniu potrafi
+   pokazać stan sprzed niego — kosztowało dwa fałszywe alarmy (20 i 21.08.2026).
+   Każdą sondę rób z `?cb=$RANDOM`
 
 ## Pliki
 
@@ -92,7 +100,8 @@ wystarcza do testów i jednego użytkownika, nie wystarcza dla zespołu klienta.
 | `app-internal.js` | `APP_INTERNAL_HTML` — aplikacja asystenta budowy PWA | importowane przez `worker.js` dla `GET /app` |
 | `panel-internal.js` | `PANEL_INTERNAL_HTML` — szablon panelu wewnętrznego | importowane przez `worker.js` dla `GET /panel` |
 | `index.html` | Strona firmy z osadzonym widgetem | GitHub Pages |
-| `panel.html` | Panel analityczny dla właściciela firmy (widget publiczny) | GitHub Pages |
+| `panel.js` | `PANEL_HTML` — panel właściciela, serwowany na hoście panelowym pod `GET /` | importowane przez `worker.js` |
+| `panel.html` | **Już nie panel** — wskazówka z nowym adresem, bo ze statycznej strony nie da się uwierzytelnić przez Access | GitHub Pages |
 | `panel-internal.html` | Panel analityczny procedur i szkoleń (bot wewnętrzny) | repo / serwowane przez Worker |
 | `app-internal.html` | Aplikacja webowa asystenta budowy (mobile-first, dyktowanie) | repo / serwowane przez Worker |
 | `wrangler.toml` | Konfiguracja deployu — bindingi, zmienne Access, data kompatybilności | repo |
@@ -111,12 +120,15 @@ wystarcza do testów i jednego użytkownika, nie wystarcza dla zespołu klienta.
 Adresy:
 - Publiczny: `https://budmax.know-base.app` — endpoint widgetu
 - Wewnętrzny: `https://budmax-wewnetrzny.know-base.app` — bot dla pracowników, za Access
+- **Panelowy: `https://budmax-panel.know-base.app`** — panel właściciela, za **własną**
+  aplikacją Access (polityka na jeden e-mail, nie na cały zespół)
 - Stary: `https://knowbase-budmax.rezi7608.workers.dev` — **nadal działa i ma działać**
 - Strona: `https://p0rk1.github.io/widgetAI/` · Panel: `.../panel.html`
 
-Dwa hosty na klienta, jednopoziomowe, bez wildcardu — powody w `DECYZJE.md`
-→ „Adresy i domeny". Nowy klient to dwa wpisy w `[[routes]]` plus jego domeny
-w `ALLOWED_ORIGINS` (lista samych domen bez ścieżek, w `worker.js`).
+**Trzy hosty na klienta** od 21.08.2026, jednopoziomowe, bez wildcardu — powody
+w `DECYZJE.md` → „Adresy i domeny" oraz „Panel właściciela na Access". Nowy klient
+to **trzy** wpisy w `[[routes]]`, **trzy** aplikacje Access (publiczny host jej nie
+ma) plus jego domeny w `ALLOWED_ORIGINS` (lista samych domen bez ścieżek).
 
 ## Infrastruktura (Cloudflare, plan darmowy)
 
@@ -157,8 +169,15 @@ Dwa rozłączne mechanizmy, celowo.
 | Endpoint | Kto | Czym się uwierzytelnia |
 |---|---|---|
 | `POST /` | każdy | — |
-| `POST /internal` | pracownik | tożsamość z Cloudflare Zero Trust Access |
-| `/reindex`, `/purge`, `/stats`, `/debug` | administrator | `REINDEX_SECRET` |
+| `POST /internal` | pracownik | Access, **host wewnętrzny** |
+| `GET /`, `/app` (host wewnętrzny) | pracownik | Access |
+| `GET /`, `/panel`, `/stats`, `/stats-internal` (host panelowy) | **właściciel firmy** | Access, **host panelowy** |
+| `/reindex`, `/purge`, `/debug` | administrator | `REINDEX_SECRET` |
+
+**`/stats` wyszedł spod `REINDEX_SECRET` 21.08.2026.** Właściciel firmy dostawał
+wcześniej klucz otwierający też `/purge` i `/reindex`, czyli mógł skasować własną
+bazę wiedzy. Endpointy administracyjne zostają na sekrecie świadomie — to
+narzędzia wdrożeniowe, do których klient nie ma mieć dostępu nawet zalogowany.
 
 - **`REINDEX_SECRET` na `/internal` nie działa** i nie ma tam ścieżki obejścia.
 - `verifyAccessJwt()` sprawdza **podpis, `iss`, `aud` i ważność** — sama obecność
@@ -175,6 +194,19 @@ Dwa rozłączne mechanizmy, celowo.
   nie usterka.
 - `email` i `domena` z tokenu są odczytywane i zwracane w polu `zalogowany`.
   **Nic po nich jeszcze nie filtruje** — to fundament pod multi-tenant.
+- **Rola wynika z HOSTA, nie z kodu.** Pracownik i właściciel wchodzą pod różne
+  adresy, objęte różnymi aplikacjami Access z różnymi politykami. Worker nie zna
+  pojęcia roli, nie ma listy uprawnionych i nie sprawdza pola w tokenie. Pole
+  `role` w metadanych fragmentów **nadal nic nie filtruje**. Dlaczego nie rola
+  w polityce na ścieżce: `DECYZJE.md` → „Panel właściciela na Access".
+- **AUD zależy od hosta.** `accessConfig(env, url)` wybiera `ACCESS_AUD` albo
+  `ACCESS_AUD_PANEL`. Sprawdzanie „którykolwiek ze znanych AUD-ów" byłoby dziurą:
+  token pracownika otwierałby panel właściciela. Pilnuje tego sekcja 5
+  w `test-access.mjs`.
+- **Fail-closed dotyczy też HTML-a.** `odpowiedzBrakKonfiguracji()` nie wyda
+  `/app`, `/panel` ani `GET /`, dopóki zmienne Access dla tego hostu są puste.
+  Zmierzone 21.08.2026: zanim aplikacja Access powstała, host panelowy serwował
+  panel każdemu — host i trasa istnieją wcześniej niż ochrona.
 
 **Test:** `node test-access.mjs` — 14 przypadków, podstawia własne klucze,
 więc sprawdza także przypadek pozytywny. Uruchamiać po każdej zmianie
@@ -350,16 +382,21 @@ Uprawnienia są **rozdzielone na dwa niezależne mechanizmy** — patrz sekcja
   zoptymalizowana na telefon, z dyktowaniem głosowym i kaflami szybkiego startu.
   **Wyłącznie na hoście wewnętrznym** (`hostWewnetrzny()`) — gdzie indziej ścieżka
   nie istnieje
-- `GET /panel` — panel analityczny procedur i szkoleń (Etap 6). Zwraca HTML bota
-  wewnętrznego chroniony przez Cloudflare Access. **Też tylko host wewnętrzny** —
-  do 20.08.2026 odpowiadał 200 na publicznej domenie klienta i na `workers.dev`
+- `GET /panel` — panel analityczny procedur i szkoleń (Etap 6). **Przeniesiony
+  21.08.2026 na host panelowy** — treść jest dla właściciela, więc stoi za polityką
+  właściciela, nie zespołu
+- `GET /` na hoście panelowym — panel właściciela (analityka widgetu publicznego),
+  serwowany z `panel.js`
 - `GET /stats-internal` — dane statystyczne bota wewnętrznego (luki szkoleniowe, procedury,
-  zdarzenia/eskalacje). **Autoryzacja przez token Access (JWT)** — brak wpisywania hasła/klucza admina
+  zdarzenia/eskalacje). **Host panelowy + token Access.** Do 21.08.2026 stało na samym
+  „token jest ważny" na hoście wewnętrznym, więc **każdy pracownik** mógł czytać
+  analitykę właściciela
 - `GET /reindex?key=…&space=public|internal` — **uruchom po każdej zmianie CHUNKS
   lub INTERNAL_CHUNKS**. Bez `space` indeksuje `public` (zgodnie z dotychczasowym
   zachowaniem). Każdą przestrzeń indeksuje się osobno
-- `GET /stats?key=…` — dane dla panelu publicznego (`panel.html`). Pytania z `/internal` są **odfiltrowane** —
-  panel należy do właściciela firmy i dotyczy widgetu publicznego
+- `GET /stats` — dane dla panelu właściciela. **Wyłącznie host panelowy + tożsamość
+  z Access**; `REINDEX_SECRET` tu **nie działa** od 21.08.2026. Poza hostem panelowym
+  zwraca 404. Pytania z `/internal` są **odfiltrowane**
 - `GET /debug?key=…&q=pytanie&space=public|internal|obie` — diagnostyka: co znalazło,
   z jakim wynikiem, **z której przestrzeni**, które zdania przechodzą weryfikację
   i **w polu `tryb_promptu`, który wariant promptu poszedł do modelu**
@@ -532,11 +569,10 @@ też poprawne parafrazy.
 - Wyniki wahają się między uruchomieniami przy tym samym pytaniu
 - Wykrywanie obietnic wzorcami tekstowymi jest z natury zawodne — model wymyśla nowe
   sformułowania. Dokładanie kolejnych wzorców ma malejący zwrot.
-- Panel chroni ten sam klucz co endpointy administracyjne — do produkcji potrzeba
-  osobnego hasła i prawdziwego logowania. **Uwaga: `/internal` już z tego wyszedł
-  (Access), panel nie.** Właściciel firmy nadal dostaje klucz, który otwiera też
-  `/purge` i `/reindex` — ten sam problem, który rozwiązaliśmy dla pracowników,
-  zostaje nierozwiązany dla klienta
+- ~~Panel chroni ten sam klucz co endpointy administracyjne~~ — **naprawione
+  21.08.2026.** `/stats` i `/stats-internal` stoją na tożsamości z Access, na
+  osobnym hoście panelowym z polityką na jeden e-mail. `REINDEX_SECRET` nie
+  otwiera już żadnego panelu
 - ~~`INTERNAL_CHUNKS` to 3 fragmenty testowe, nie dokumentacja~~ — **nieaktualne
   od 19.08.2026**: 41 fragmentów w sześciu obszarach. Otwarte pozostają problemy
   z pomiaru, nie brak treści — patrz `DECYZJE.md` → „Treść wewnętrzna"

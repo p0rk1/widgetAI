@@ -1,6 +1,9 @@
 # Konfiguracja Cloudflare Zero Trust Access dla trybu wewnętrznego
 
-## Stan: ✅ skonfigurowane, wdrożone i potwierdzone pomiarem 18.08.2026
+## Stan: ✅ tryb wewnętrzny gotowy (18.08.2026) · ⬜ panel właściciela czeka na konfigurację (21.08.2026)
+
+> **Do wyklikania:** krok 9 — druga aplikacja Access dla `budmax-panel.know-base.app`.
+> Kod jest wdrożony; do tego czasu host panelowy zwraca 503 z nazwą brakującej zmiennej.
 
 Aplikacja Access istnieje, `ACCESS_TEAM_DOMAIN` i `ACCESS_AUD` są w `wrangler.toml`,
 Worker wdrożony (wersja `e2544cf1-61ee-468b-ab08-c70447056701`). **`/internal` nie
@@ -482,6 +485,111 @@ w weryfikacji tokenu — `test-access.mjs` jej nie zastąpi, bo chodzi po
 podstawionych kluczach.
 
 ---
+
+## Krok 9. Aplikacja Access dla panelu właściciela — ⬜ DO ZROBIENIA (21.08.2026)
+
+Panel właściciela przeszedł z `REINDEX_SECRET` na tożsamość z Access. **Kod jest
+wdrożony, konfiguracji brakuje** — do czasu wykonania tego kroku host panelowy
+odpowiada `503` z nazwą brakującej zmiennej. To jest stan zamierzony, nie usterka.
+
+**Dlaczego osobny host, a nie ścieżka na hoście wewnętrznym.** Panel należy do
+właściciela firmy, aplikacja pracownicza do zespołu. To dwie różne polityki
+dostępu, a polityki przypina się do aplikacji Access, czyli do hostu. Osobny host
+sprawia, że **rola wynika z adresu** — Worker nie musi znać żadnych ról, list
+e-maili ani grup. Wariant „jeden host, rola w polityce na ścieżce `/panel`"
+odrzucony z tego samego powodu, co przy trybie wewnętrznym: ochrona stałaby
+na poprawnie wpisanym polu `Path`.
+
+### 9.1. Host panelowy — ✅ zrobione przez `wrangler deploy`
+
+`budmax-panel.know-base.app` powstał automatycznie razem z wdrożeniem, bo
+`wrangler.toml` ma dla niego wpis `[[routes]]` z `custom_domain = true`.
+Sprawdź w **Workers & Pages → knowbase-budmax → Settings → Domains & Routes**,
+że host jest na liście. Nic tu nie klikasz.
+
+### 9.2. Utwórz drugą aplikację Access
+
+**Zero Trust → Access → Applications → Add an application → Self-hosted.**
+
+| Pole | Wartość |
+|---|---|
+| Application name | `BudMax — panel właściciela` |
+| Session Duration | `24 hours` (jak przy trybie wewnętrznym) |
+| Subdomain | `budmax-panel` |
+| Domain | `know-base.app` |
+| Path | **zostaw puste** — aplikacja ma obejmować cały host |
+
+Puste `Path` jest tu istotne tak samo jak przy aplikacji wewnętrznej: cały host
+za Access, żadnej ścieżki wystawionej przez pomyłkę.
+
+### 9.3. Reguła dostępu — TU JEST RÓŻNICA WOBEC APLIKACJI WEWNĘTRZNEJ
+
+W aplikacji wewnętrznej regułą jest cały zespół. **Tutaj ma być jedna osoba.**
+
+| Pole | Wartość |
+|---|---|
+| Policy name | `Wlasciciel` |
+| Action | `Allow` |
+| Include → selector | **Emails** |
+| Value | adres e-mail właściciela firmy, np. `wlasciciel@budmax.pl` |
+
+**Nie używaj tu `Emails ending in @budmax.pl`.** Cała firma ma adresy w tej
+domenie, więc taka reguła wpuściłaby do panelu każdego pracownika — czyli
+odtworzyłaby dokładnie ten problem, który ta zmiana usuwa.
+
+### 9.4. Przepisz AUD do `wrangler.toml`
+
+**Access → Applications → BudMax — panel właściciela → Overview → Application Audience (AUD) Tag.**
+Skopiuj wartość i wstaw do `[vars]`:
+
+```toml
+ACCESS_AUD_PANEL = "tu-wklej-aud-aplikacji-panelowej"
+```
+
+Potem `wrangler deploy`.
+
+**To musi być AUD drugiej aplikacji, nie ten sam co `ACCESS_AUD`.** Worker
+wybiera oczekiwany AUD po hoście, więc wpisanie tu wartości aplikacji wewnętrznej
+sprawiłoby, że token pracownika otwiera panel właściciela. Pilnują tego cztery
+przypadki w `test-access.mjs` (sekcja 5).
+
+### 9.5. Sprawdź, że działa
+
+```bash
+# 1. przed uzupełnieniem ACCESS_AUD_PANEL — 503 z nazwą brakującej zmiennej
+curl -s "https://budmax-panel.know-base.app/?cb=$RANDOM"
+# Panel właściciela nie jest jeszcze skonfigurowany.
+# Brakujące zmienne: ACCESS_AUD_PANEL
+
+# 2. po uzupełnieniu i wdrożeniu — 302 na ekran logowania
+curl -s -o /dev/null -w "%{http_code}\n" -I "https://budmax-panel.know-base.app/?cb=$RANDOM"
+# 302
+
+# 3. dawny klucz administracyjny NIE otwiera panelu (ma być 404)
+curl -s "https://knowbase-budmax.rezi7608.workers.dev/stats?key=SEKRET&cb=$RANDOM"
+# {"error":"Panel właściciela działa wyłącznie na hoście panelowym."}
+
+# 4. narzędzia wdrożeniowe nadal na kluczu (ma być 200 z podpowiedzią)
+curl -s "https://knowbase-budmax.rezi7608.workers.dev/purge?key=SEKRET"
+# Podaj ID do usunięcia, np. /purge?key=...&ids=c33,c34
+```
+
+**Uwaga na cache brzegowy.** Cloudflare potrafi oddać zbuforowaną odpowiedź
+sprzed wdrożenia — kosztowało to fałszywy alarm dwa razy, 20 i 21.08.2026.
+Do każdej sondy dokładaj `?cb=$RANDOM`.
+
+### 9.6. Zaloguj się i sprawdź oba panele
+
+Po zalogowaniu jednym adresem e-mail dostępne są **oba** panele właściciela:
+
+| Adres | Co pokazuje |
+|---|---|
+| `https://budmax-panel.know-base.app/` | analityka widgetu publicznego (pytania klientów, luki) |
+| `https://budmax-panel.know-base.app/panel` | analityka bota wewnętrznego (luki szkoleniowe, eskalacje) |
+
+Stary adres `https://p0rk1.github.io/widgetAI/panel.html` **nie jest już panelem** —
+pokazuje wskazówkę z nowym adresem. Nie da się go zostawić działającym, bo ze
+statycznej strony nie sposób uwierzytelnić się przez Access.
 
 ## Co robić, gdy nie działa
 

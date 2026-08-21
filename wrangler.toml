@@ -42,6 +42,13 @@ preview_urls = false
 ACCESS_TEAM_DOMAIN = "knowbase.cloudflareaccess.com"
 ACCESS_AUD = "31995d69e22347f8708921b157570232f11113d68beb57edb35b2773f782c1c0"  # aplikacja "BudMax — tryb wewnętrzny"
 
+# AUD drugiej aplikacji Access — "BudMax — panel właściciela", host panelowy.
+# Osobna aplikacja, bo polityka jest inna: zespół kontra jedna osoba. Worker
+# wybiera oczekiwany AUD po HOŚCIE, więc token pracownika nie otworzy panelu.
+# Puste = panel wyłączony: /stats i /stats-internal zwrócą 503 z nazwą brakującej
+# zmiennej, nie milczące 403.
+ACCESS_AUD_PANEL = ""
+
 [ai]
 binding = "AI"
 
@@ -71,4 +78,11 @@ custom_domain = true
 
 [[routes]]
 pattern = "budmax-wewnetrzny.know-base.app"
+custom_domain = true
+
+# Host panelowy — panel właściciela firmy, cały za własną aplikacją Access.
+# Trzeci host na klienta, nie ścieżka na hoście wewnętrznym: rola wynika wtedy
+# z adresu, a nie z pola `Path` w polityce ani z listy e-maili w kodzie.
+[[routes]]
+pattern = "budmax-panel.know-base.app"
 custom_domain = true

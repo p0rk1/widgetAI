@@ -29,6 +29,7 @@ zapis wraca jako ten sam błąd za trzy sesje.
 - [Interfejsy pracownicze](#interfejsy-pracownicze--aplikacja-etap-5-i-panel-etap-6)
 - [Uziemienie liczb: rozstrzygnięcie po trybie (R3)](#uziemienie-liczb-rozstrzygnięcie-po-trybie-r3--20082026)
 - [Problem 4 — diagnoza i zamknięcie](#problem-4--nowa-diagnoza-20082026-i-zamknięcie-21082026)
+- [Panel wlasciciela na Access](#panel-właściciela-na-access--trzeci-host-rola-z-adresu-21082026)
 - [Dokumentacja BudMax](#dokumentacja-budmax)
 
 ## Decyzje, do których nie wracać
@@ -1306,6 +1307,129 @@ rabat?" wynik 0/5 wyglądał na kolejne niepowodzenie, a odpowiedź była w peł
 poprawna: pochodziła z fragmentu „Progi decyzyjne", gdzie klauzula o marży nie
 ma zastosowania. Przy badaniu pominięć trzeba sprawdzać, czy pominięta treść
 w ogóle należy do odpowiedzi na zadane pytanie.
+
+## Panel właściciela na Access — trzeci host, rola z adresu (21.08.2026)
+
+### Co było nie tak
+
+Właściciel firmy dostawał `REINDEX_SECRET` — ten sam sekret, który otwiera
+`/purge` i `/reindex`. Czyli osoba, która miała tylko oglądać statystyki, mogła
+**skasować własną bazę wiedzy**: pomyłką, albo przez kogoś, kto podejrzy jej
+ekran. To była jedyna pozostała wpadka trafiająca wprost do klienta — `/internal`
+wyszedł spod sekretu 18.08.2026, panel został.
+
+**Znalezione przy okazji, nie zgłoszone w zadaniu:** `/stats-internal` (Etap 6)
+sprawdzał wyłącznie, czy token Access jest ważny. Panel stał na hoście
+wewnętrznym, objętym polityką całego zespołu, więc **każdy pracownik mógł
+otworzyć `/panel`** i zobaczyć luki szkoleniowe, eskalacje i listę zadanych pytań.
+Ten sam defekt, tyle że już wdrożony. Naprawione w tej samej zmianie.
+
+### Rozstrzygnięcie: osobny host panelowy
+
+`budmax-panel.know-base.app`, trzeci host na klienta, z **własną aplikacją Access**
+i polityką na jeden adres e-mail zamiast całego zespołu.
+
+Rozważany był wariant tańszy — panel zostaje na hoście wewnętrznym, a właściciela
+od pracownika odróżnia polityka. **Odrzucony**, bo dałoby się to zrobić tylko na
+dwa sposoby, oba złe:
+
+1. **Aplikacja Access na ścieżce `/panel`** — to dokładnie wzorzec odrzucony
+   wcześniej przy trybie wewnętrznym („Adresy i domeny"): ochrona stoi wtedy na
+   poprawnie wpisanym polu `Path`, a pomyłka albo odsłania panel, albo blokuje
+   pracowników.
+2. **Lista e-maili właściciela w Workerze** — przy One-time PIN token **nie niesie
+   grup z dostawcy tożsamości**, więc nie ma się na czym oprzeć poza adresem.
+   To znaczy mini-system ról w kodzie i kolejny stan per klient.
+
+Osobny host daje własność, o którą naprawdę chodziło: **rola wynika z adresu**.
+Worker nie zna pojęcia roli, nie ma listy uprawnionych i nie sprawdza żadnego
+pola w tokenie. Pracownik i właściciel wchodzą pod różne adresy, objęte różnymi
+politykami. Pole `role` w metadanych fragmentów **nadal nic nie filtruje** i nie
+musiało zostać ruszone.
+
+### Co to znaczy przy multi-tenant
+
+| | osobny host (przyjęte) | rola w polityce (odrzucone) |
+|---|---|---|
+| mapa do dopisania | `host → {klient, AUD, rola}` — host koduje wszystko | `host → AUD` **plus** `host → e-maile właściciela` |
+| gdzie stoi granica właściciel/pracownik | w sieci, przed Workerem | w naszym kodzie |
+| koszt na klienta | 3 wpisy trasy, 3 aplikacje Access | 2 wpisy, 2 aplikacje + lista e-maili |
+
+Dług `ACCESS_AUD` **został częściowo spłacony przy okazji**, bo musiał: dwie
+aplikacje Access to dwa AUD. `accessConfig(env, url)` wybiera oczekiwany AUD
+**po hoście**. Rozwiązanie „akceptuj którykolwiek ze znanych AUD-ów" byłoby
+dziurą — token pracownika z hostu wewnętrznego otwierałby panel właściciela.
+To jest dwuelementowa wersja mapy `host → AUD` z „Adresy i domeny"; przy
+multi-tenant rozrasta się, a nie przepisuje.
+
+### Podział uprawnień po zmianie
+
+| Endpoint | Kto | Czym |
+|---|---|---|
+| `POST /` | każdy | — |
+| `POST /internal` | pracownik | Access, host wewnętrzny |
+| `GET /`, `/app` (host wewnętrzny) | pracownik | Access |
+| `GET /`, `/panel`, `/stats`, `/stats-internal` (host panelowy) | **właściciel** | **Access, host panelowy** |
+| `/reindex`, `/purge`, `/debug` | administrator | `REINDEX_SECRET` |
+
+Endpointy administracyjne **świadomie zostają na sekrecie**. To narzędzia
+wdrożeniowe, nie klienckie — klient nie ma mieć do nich dostępu w ogóle, także
+zalogowany. Rozdzielenie „klient przez tożsamość, wdrożeniowiec przez sekret"
+jest teraz kompletne.
+
+### Panel musiał zejść z GitHub Pages
+
+`panel.html` stał na GitHub Pages i wołał Workera z kluczem w URL-u. Po zmianie
+**nie da się go tam zostawić**: uwierzytelnienie przez Access polega na
+przekierowaniu na ekran logowania i ciasteczku sesji, a żądanie międzydomenowe
+ze statycznej strony tego nie przejdzie.
+
+Dlatego panel jest teraz modułem `panel.js`, serwowanym przez Workera na hoście
+panelowym pod `GET /`, i woła `/stats` **same-origin, bez klucza**. Plik
+`panel.html` w repo został zamieniony na **wskazówkę z nowym adresem** — zamiast
+zostawić stronę, która nadal prosi o klucz i nigdy już nie zadziała. Ktoś
+z zapisaną zakładką ma się dowiedzieć, dokąd iść, a nie wpisywać sekret w martwy
+formularz.
+
+### Fail-closed dotyczy też interfejsu, nie tylko danych
+
+Zmierzone zaraz po wdrożeniu: host panelowy istniał, aplikacji Access jeszcze nie
+było, więc `GET /` **serwowało panel każdemu**. Dane były bezpieczne (`/stats`
+zwracało 503), ale skorupa chronionej powierzchni wisiała publicznie.
+
+Poprawione: `odpowiedzBrakKonfiguracji()` sprawdza konfigurację Access **także
+przed wydaniem HTML-a** — na obu hostach za Access. Brak zmiennych = 503 z nazwą
+brakującej, nie panel i nie ciche 403.
+
+**Reguła do zapamiętania:** przy przenoszeniu czegokolwiek za Access sam host
+i trasa nie wystarczą. Dopóki aplikacja Access nie istnieje, host odpowiada bez
+logowania — więc Worker musi umieć odmówić samodzielnie.
+
+### Wynik pomiaru (21.08.2026, wersja `5ba00c7b`)
+
+| sonda | wynik |
+|---|---|
+| `/stats` ze starym kluczem, `workers.dev` | **404** — „Panel właściciela działa wyłącznie na hoście panelowym" |
+| `/stats` ze starym kluczem, host publiczny | **404** |
+| `/stats` ze starym kluczem, host panelowy | **503** — brak `ACCESS_AUD_PANEL` |
+| `/stats-internal` ze starym kluczem | **404** |
+| `/purge?key=…` bez `ids` | **200** z podpowiedzią — klucz nadal autoryzuje, nic nie kasuje |
+| `/reindex?key=…&space=nieistniejaca` | **400** — klucz autoryzuje, indeks nietknięty |
+| `/debug?key=…` | **200** |
+| te same trzy ze złym kluczem | **403** |
+| `/app`, `/panel` na hoście wewnętrznym | **302** na ekran logowania — Access działa |
+| `GET /`, `/panel` na hoście panelowym | **503** z nazwą brakującej zmiennej |
+| `POST /` publiczny | **200**, odpowiedź bez zmian |
+
+`test-access.mjs` urósł z 14 do **20 przypadków** — doszła sekcja 5: token
+panelowy nie otwiera hostu wewnętrznego, token pracownika nie otwiera panelu,
+brak `ACCESS_AUD_PANEL` daje 503 na hoście panelowym i **nie psuje** hostu
+wewnętrznego.
+
+**Uwaga na cache brzegowy — kosztował fałszywy alarm drugi raz.** Pierwsza sonda
+pokazała `/stats` na `workers.dev` odpowiadające **200 z pełnymi danymi**, co
+wyglądało na niewdrożoną zmianę. To była odpowiedź zbuforowana sprzed wdrożenia;
+z `?cb=$RANDOM` jest 404. Każdą sondę po wdrożeniu robić z cache-busterem.
 
 ## Dokumentacja BudMax
 

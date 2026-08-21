@@ -125,5 +125,27 @@ await sprawdz("brak obu zmiennych",
 await sprawdz("brak samego ACCESS_AUD",
   zadanie(await zrobToken()), { ACCESS_TEAM_DOMAIN: TEAM }, { ok: false, status: 503 });
 
+console.log("\n=== 5. ROZDZIELENIE AUD PO HOSCIE (panel wlasciciela) ===");
+// Dwie aplikacje Access = dwa AUD. Oczekiwany AUD wybiera HOST, nie lista —
+// inaczej token pracownika z hostu wewnetrznego otwieralby panel wlasciciela.
+const AUD_PANEL = "aud-panelowy-9876543210fedcba";
+const ENV_OBA = { ACCESS_TEAM_DOMAIN: TEAM, ACCESS_AUD: AUD, ACCESS_AUD_PANEL: AUD_PANEL };
+const ENV_BEZ_PANELU = { ACCESS_TEAM_DOMAIN: TEAM, ACCESS_AUD: AUD };
+const naPanelu = (token) => zadanie(token, { url: "https://budmax-panel.know-base.app/stats" });
+const naWewnetrznym = (token) => zadanie(token, { url: "https://budmax-wewnetrzny.know-base.app/internal" });
+
+await sprawdz("token PANELOWY otwiera host panelowy",
+  naPanelu(await zrobToken({ aud: AUD_PANEL })), ENV_OBA, { ok: true });
+await sprawdz("token PRACOWNIKA nie otwiera panelu wlasciciela",
+  naPanelu(await zrobToken({ aud: AUD })), ENV_OBA, { ok: false, status: 401 });
+await sprawdz("token PANELOWY nie otwiera hostu wewnetrznego",
+  naWewnetrznym(await zrobToken({ aud: AUD_PANEL })), ENV_OBA, { ok: false, status: 401 });
+await sprawdz("token pracownika nadal otwiera host wewnetrzny",
+  naWewnetrznym(await zrobToken({ aud: AUD })), ENV_OBA, { ok: true });
+await sprawdz("brak ACCESS_AUD_PANEL = 503 na hoscie panelowym, nie ciche 403",
+  naPanelu(await zrobToken({ aud: AUD_PANEL })), ENV_BEZ_PANELU, { ok: false, status: 503 });
+await sprawdz("brak ACCESS_AUD_PANEL nie psuje hostu wewnetrznego",
+  naWewnetrznym(await zrobToken({ aud: AUD })), ENV_BEZ_PANELU, { ok: true });
+
 console.log(`\n---\nzdane: ${zdane}, oblane: ${oblane}\n`);
 process.exit(oblane ? 1 : 0);

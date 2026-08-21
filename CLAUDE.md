@@ -56,8 +56,8 @@ będzie uziemiać. R3 stoi na zachowaniu modelu, nie na gwarancji strukturalnej:
 - Problem 4 **nie jest problemem syntezy dwóch fragmentów** — stara diagnoza
   obalona pomiarem. Zostaje kruchość na formie powierzchniowej pytania,
   o nieznanym mechanizmie
-- `numbersAreGrounded()` w trybie **publicznym** — nienaprawione z wyboru,
-  koszt zmierzony jako mały (2 zdania na 15, 0 odpowiedzi zredukowanych)
+- ~~`numbersAreGrounded()` w trybie **publicznym**~~ — **rozstrzygnięte
+  21.08.2026: zostaje bez zmian**, kandydat R1 sprawdzony i odrzucony
 
 Wszystko w „Znane ograniczenia" i `DECYZJE.md`.
 
@@ -479,6 +479,13 @@ Lista jest tutaj, bo zniknięty zapis wraca jako ten sam błąd za trzy sesje.
   zdania** — niewykonalne, różnica leży w znaczeniu; ten sam przyimek obsługuje
   oba przypadki. Odrzucony kandydat R1 (wymóg drugiej liczby uziemionej w zdaniu)
   gubił zdania odmowne i przepuszczał zdanie mieszane — 9/14
+- **R1 jako naprawa trybu publicznego** — sprawdzony szerzej 21.08.2026
+  i odrzucony: defekt publiczny jest mały (1 odpowiedź zredukowana na 56),
+  a R1 rozluźnia jedyną warstwę stojącą na powierzchni klienckiej
+- **Mierzenie tego, co widzi użytkownik, przez `/debug`** — `/debug` omija gałąź
+  „nie mam takich informacji" → fallback w `handleAsk()`, więc pokazuje
+  weryfikację odpowiedzi, które w produkcji do niej nie docierają. Do pytania
+  „co dostaje klient" używać `POST /`
 - **Reguła promptu „pod problem 4" jako lista przykładów** — cofnięta 20.08.2026,
   łamała zasadę „warunek, nie lista fraz" i nie działała (12% w 1 z 4 przebiegów)
 - **Zmiana `PROMPT_RDZEN` w celu naprawy trybu wewnętrznego** — rdzeń jest wspólny,
@@ -540,10 +547,16 @@ też poprawne parafrazy.
   13/40 → **3/37**, odpowiedzi zredukowanych do samej linii `Podstawa:` 7/16 →
   **1/16**; w zbiorze, gdzie pracownik podsuwa wartość ponad próg, 6/30 → **0/30**,
   bo stara reguła wycinała **zdanie odmowne** cytujące liczbę pytającego.
-  **W trybie publicznym defekt zostaje otwarty świadomie** — tam liczba z pytania
-  nigdy nie będzie uziemiać, a koszt jest mały (2 zdania na 15, 0 odpowiedzi
-  zredukowanych), bo treść publiczna prawie nie ma progów zależnych od liczby
-  klienta. **Warunek utrzymania R3:** stoi na zachowaniu modelu (6/6 odmów), nie
+  **W trybie publicznym — rozstrzygnięte 21.08.2026: zostaje bez zmian.**
+  Zmierzone na 28 realnych pytaniach klienta z liczbą: 8 wycięć na 102 zdania,
+  **1 odpowiedź zredukowana na 56**, zero liczb wyliczonych. Sprawdzone przez
+  `POST /`, nie `/debug` — a to jest różnica, bo `/debug` omija gałąź
+  „nie mam takich informacji" → fallback i **zawyża ten defekt**. Realnie
+  klient traci treść w jednej sygnaturze: pytanie łączy błędną liczbę firmy
+  z drugą kwestią, na którą dokumentacja odpowiada, i sprostowanie wypada.
+  Kandydat R1 **sprawdzony i odrzucony** — nie przeciekł w 36 przebiegach, ale
+  rozluźnia jedyną warstwę na powierzchni klienckiej dla jednego kształtu
+  pytania. Nie wracać bez nowych danych. **Warunek utrzymania R3:** stoi na zachowaniu modelu (6/6 odmów), nie
   na gwarancji strukturalnej — przy zmianie modelu albo promptu wewnętrznego
   trzeba go przemierzyć. `DECYZJE.md` → „Uziemienie liczb: rozstrzygnięcie po trybie (R3)"
 - **Ściśnięte grupy na stykach obszarów** (problem 3 z mapy) — **zostawione

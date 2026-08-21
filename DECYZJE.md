@@ -895,7 +895,8 @@ był jedynym wariantem **strukturalnym**, czyli takim, który rozdzielałby klas
 oglądania się na tryb. Przegrał na dwóch rzeczach naraz — gubił zdania odmowne,
 w których liczba pytającego jest jedyną liczbą w zdaniu, i przepuszczał zdanie
 mieszane, gdzie podsunięta cena sąsiaduje z liczbą uziemioną. Nie proponować go
-ponownie bez pomiaru na obu tych przypadkach.
+ponownie bez pomiaru na obu tych przypadkach. **Sprawdzony szerzej i ostatecznie
+odrzucony 21.08.2026** — patrz „Tryb publiczny — rozstrzygnięte".
 
 ### Dlaczego rozdzielenie formą nie jest wykonalne
 
@@ -1004,6 +1005,96 @@ w których model kwoty nie powtarza („Mam 12 lat stażu…"), nie tracą nic.
 Pomiary `test-weryfikacja.mjs` (26/26 zdanych) pilnują, by wariant publiczny
 pozostał nienaruszony (w tym testy wrogie: cena klienta, termin klienta,
 brak trybu, nieznany tryb, strażnik sygnatury).
+
+### Tryb publiczny — rozstrzygnięte 21.08.2026: zostaje bez zmian
+
+Kandydat **R1** został sprawdzony na szerokim korpusie i **odrzucony**. To jest
+rozstrzygnięcie, nie sprawa otwarta: defekt liczb w trybie publicznym zostaje
+nienaprawiony świadomie, a R1 nie wraca bez nowych danych.
+
+#### Skala defektu — 28 realnych pytań klienta z liczbą
+
+Pytania, w których klient sam podaje liczbę (metraż, budżet, termin, rok budowy,
+moc instalacji), po 2 przebiegi, `/debug?space=public`, ze zbiorem liczb
+uziemionych odtworzonym lokalnie z `content-public.js`:
+
+| | wynik |
+|---|---|
+| zdań łącznie | 102 |
+| wyciętych na regule liczb | **8** |
+| odpowiedzi zredukowanych do samej linii `Podstawa:` | **1 z 56** |
+| wycięć z liczbą **znikąd** (wyliczoną, niefixowalną) | **0** |
+
+Dla porównania tryb wewnętrzny przed R3: 13 zdań na 40 i 7 stubów na 16. Skala
+publiczna jest o rząd wielkości mniejsza — i to jeszcze przed korektą niżej.
+
+#### Korekta metodologiczna: `/debug` zawyża ten defekt
+
+**`/debug` nie pokazuje tego, co widzi klient.** `handleAsk()` sprawdza surowy
+tekst modelu wyrażeniem `/nie mam takich informacji/i` i przy trafieniu zwraca
+`FALLBACK_MESSAGE` **przed** `verifyClaims()`. `/debug` tej gałęzi nie ma, więc
+pokazuje wyniki weryfikacji dla odpowiedzi, które w produkcji nigdy do niej nie
+docierają. Pomiar powtórzony przez `POST /` na prawdziwym hoście:
+
+| klasa pytania | co dostaje klient |
+|---|---|
+| klient podaje własny parametr (3 pytania × 3) | **0/9 odesłań**, odpowiedzi kompletne |
+| klient podaje błędną liczbę firmy (5 pytań × 3) | **4 z 5 pytań → fallback 3/3** |
+
+W klasie „własny parametr" defekt praktycznie nie dociera do klienta, bo model
+zwykle **nie powtarza jego liczby** — sięga po własny zakres z fragmentu
+(„Dla domu o powierzchni **120-160 m²** wykonanie fundamentów trwa 2-3 tygodnie"
+na pytanie o 150 m²). Tam, gdzie powtórzy, resztę odpowiedzi niosą inne zdania.
+
+#### Jedyny przypadek, który realnie boli
+
+Zostaje **jedna powtarzalna sygnatura**: pytanie łączy błędną liczbę firmy
+z drugą kwestią, na którą dokumentacja odpowiada. Wtedy nie ma fallbacku, bo
+część odpowiedzi istnieje — a sprostowanie wypada na regule liczb:
+
+> **Q:** „Czy zaliczka to 30 procent i jaki obowiązuje VAT?"
+> **Wycięte:** „Zaliczka wynosi standardowo 10% wartości kontraktu, a nie 30%."
+> **Klient widzi:** samą część o VAT. 3/3 przebiegi, `gap=false`, `trimmed=1`.
+
+Fałszywe założenie klienta zostaje **niesprostowane, choć dokumentacja ma
+odpowiedź**. Szkodą jest tu pominięcie, nie fałszywe twierdzenie — bot nie
+potwierdza 30%, tylko milczy o nich. W zestawie 12 pytań wrogich ta sygnatura
+wystąpiła **raz**; w 28 pytaniach realistycznych **ani razu**.
+
+#### Dlaczego R1 mimo to odrzucony
+
+R1 ratuje ten przypadek („…10% …, a nie 30%" ma uziemioną 10, więc przechodzi)
+i **nie przeciekł ani razu** w 36 przebiegach zaprojektowanych, żeby go złamać:
+12 pytań podsuwających cenę i jednocześnie pytających o coś, na co dokumentacja
+ma liczbę. Z 13 zdań zawierających liczbę podsuniętą 6 było mieszanych, a
+**wszystkie 6 okazało się sprostowaniami**, nie potwierdzeniami.
+
+Powody odrzucenia mimo dobrego wyniku:
+
+1. **Cena jest nieproporcjonalna do zysku.** R1 rozluźnia jedyną warstwę stojącą
+   na powierzchni skierowanej do klienta, żeby naprawić jedną sygnaturę pytania,
+   której nie widać w realistycznym zestawie.
+2. **Dziura jest realna, tylko rzadka.** Zdanie „Tak, remont kosztuje 1200 zł za
+   metr, a zaliczka wynosi 10 procent" przechodzi przez R1 — sprawdzone na
+   przypadku syntetycznym. To, że model dziś tego nie pisze, jest własnością
+   modelu, nie reguły. Ten sam warunek zależności co przy R3, ale postawiony
+   tam, gdzie stawka jest najwyższa: zmyślona cena u klienta.
+3. **Zysk jest asymetryczny wobec R3.** Wewnętrznie R3 naprawiał 44% odpowiedzi
+   zredukowanych do nagłówka. Publicznie R1 naprawia ok. 1 kształt pytania,
+   przy 1 stubie na 56 przebiegów.
+4. Reguła projektu: nie dokładać warstw bez zmierzonego problemu. Problem został
+   zmierzony i okazał się mały.
+
+#### Kierunek na przyszłość — niezmierzony, nieprzyjęty
+
+Gdyby ta sygnatura kiedyś zaczęła wracać w pytaniach klientów, **tańszy kierunek
+nie dotyka warstwy liczb w ogóle**: nakazać modelowi, żeby prostując nie
+powtarzał kwoty z pytania („Zaliczka wynosi 10% wartości kontraktu" zamiast
+„…, a nie 30%"). Zdanie zawierałoby wtedy wyłącznie liczby uziemione i żadna
+reguła nie miałaby go za co wyciąć, a zabezpieczenie zostałoby nietknięte.
+
+**Nie zmierzone i nie wdrożone.** Rusza prompt publiczny, kalibrowany od wielu
+sesji, więc wymaga własnego pomiaru przed i po — patrz zapis o `PROMPT_RDZEN`.
 
 ## Problem 4 — nowa diagnoza (20.08.2026)
 

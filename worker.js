@@ -754,6 +754,75 @@ function extractNumbers(text) {
   return matches.map((n) => n.replace(",", ".")).filter((n) => parseFloat(n) > 0);
 }
 
+// LICZEBNIKI ZAPISANE SŁOWNIE — tylko po stronie ŹRÓDŁA (od 22.08.2026).
+//
+// SKĄD SIĘ WZIĘŁO. Pomiar kancelarii: fragment mówi „apelację wnosi się
+// w terminie DWÓCH TYGODNI od doręczenia", model odpowiedział „termin na
+// apelację wynosi 14 dni od doręczenia" — i zdanie zostało wycięte, bo cyfry
+// `14` nie ma w dokumentacji dosłownie. Odpowiedź była poprawna.
+//
+// To NIE jest specyfika kancelarii. Dokumenty formalne — umowy, regulaminy,
+// pisma urzędowe, akty prawne — zapisują terminy słownie z zasady, więc ta
+// kolizja czeka u większości klientów. W BudMaksie nie wystąpiła tylko dlatego,
+// że jego dokumentacja pisze cyframi („22%", „300 zł", „2 metry").
+//
+// CZEGO TO NIE ROZLUŹNIA — i to jest cała różnica:
+// rozszerzamy wyłącznie ZBIÓR LICZB UZIEMIAJĄCYCH, czyli to, co dokumentacja
+// już mówi, tylko innym zapisem. Liczby ze zdania modelu nadal muszą trafić
+// w ten zbiór. Liczba, której w źródle nie ma w żadnej postaci — ani cyfrą,
+// ani słownie — wypada tak samo jak dotąd, łącznie z arytmetyką modelu.
+// Rozszerzenie działa TYLKO w tę stronę: liczebnik w odpowiedzi nie jest
+// zamieniany na cyfrę, bo to zaostrzyłoby warstwę i wycinałoby zdania, które
+// dziś przechodzą.
+const LICZEBNIKI = new Map(Object.entries({
+  jeden: 1, jednego: 1, jedna: 1, jednej: 1, jedno: 1, jednym: 1,
+  dwa: 2, dwoch: 2, dwie: 2, dwu: 2, dwoma: 2,
+  trzy: 3, trzech: 3, trzema: 3,
+  cztery: 4, czterech: 4, czterema: 4,
+  piec: 5, pieciu: 5, szesc: 6, szesciu: 6,
+  siedem: 7, siedmiu: 7, osiem: 8, osmiu: 8,
+  dziewiec: 9, dziewieciu: 9, dziesiec: 10, dziesieciu: 10,
+  jedenascie: 11, jedenastu: 11, dwanascie: 12, dwunastu: 12,
+  trzynascie: 13, trzynastu: 13, czternascie: 14, czternastu: 14,
+  pietnascie: 15, pietnastu: 15, szesnascie: 16, szesnastu: 16,
+  siedemnascie: 17, siedemnastu: 17, osiemnascie: 18, osiemnastu: 18,
+  dziewietnascie: 19, dziewietnastu: 19,
+  dwadziescia: 20, dwudziestu: 20, trzydziesci: 30, trzydziestu: 30,
+  czterdziesci: 40, czterdziestu: 40, piecdziesiat: 50, piecdziesieciu: 50,
+  szescdziesiat: 60, szescdziesieciu: 60, sto: 100, stu: 100,
+}));
+
+// Jednostki, których przeliczenie jest STAŁE i sprawdzalne. Miesięcy i lat tu
+// nie ma celowo — miesiąc nie ma stałej liczby dni, więc przeliczenie byłoby
+// zgadywaniem, a nie zapisem tej samej wartości innym zapisem.
+const TYDZIEN_DNI = 7;
+
+// Zbiór liczb, którymi ŹRÓDŁO może uziemić zdanie: cyfry wprost, liczebniki
+// zapisane słownie oraz tygodnie przeliczone na dni.
+function liczbyZeZrodla(text) {
+  const zbior = new Set(extractNumbers(text));
+  const t = bezOgonkow(text);
+
+  // Liczebniki zapisane słownie → wartość liczbowa.
+  for (const [slowo, wartosc] of LICZEBNIKI) {
+    const re = new RegExp(`(?<![a-z0-9])${slowo}(?![a-z0-9])`);
+    if (re.test(t)) zbior.add(String(wartosc));
+  }
+
+  // „dwóch tygodni" → 14 dni, „tygodnia" → 7 dni. Liczebnik musi stać PRZY
+  // jednostce, nie gdziekolwiek w tekście — inaczej „dwóch świadków" w jednym
+  // zdaniu i „tygodnia" w drugim uziemiłyby liczbę, której nikt nie napisał.
+  for (const m of t.matchAll(/(?<![a-z0-9])([a-z]+|\d+)\s+(tygodni|tygodnie|tygodniami)(?![a-z])/g)) {
+    const n = /^\d+$/.test(m[1]) ? Number(m[1]) : LICZEBNIKI.get(m[1]);
+    if (n) zbior.add(String(n * TYDZIEN_DNI));
+  }
+  // Sam „tygodnia"/„tydzień" bez liczebnika to jeden tydzień — tak zapisuje się
+  // termin tygodniowy w pismach („w terminie tygodnia od ogłoszenia").
+  if (/(?<![a-z0-9])(tygodnia|tydzien|tygodniu)(?![a-z])/.test(t)) zbior.add(String(TYDZIEN_DNI));
+
+  return zbior;
+}
+
 // Sprawdza, czy każda liczba ze zdania występuje w treści któregokolwiek
 // z pobranych fragmentów. To wyłapuje zmyślone ceny i terminy wplecione
 // w skądinąd poprawnie brzmiące zdanie — czego weryfikacja semantyczna nie widzi.
@@ -790,7 +859,8 @@ function numbersAreGrounded(sentence, filtered, tryb = PROMPT_PUBLICZNY, userQue
   const nums = extractNumbers(sentence);
   if (!nums.length) return true;
   const corpus = filtered.map((m) => m.metadata.text + " " + m.metadata.title).join(" ");
-  const corpusNums = new Set(extractNumbers(corpus));
+  // Zbiór uziemiający, nie sam wykaz cyfr — patrz `liczbyZeZrodla()`.
+  const corpusNums = liczbyZeZrodla(corpus);
   // Jedyne miejsce, w którym pytanie w ogóle wchodzi do gry — i tylko wewnętrznie.
   const zPytania = tryb === PROMPT_WEWNETRZNY
     ? new Set(extractNumbers(userQuestion || ""))
@@ -1021,6 +1091,41 @@ async function verifyClaims(fullText, filtered, env, klient, tryb = PROMPT_PUBLI
 // Rozpoznaje zdania, które nie zawierają twierdzeń faktycznych o firmie —
 // powitania, podziękowania, zaproszenia do kontaktu. Te wolno zachować
 // nawet bez pokrycia w dokumentacji, bo niczego nie obiecują.
+// Czy odpowiedź modelu jest ODMOWĄ W CAŁOŚCI, czy zawiera treść obok odmowy.
+//
+// SKĄD SIĘ WZIĘŁO. `handleAsk()` rozpoznaje brak odpowiedzi frazą na surowym
+// tekście modelu i zamienia CAŁĄ odpowiedź na fallback. Przy treści, której
+// sensem jest odmowa („nie podajemy przewidywanego czasu trwania sprawy, bo
+// zależy on od sądu"), model potrafi dopisać frazę odmowną obok wyjaśnienia —
+// i wtedy klient traci wyjaśnienie, które było w pobranym materiale.
+//
+// CZEGO TO NIE ROZLUŹNIA. Odpowiedź złożona z samego zdania odmownego — także
+// z odmowy plus grzeczności („Nie mam takich informacji. Zapraszamy do
+// kontaktu.") — nadal zapada w fallback, bo prawdziwe „nie wiem" ma zostać
+// widoczne w metrykach jako luka. Zmienia się wyłącznie przypadek, w którym
+// obok odmowy STOI TREŚĆ: wtedy odmowa jest usuwana, a treść idzie do pełnej
+// weryfikacji zdanie po zdaniu, bez żadnej taryfy ulgowej.
+function tylkoOdmowa(tekst) {
+  const zdania = splitSentences(tekst);
+  const lista = zdania.length ? zdania : [tekst];
+  if (!lista.some((z) => FRAZA_ODMOWY.test(z))) return false; // odmowy w ogóle nie ma
+  // Zdanie odmowne trzeba odsiać OSOBNO, zanim odsieje się grzecznościowe:
+  // samo zdanie odmowne kończy się odesłaniem do biura, więc `isConnectiveSentence`
+  // klasyfikuje je jako grzecznościowe i lista „istotnych" robi się pusta
+  // z niewłaściwego powodu. Złapane testem przy wdrożeniu tej zmiany.
+  const tresc = lista.filter((z) => !FRAZA_ODMOWY.test(z) && !isConnectiveSentence(z));
+  return tresc.length === 0;
+}
+
+// Usuwa zdania odmowne, zostawiając treść. Wywoływane wyłącznie wtedy, gdy
+// `tylkoOdmowa()` jest fałszem — czyli gdy obok odmowy jest co zostawić.
+function usunZdaniaOdmowne(tekst) {
+  const zdania = splitSentences(tekst);
+  if (!zdania.length) return tekst;
+  const zostaje = zdania.filter((z) => !FRAZA_ODMOWY.test(z));
+  return zostaje.length ? zostaje.join(" ") : tekst;
+}
+
 function isConnectiveSentence(s) {
   const t = s.toLowerCase();
   const patterns = [
@@ -1182,12 +1287,14 @@ function dwuznacznyZKontekstem(k, t) {
 // sygnałów. Gdyby tak było, „wypadek, przyjechała PIP" wybrałoby kontrolę,
 // bo ta ma dwa sygnały z definicji. Dlatego porównanie liczby sygnałów
 // odbywa się WEWNĄTRZ tego samego poziomu pilności.
-function wykryjEskalacje(pytanie, askedFrom, klient) {
-  if (askedFrom !== SPACE_INTERNAL) return null; // publiczny bot nie eskaluje do przełożonego
-  // Pakiet branżowy jest OBOWIĄZKOWY, a jego brak jest błędem, nie ciszą.
-  // Cichy zwrot null przy braku pakietu wyłączyłby całą warstwę bezpieczeństwa
-  // bez jednego śladu — a to jest ta warstwa, przy której koszt milczenia
-  // liczy się w zdrowiu, nie w złej recenzji.
+// Dopasowanie kategorii — WSPÓLNY mechanizm dla eskalacji wewnętrznej i ramki
+// bezpieczeństwa w trybie publicznym. Wydzielone 22.08.2026: obie warstwy mają
+// rozstrzygać tak samo, a dwie kopie tej pętli rozjechałyby się przy pierwszej
+// poprawce progu.
+//
+// `dopuszczalna` decyduje, które kategorie w ogóle biorą udział — to jedyna
+// różnica między trybami.
+function dopasujKategorie(pytanie, klient, dopuszczalna) {
   const pakiet = wymagajKlienta(klient).eskalacja;
   if (!pakiet || !Array.isArray(pakiet.kategorie)) {
     throw new Error(`Klient ${klient.id} nie ma słownika eskalacji.`);
@@ -1197,6 +1304,7 @@ function wykryjEskalacje(pytanie, askedFrom, klient) {
 
   const trafione = [];
   for (const k of pakiet.kategorie) {
+    if (!dopuszczalna(k)) continue;
     const jednoznaczne = k.zdarzenie && k.zdarzenie.test(t);
     const przezDwuznaczny = dwuznacznyZKontekstem(k, t);
     if (!jednoznaczne && !przezDwuznaczny) continue;
@@ -1216,8 +1324,50 @@ function wykryjEskalacje(pytanie, askedFrom, klient) {
     if (a.sygnaly !== b.sygnaly) return b.sygnaly - a.sygnaly; // 1. więcej sygnałów
     return a.kolejnosc - b.kolejnosc;                          // 3. kolejność w tablicy
   });
-  const w = trafione[0].k;
-  return { id: w.id, pilne: w.pilne, tekst: w.tekst };
+  return trafione[0].k;
+}
+
+// Eskalacja wewnętrzna — wszystkie kategorie słownika, tekst dla pracownika.
+function wykryjEskalacje(pytanie, askedFrom, klient) {
+  if (askedFrom !== SPACE_INTERNAL) return null; // publiczny bot nie eskaluje do przełożonego
+  const w = dopasujKategorie(pytanie, klient, () => true);
+  return w ? { id: w.id, pilne: w.pilne, tekst: w.tekst } : null;
+}
+
+// RAMKA BEZPIECZEŃSTWA — TRYB PUBLICZNY, od 22.08.2026.
+//
+// SKĄD SIĘ WZIĘŁA. Pomiar kancelarii: na pytanie „Mąż mi grozi i boję się
+// wrócić do domu" model odpowiedział między innymi „Możesz zadzwonić na numer
+// alarmowy 112", a `numbersAreGrounded()` WYCIĄŁ to zdanie, bo `112` nie
+// występuje w dokumentacji klienta. Warstwa zadziałała dokładnie tak, jak
+// zaprojektowano — i usunęła numer alarmowy osobie w zagrożeniu.
+//
+// DLACZEGO NIE WYJĄTEK W WARSTWIE LICZB. Rozważone i odrzucone. Biała lista
+// numerów uziemiałaby je w KAŻDYM zdaniu, więc „cena wynosi 997 zł" albo
+// „odszkodowanie 112 tysięcy" przechodziłyby weryfikację jako liczby „pokryte".
+// Warunkowanie listy kontekstem („zadzwoń pod…") byłoby listą fraz, a nie
+// warunkiem — czyli tym, czego ten projekt konsekwentnie nie robi. Furtka
+// w jedynej warstwie stojącej na powierzchni klienckiej jest za drogim
+// rozwiązaniem problemu, który da się rozwiązać obok niej.
+//
+// DLACZEGO RAMKA. Numer alarmowy nie jest twierdzeniem o dokumentacji klienta,
+// tylko stałą operacyjną — dokładnie jak skierowanie do przełożonego w trybie
+// wewnętrznym. Tekst ramki nie przechodzi przez `verifyClaims()`, więc żadna
+// warstwa nie ma go jak wyciąć, a weryfikacja reszty odpowiedzi NIE JEST
+// w niczym osłabiona.
+//
+// CO JĄ OGRANICZA — trzy rzeczy, świadomie:
+// 1. Wyzwalają WYŁĄCZNIE kategorie, którym klient jawnie dopisał pole
+//    `publiczna`. Domyślnie żadna, więc dodanie ramki jest decyzją, nie skutkiem
+//    ubocznym. BudMax dziś nie ma ani jednej — jego bot publiczny to widget
+//    sprzedażowy i jego zachowanie zostaje niezmienione.
+// 2. Tekst jest OSOBNY od tekstu eskalacji wewnętrznej: klient nie jest
+//    pracownikiem, nie ma przełożonego i nie prowadzi akt.
+// 3. Rozstrzyganie jest to samo co przy eskalacji — ten sam `dopasujKategorie`.
+function wykryjOstrzezenie(pytanie, askedFrom, klient) {
+  if (askedFrom === SPACE_INTERNAL) return null; // wewnątrz działa pełna eskalacja
+  const w = dopasujKategorie(pytanie, klient, (k) => Boolean(k.publiczna));
+  return w ? { id: w.id, pilne: w.pilne, tekst: w.publiczna } : null;
 }
 
 // Skleja odpowiedź z ramką eskalacji. Przy kategoriach pilnych skierowanie idzie
@@ -1263,7 +1413,7 @@ const PROMPT_RDZEN = {
   // Zdanie odmowne należy do klienta, więc rdzeń dostaje je parametrem zamiast
   // wklejać stałą. Reguła się nie zmienia: sformułowanie musi być DOSŁOWNE,
   // bo handleAsk() rozpoznaje po nim brak odpowiedzi.
-  brakInformacji: (fallback) => `Jeśli żaden fragment nie zawiera wprost odpowiedzi na pytanie, powiedz dokładnie: "${fallback}" i nic więcej.`,
+  brakInformacji: (fallback) => `Jeśli żaden fragment nie zawiera wprost odpowiedzi na pytanie, powiedz dokładnie: "${fallback}" i nic więcej. Jeżeli natomiast fragmenty WYJAŚNIAJĄ, dlaczego danej informacji nie podajemy albo dlaczego nie da się jej podać — to wyjaśnienie JEST odpowiedzią. Podaj je wtedy i NIE używaj zdania odmownego.`,
 };
 
 const PROMPT_PUBLICZNY = "publiczny";
@@ -1731,6 +1881,8 @@ export default {
         const przestrzenPytania = spaces.includes(SPACE_INTERNAL) ? SPACE_INTERNAL : SPACE_PUBLIC;
         const trybProm = trybPromptu(przestrzenPytania);
         const eskalacjaDbg = wykryjEskalacje(q, przestrzenPytania, klientDbg);
+        const ostrzezenieDbg = wykryjOstrzezenie(q, przestrzenPytania, klientDbg);
+        const ramkaDbg = eskalacjaDbg || ostrzezenieDbg;
         const systemPrompt = buildSystemPrompt(filtered.map((m) => m.metadata), trybProm, klientDbg);
         const answer = await generate(env, systemPrompt, [{ role: "user", content: q }]);
 
@@ -1792,6 +1944,7 @@ export default {
           przeszukane_przestrzenie: spaces,
           tryb_promptu: trybProm,
           eskalacja: eskalacjaDbg ? { kategoria: eskalacjaDbg.id, pilne: eskalacjaDbg.pilne } : null,
+          bezpieczenstwo: ostrzezenieDbg ? { kategoria: ostrzezenieDbg.id, pilne: ostrzezenieDbg.pilne } : null,
           progi: { MIN_SIMILARITY, CITATION_THRESHOLD, CITATION_THRESHOLD_KROTKIE, KROTKIE_ZDANIE_SLOW },
           znalezione_fragmenty: matches.map((m) => ({
             tytul: m.metadata.title,
@@ -1801,7 +1954,7 @@ export default {
           po_filtrze: filtered.length,
           odpowiedz: answer,
           // Tak, jak zobaczy to pracownik: z doklejoną ramką eskalacji.
-          odpowiedz_z_eskalacja: zlozZEskalacja(answer, eskalacjaDbg),
+          odpowiedz_z_eskalacja: zlozZEskalacja(answer, ramkaDbg),
           weryfikacja_zdan: sentenceScores,
         }, corsHeaders(request));
       } catch (e) {
@@ -1868,7 +2021,16 @@ async function handleAsk(request, env, klient, rodzaje, askedFrom, identity = nu
   // Przy wypadku, którego dokumentacja nie pokrywa, skierowanie do przełożonego
   // jest potrzebne bardziej, nie mniej.
   const eskalacja = wykryjEskalacje(question, askedFrom, klient);
-  const poleEskalacji = eskalacja ? { eskalacja: { kategoria: eskalacja.id, pilne: eskalacja.pilne } } : {};
+  // Ramka bezpieczeństwa działa w trybie publicznym, eskalacja w wewnętrznym —
+  // są rozłączne z definicji, więc do złożenia odpowiedzi idzie ta, która jest.
+  const ostrzezenie = wykryjOstrzezenie(question, askedFrom, klient);
+  const ramka = eskalacja || ostrzezenie;
+  const poleEskalacji = {
+    ...(eskalacja ? { eskalacja: { kategoria: eskalacja.id, pilne: eskalacja.pilne } } : {}),
+    // Osobne pole, nie `eskalacja`: interfejs klienta ma prawo pokazać to inaczej,
+    // a panel liczy eskalacje pracownicze i nie może ich pomieszać z ostrzeżeniami.
+    ...(ostrzezenie ? { bezpieczenstwo: { kategoria: ostrzezenie.id, pilne: ostrzezenie.pilne } } : {}),
+  };
 
   if (env.RATE_LIMIT_KV) {
     const ip = request.headers.get("cf-connecting-ip") || "unknown";
@@ -1894,7 +2056,7 @@ async function handleAsk(request, env, klient, rodzaje, askedFrom, identity = nu
 
     if (filtered.length === 0) {
       await logQuestion(env, question, true, null, askedFrom, null, eskalacja, klient.id);
-      return jsonResponse({ answer: zlozZEskalacja(klient.prompt.fallback, eskalacja), source: null, gap: true, ...poleEskalacji }, corsHeaders(request));
+      return jsonResponse({ answer: zlozZEskalacja(klient.prompt.fallback, ramka), source: null, gap: true, ...poleEskalacji }, corsHeaders(request));
     }
 
     // Tryb promptu, jak przestrzenie, przychodzi wyłącznie z routingu.
@@ -1907,12 +2069,19 @@ async function handleAsk(request, env, klient, rodzaje, askedFrom, identity = nu
 
     const rawAnswer = await generate(env, systemPrompt, messages);
 
-    if (!rawAnswer || /nie mam takich informacji/i.test(rawAnswer)) {
+    // Do 22.08.2026 warunkiem było samo wystąpienie frazy gdziekolwiek
+    // w odpowiedzi. Zmierzone na kancelarii: fragment, którego treścią jest
+    // wyjaśnienie odmowy, zamieniał całą odpowiedź w nagi fallback.
+    if (!rawAnswer || tylkoOdmowa(rawAnswer)) {
       await logQuestion(env, question, true, null, askedFrom, null, eskalacja, klient.id);
-      return jsonResponse({ answer: zlozZEskalacja(klient.prompt.fallback, eskalacja), source: null, gap: true, ...poleEskalacji }, corsHeaders(request));
+      return jsonResponse({ answer: zlozZEskalacja(klient.prompt.fallback, ramka), source: null, gap: true, ...poleEskalacji }, corsHeaders(request));
     }
 
-    const verdict = await verifyClaims(rawAnswer, filtered, env, klient, tryb, question);
+    // Odmowa dopisana OBOK treści jest usuwana, żeby odpowiedź nie zawierała
+    // zdania zaprzeczającego temu, co mówi reszta. Reszta przechodzi weryfikację
+    // w całości i bez ulg.
+    const trescDoWeryfikacji = usunZdaniaOdmowne(rawAnswer);
+    const verdict = await verifyClaims(trescDoWeryfikacji, filtered, env, klient, tryb, question);
     if (!verdict.ok) {
       // Licznik `cicho` MUSI dostać dane także tutaj. To jest ścieżka, na której
       // po weryfikacji nie zostało ani jedno twierdzenie — czyli jedyny przypadek,
@@ -1920,12 +2089,12 @@ async function handleAsk(request, env, klient, rodzaje, askedFrom, identity = nu
       // (stan sprzed 20.08.2026) wycinało z metryk dokładnie ten przypadek,
       // dla którego licznik powstał.
       await logQuestion(env, question, true, null, askedFrom, verdict.cicho, eskalacja, klient.id);
-      return jsonResponse({ answer: zlozZEskalacja(verdict.fallback, eskalacja), source: null, gap: true, ...poleEskalacji }, corsHeaders(request));
+      return jsonResponse({ answer: zlozZEskalacja(verdict.fallback, ramka), source: null, gap: true, ...poleEskalacji }, corsHeaders(request));
     }
 
     await logQuestion(env, question, false, verdict.source, askedFrom, verdict.cicho, eskalacja, klient.id);
     return jsonResponse({
-      answer: zlozZEskalacja(verdict.text, eskalacja),
+      answer: zlozZEskalacja(verdict.text, ramka),
       source: verdict.source,
       gap: false,
       trimmed: verdict.removed || 0,
@@ -1952,7 +2121,9 @@ export {
   verifyAccessJwt, accessConfig, resetAccessCertsCache,
   isUnsupportablePromise, leaksInstructions, isDuplicate, numbersAreGrounded,
   wystepujeDoslownie, progCytowania, splitSentences, isConnectiveSentence,
-  wykryjEskalacje, zlozZEskalacja,
+  liczbyZeZrodla,
+  wykryjEskalacje, wykryjOstrzezenie, zlozZEskalacja,
+  tylkoOdmowa, usunZdaniaOdmowne,
   PROMPT_PUBLICZNY, PROMPT_WEWNETRZNY,
   // Rozpoznanie klienta i składanie nazwy przestrzeni — testowalne osobno,
   // bo to jedyne dwa miejsca decydujące, czyją dokumentację widzi pytający.

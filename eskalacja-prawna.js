@@ -90,6 +90,12 @@ const KATEGORIE_ESKALACJI_PRAWNE = [
       { wzorzec: /(?<![a-z0-9])(grozi|grozb|grozil)/, kontekst: () => OSOBA_ZAGROZONA },
       { wzorzec: /(?<![a-z0-9])(bije|bil |pobi)/, kontekst: () => OSOBA_ZAGROZONA },
     ],
+    // TEKST DLA KLIENTA, nie dla zespołu — jedyna kategoria z ramką publiczną.
+    // Powód jest zmierzony: 22.08.2026 osoba pytająca „mąż mi grozi, boję się
+    // wrócić do domu" dostała odpowiedź, z której warstwa liczb wycięła numer
+    // alarmowy, bo `112` nie występuje w dokumentacji kancelarii. Ramka nie
+    // przechodzi przez weryfikację, więc nie ma jej jak wyciąć.
+    publiczna: `JEŻELI JESTEŚ W NIEBEZPIECZEŃSTWIE: zadzwoń pod numer alarmowy 112. Jeżeli zagrożenie trwa albo boisz się wrócić do domu, zrób to najpierw — sprawy prawne można załatwić później, bezpieczeństwa nie da się odzyskać. Całodobowa Niebieska Linia dla osób doświadczających przemocy: 800 120 002.`,
     tekst: `NAJPIERW BEZPIECZEŃSTWO: jeżeli zagrożenie trwa, przekaż numer alarmowy 112 i nie kończ rozmowy, dopóki nie ustalisz, że rozmówca jest bezpieczny i ma się gdzie schronić. Zaraz potem powiadom adwokata prowadzącego, a przy jego nieobecności wspólnika dyżurnego — nie odkładaj na następny dzień roboczy. Nie oceniaj kwalifikacji prawnej zdarzenia ani jego skutków.`,
   },
   {

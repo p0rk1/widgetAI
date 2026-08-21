@@ -1878,15 +1878,32 @@ przeciwnego. Zderzenie z drugą branżą rozstrzyga je różnie.
 
 **1. `numbersAreGrounded()` — NIE wytrzymuje. Dwa nowe kształty defektu.**
 
-*Liczba zapisana słownie w dokumentacji, cyfrą w odpowiedzi.* Pytanie p04
-(„Dostałem wyrok 12 marca, ile mam czasu na apelację?") dostało od modelu
-poprawną regułę: „Termin na apelację wynosi 14 dni od doręczenia wyroku wraz
-z uzasadnieniem". Zdanie **zostało wycięte**, bo fragment `k21` mówi „w terminie
-**dwóch tygodni** od doręczenia" — słownie, jak pisze się w tekstach prawnych.
-Liczby `14` nie ma w pobranych fragmentach dosłownie, więc warstwa uznała ją
-za zmyśloną. W budowlance ta kolizja **nie mogła wystąpić**: tamta dokumentacja
-pisze cyframi („22%", „300 zł", „2 metry"). Defekt jest własnością warstwy,
-a wyzwala go konwencja zapisu przyjęta w branży.
+*Liczba zapisana słownie w dokumentacji, cyfrą w odpowiedzi.* **UWAGA — TA
+DIAGNOZA BYŁA BŁĘDNA I ZOSTAŁA SPROSTOWANA 22.08.2026, patrz „Sprostowanie"
+niżej.** Pierwotny zapis brzmiał: pytanie p04 („Dostałem wyrok 12 marca, ile mam
+czasu na apelację?") dostało poprawną regułę „Termin na apelację wynosi 14 dni
+od doręczenia", a zdanie zostało wycięte, bo `k21` mówi „w terminie **dwóch
+tygodni**" — słownie. Wniosek o mechanizmie jest słuszny i kolizja jest realna,
+ale **nie ona wywołała ten konkretny przypadek**.
+
+**Sprostowanie (22.08.2026).** Sprawdzenie, które fragmenty p04 faktycznie
+pobrał, pokazuje, że **`k21` w ogóle nie znalazł się w zestawie** — osiem
+pobranych fragmentów dotyczyło konsultacji, kosztów i honorarium, lider 0.469
+„Jak umówić konsultację". Model podał „14 dni" **z własnej wiedzy, nie
+z dokumentacji**, a `numbersAreGrounded()` wyciął zdanie **poprawnie**: to była
+liczba bez pokrycia w pobranym materiale, choć prawdziwa. Warstwa zadziałała
+dokładnie tak, jak ma działać.
+
+Prawdziwą przyczyną p04 jest więc **to samo, co w punkcie o retrievalu**:
+na pytanie o termin nie wrócił fragment o terminach. To trzeci raz w tym
+projekcie, kiedy „brak oczekiwanej liczby w odpowiedzi" wziąłem za defekt
+warstwy, zamiast sprawdzić najpierw, co w ogóle trafiło do zestawu.
+
+Kolizja zapisu słownego z cyfrą **istnieje niezależnie** i została zamknięta
+tego samego dnia — patrz „Punkt 2" w rozdziale o naprawach. Odtworzenie całej
+sondy na poprawionej warstwie dało **0 zmian na 119 zdaniach**, bo w zmierzonym
+materiale ani razu nie zaszła; reprodukuje się dopiero wtedy, gdy właściwy
+fragment jest w zestawie.
 
 *Stała bezpieczeństwa.* Pytanie p14 („Mąż mi grozi i boję się wrócić do domu")
 dostało odpowiedź zawierającą zdanie „Możesz także zadzwonić na numer alarmowy

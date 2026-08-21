@@ -12,7 +12,7 @@
 // więc warstwa zbyt chętna nauczyłaby zespół ignorować ramkę dokładnie tak,
 // jak nauczyłaby brygadę na budowie.
 
-import { wykryjEskalacje, zlozZEskalacja } from "./worker.js";
+import { wykryjEskalacje, wykryjOstrzezenie, zlozZEskalacja } from "./worker.js";
 import { KLIENCI } from "./klienci.js";
 
 const KLIENT = KLIENCI.kancelaria;
@@ -141,6 +141,49 @@ sprawdzPozycje("pilne: ramka PRZED treścią",
   zlozZEskalacja(TRESC, wykryjEskalacje("Termin na apelację upływa jutro", WEW, KLIENT)), true);
 sprawdzPozycje("niepilne: ramka PO treści",
   zlozZEskalacja(TRESC, wykryjEskalacje("Dzwoni matka klienta i pyta o sprawę", WEW, KLIENT)), false);
+
+// --- RAMKA BEZPIECZEŃSTWA W TRYBIE PUBLICZNYM (22.08.2026) ---
+//
+// Powstała z pomiaru: warstwa liczb wycięła numer alarmowy z odpowiedzi dla
+// osoby zgłaszającej zagrożenie. Ramka jest doklejana poza weryfikacją, więc
+// nie ma jej jak wyciąć. Wyzwala WYŁĄCZNIE kategoria z polem `publiczna`.
+console.log("\n--- ramka bezpieczeństwa (tryb publiczny) ---");
+
+function sprawdzRamke(nazwa, pytanie, oczekiwana) {
+  const o = wykryjOstrzezenie(pytanie, PUB, KLIENT);
+  const dostal = o ? o.id : null;
+  const ok = dostal === oczekiwana;
+  if (ok) zdane++;
+  else oblane.push(`ramka: „${pytanie}" — oczekiwano ${oczekiwana}, dostano ${dostal}`);
+  console.log(`${ok ? "OK  " : "BŁĄD"} [${String(oczekiwana)}] ${nazwa}`);
+}
+
+sprawdzRamke("zagrożenie od osoby bliskiej", "Mąż mi grozi i boję się wrócić do domu, co mam robić?", "zagrozenie_osoby");
+sprawdzRamke("to samo bez ogonków", "maz grozi mi i boje sie wrocic do domu", "zagrozenie_osoby");
+sprawdzRamke("przemoc wobec dziecka", "Partner stosuje przemoc domową wobec naszego dziecka", "zagrozenie_osoby");
+// NEGATYWNE: zwykłe pytania klienta nie mogą dostać ramki alarmowej
+sprawdzRamke("cennik", "Ile kosztuje konsultacja u adwokata?", null);
+sprawdzRamke("termin", "Ile mam czasu na apelację od wyroku?", null);
+sprawdzRamke("sankcja, nie zagrożenie", "Jaka kara grozi za jazdę po alkoholu?", null);
+sprawdzRamke("sprawy karne jako temat", "Czy prowadzicie sprawy karne?", null);
+
+// Kategoria BEZ pola `publiczna` nie daje ramki publicznej, choć daje eskalację
+// wewnętrzną. To zabezpieczenie przed włączeniem ramki u klienta, który jej
+// nie zamawiał — u BudMaksu nie ma dziś ani jednej takiej kategorii.
+{
+  const pyt = "Termin na apelację upływa jutro";
+  const ok = wykryjEskalacje(pyt, WEW, KLIENT)?.id === "termin_procesowy" && wykryjOstrzezenie(pyt, PUB, KLIENT) === null;
+  if (ok) zdane++; else oblane.push("kategoria bez `publiczna` nie może dawać ramki publicznej");
+  console.log(`${ok ? "OK  " : "BŁĄD"} kategoria bez pola publiczna: eskalacja tak, ramka nie`);
+}
+
+// Ramka pilna staje PRZED treścią, tak jak eskalacja pilna.
+{
+  const zl = zlozZEskalacja(TRESC, wykryjOstrzezenie("Mąż mi grozi, boję się", PUB, KLIENT));
+  const ok = zl.startsWith("JEŻELI JESTEŚ W NIEBEZPIECZEŃSTWIE");
+  if (ok) zdane++; else oblane.push("ramka bezpieczeństwa powinna stać przed treścią");
+  console.log(`${ok ? "OK  " : "BŁĄD"} ramka bezpieczeństwa przed treścią`);
+}
 
 console.log("\n---");
 console.log(`zdane: ${zdane}, oblane: ${oblane.length}`);

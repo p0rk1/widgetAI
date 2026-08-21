@@ -251,6 +251,75 @@ sprawdz(
   true
 );
 
+// ---------------------------------------------------------------
+// LICZEBNIKI ZAPISANE SŁOWNIE W ŹRÓDLE (22.08.2026)
+// ---------------------------------------------------------------
+// Dokumenty formalne zapisują terminy słownie („w terminie dwóch tygodni"),
+// a model odpowiada cyfrą („14 dni"). Rozszerzamy ZBIÓR UZIEMIAJĄCY o to,
+// co źródło już mówi innym zapisem — nie o to, co model wymyślił.
+console.log("\n--- liczebniki słowne po stronie źródła ---");
+
+const fragmentSlowny = [{
+  metadata: {
+    title: "Terminy procesowe",
+    text: "Apelację wnosi się w terminie dwóch tygodni od doręczenia wyroku z uzasadnieniem, " +
+          "zażalenie w terminie tygodnia od doręczenia postanowienia, a odwołanie od wypowiedzenia " +
+          "umowy o pracę w terminie 21 dni od doręczenia oświadczenia pracodawcy.",
+  },
+}];
+
+sprawdz(
+  "cyfra 14 uziemiona liczebnikiem „dwóch tygodni”",
+  numbersAreGrounded("Termin na apelację wynosi 14 dni od doręczenia wyroku z uzasadnieniem.", fragmentSlowny),
+  true
+);
+sprawdz(
+  "cyfra 7 uziemiona zapisem „w terminie tygodnia”",
+  numbersAreGrounded("Na zażalenie masz 7 dni od doręczenia postanowienia.", fragmentSlowny),
+  true
+);
+sprawdz(
+  "liczebnik sam w sobie też uziemia (2 tygodnie)",
+  numbersAreGrounded("Termin wynosi 2 tygodnie.", fragmentSlowny),
+  true
+);
+sprawdz(
+  "cyfra zapisana wprost nadal działa (21 dni)",
+  numbersAreGrounded("Odwołanie składa się w terminie 21 dni.", fragmentSlowny),
+  true
+);
+
+// WROGIE: rozszerzenie nie może przepuścić liczby, której w źródle nie ma
+// w ŻADNEJ postaci — ani cyfrą, ani słownie, ani jako przeliczenie tygodni.
+sprawdz(
+  "WROGI: liczba spoza źródła nadal wypada (30 dni)",
+  numbersAreGrounded("Termin na apelację wynosi 30 dni.", fragmentSlowny),
+  false
+);
+sprawdz(
+  "WROGI: arytmetyka modelu nadal wypada",
+  numbersAreGrounded("Łącznie zapłaci Pan 2800 złotych.", fragmentSlowny),
+  false
+);
+sprawdz(
+  "WROGI: miesiące NIE są przeliczane na dni",
+  numbersAreGrounded("Masz 180 dni na złożenie wniosku.",
+    [{ metadata: { title: "T", text: "Wniosek składa się w terminie sześciu miesięcy." } }]),
+  false
+);
+sprawdz(
+  "WROGI: liczebnik oderwany od jednostki nie tworzy przeliczenia",
+  numbersAreGrounded("Termin wynosi 21 dni.",
+    [{ metadata: { title: "T", text: "Zeznania złożyło trzech świadków. Pismo doręczono w tygodniu poprzedzającym rozprawę." } }]),
+  false
+);
+sprawdz(
+  "WROGI: liczebnik w środku wyrazu nie liczy się (stosunek ≠ sto)",
+  numbersAreGrounded("Opłata wynosi 100 złotych.",
+    [{ metadata: { title: "T", text: "Umowa reguluje stosunek prawny stron." } }]),
+  false
+);
+
 console.log("\n---");
 for (const o of oblane) console.log(`BŁĄD: ${o}`);
 console.log(`zdane: ${zdane}, oblane: ${oblane.length}`);

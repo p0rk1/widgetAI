@@ -28,7 +28,7 @@ zapis wraca jako ten sam błąd za trzy sesje.
 - [Granica dostawcy](#granica-dostawcy--model-i-baza-wektorowa-są-wymienne)
 - [Interfejsy pracownicze](#interfejsy-pracownicze--aplikacja-etap-5-i-panel-etap-6)
 - [Uziemienie liczb: rozstrzygnięcie po trybie (R3)](#uziemienie-liczb-rozstrzygnięcie-po-trybie-r3--20082026)
-- [Problem 4 - nowa diagnoza](#problem-4--nowa-diagnoza-20082026)
+- [Problem 4 — diagnoza i zamknięcie](#problem-4--nowa-diagnoza-20082026-i-zamknięcie-21082026)
 - [Dokumentacja BudMax](#dokumentacja-budmax)
 
 ## Decyzje, do których nie wracać
@@ -1096,7 +1096,7 @@ reguła nie miałaby go za co wyciąć, a zabezpieczenie zostałoby nietknięte.
 **Nie zmierzone i nie wdrożone.** Rusza prompt publiczny, kalibrowany od wielu
 sesji, więc wymaga własnego pomiaru przed i po — patrz zapis o `PROMPT_RDZEN`.
 
-## Problem 4 — nowa diagnoza (20.08.2026)
+## Problem 4 — nowa diagnoza (20.08.2026) i zamknięcie (21.08.2026)
 
 **Dotychczasowy zapis był błędny co do przyczyny** i trzeba go czytać jako
 obalony. Problem 4 brzmiał: „model nie łączy dwóch fragmentów w jedną odpowiedź".
@@ -1192,6 +1192,120 @@ To jest **przyjęty koszt, nie regresja do naprawienia**: prompt publiczny jest
 kalibrowany od wielu sesji i nie zmienia się przy okazji pracy nad trybem
 wewnętrznym. Gdyby kiedyś świadomie podnosić kompletność publicznych odpowiedzi,
 to osobną decyzją i z własnym pomiarem — nie efektem ubocznym.
+
+### Zamknięte 21.08.2026 jako granica poznania
+
+Problem 4 **przestaje być sprawą otwartą**. Nie dlatego, że go rozwiązano —
+dlatego, że wyczerpano to, co da się ustalić z zewnątrz modelu, a to, co zostało,
+jest zbyt wąskie i zbyt bezpieczne, żeby uzasadniać dokładanie reguły.
+
+#### Czy występuje na ścieżce produkcyjnej — tak
+
+Poprzednie pomiary szły przez `/debug`, więc mierzyły surowy tekst modelu.
+Powtórzone z odtworzeniem ścieżki użytkownika (trzy gałęzie `handleAsk()`:
+pusty zbiór po filtrze → fallback; „nie mam takich informacji" w surowym tekście
+→ fallback; inaczej zdania z akcją `zachowane`):
+
+| | wynik |
+|---|---|
+| generacja (surowy tekst) zawiera klauzulę | 0/6 przy formie zawodzącej, 6/6 przy pozostałych |
+| produkcja (co widzi pracownik) zawiera klauzulę | **identycznie: 0/6 i 6/6** |
+| fallbacków | 0/36 |
+| zdań wyciętych przez weryfikację | 0/36 |
+
+**Weryfikacja i fallback nie biorą w tym udziału.** Inaczej niż przy defekcie
+liczb w trybie publicznym, tutaj `/debug` nie zawyżał: zjawisko jest w całości
+po stronie generacji i dociera do użytkownika.
+
+#### Czy to jedno zjawisko, czy dwa — jedno
+
+Podejrzenie, że pod jedną etykietą siedzą pomijanie zdania z cytowanego fragmentu
+i wrażliwość retrievalu na formę pytania, **zostało sprawdzone i odrzucone**.
+Retrieval jest niewrażliwy: we wszystkich 36 przebiegach fragment docelowy
+(`i01`) stoi na **pozycji 0**, z wynikiem 0.553–0.584, a dwa pierwsze miejsca
+listy są identyczne dla każdej formy pytania. Zostaje jedno zjawisko:
+**model pomija zdanie z fragmentu, który sam cytuje w linii `Podstawa:`**.
+
+#### Co dokładnie wyzwala — drabina kwot
+
+Fragment mówi: „przy zleceniach **powyżej 400 tysięcy** złotych dopuszczalne jest
+zejście do 12 procent". Pytanie „Jaka marża przy zleceniu za X złotych?", po 5
+przebiegów na kwotę:
+
+| kwota | klauzula w odpowiedzi |
+|---|---|
+| 410 tysięcy | 5/5 |
+| 450 tysięcy | 5/5 |
+| **500 tysięcy** | **0/5** |
+| 550 tysięcy | 5/5 |
+| 600 tysięcy | 5/5 |
+| 800 tysięcy | 5/5 |
+
+Zawodzi **wyłącznie 500**, i tylko w części form zapisu:
+
+| forma | wynik |
+|---|---|
+| „za 500 tysięcy złotych" | 0/6 |
+| „za 500 000 złotych" | 0/6 |
+| „za 500 tysięcy zł" | 3/5 |
+| „za 500 tys. złotych" | 5/5 |
+| „za 500 tysięcy" (bez waluty) | 6/6 |
+| „o wartości 500 tysięcy złotych" | 6/6 |
+| „wartym 500 tysięcy złotych" | 5/5 |
+| „dla zlecenia 500 tysięcy złotych" | 5/5 |
+| „przy 500 tys. i kto zatwierdza" | 6/6 |
+
+Wyzwalaczem jest **kolokacja**: przyimek „za" + dokładnie ta kwota + waluta
+rozwinięta. Zmiana któregokolwiek z trzech elementów usuwa objaw.
+
+#### Lista wykluczonych hipotez
+
+Każda sprawdzona pomiarem, nie rozumowaniem:
+
+1. **Pozycja klauzuli we fragmencie** — nie. Pytania celujące wprost w zdania
+   3/6, 5/6, 3/7, 5/6 innych fragmentów: 4/4 każde.
+2. **Długość fragmentu** — nie. Najdłuższy badany (`i15`, 1005 znaków) 4/4;
+   zawodzi najkrótszy (`i01`, 619).
+3. **Retrieval — obecność i ranga fragmentu** — nie. Pozycja 0 w 36/36.
+4. **Retrieval — skład kontekstu** (jakie fragmenty towarzyszą) — nie.
+   Forma zawodząca „za 500 tysięcy złotych" i działająca „o wartości 500 tysięcy
+   złotych" mają **identyczną pierwszą czwórkę** fragmentów.
+5. **Arytmetyka progu** — nie. Przy 300 tysiącach klauzula nie pada ani razu
+   (0/4, poprawnie), przy każdej kwocie powyżej progu poza 500 — komplet.
+6. **Bliskość progu 400 tysięcy** — nie. 410 i 450 działają, 550 działa.
+7. **Samo słowo „złotych"** — nie. „za 600 tysięcy złotych" 5/5.
+8. **Warstwy weryfikacji** — nie. 0 wycięć i 0 fallbacków w 36 przebiegach;
+   generacja równa produkcji.
+
+**Czego nie da się ustalić z zewnątrz:** dlaczego akurat ta sekwencja tokenów
+przesuwa model ku odpowiedzi bez klauzuli. To wymaga wglądu w model, którego
+nie mamy. Tu kończy się to, co potrafimy zmierzyć.
+
+#### Dlaczego zamykamy zamiast łatać
+
+- **Objaw jest wąski.** Jedna kwota, jeden przyimek, jedna forma zapisu waluty.
+- **Kierunek błędu jest bezpieczny.** Model odpowiada **poprawnie, ale niepełnie**:
+  podaje 22 procent i granicę 14 procent, a pomija możliwość zejścia do 12.
+  Pomija ustępstwo, nigdy go nie wymyśla. Odwrotny błąd nie wystąpił — przy
+  300 tysiącach klauzula nie padła ani razu.
+- **Nie ma czego zapisać w regule.** Każda reguła promptu celująca w to musiałaby
+  wymieniać formę pytania, czyli być listą fraz — dokładnie tym, czego zakazuje
+  wniosek z 19.08.2026, i tym, co raz już nie zadziałało.
+
+**Zakaz zostaje w mocy i po zamknięciu tematu:** żadnej reguły promptu „pod
+problem 4". Gdyby objaw kiedyś się rozszerzył — na inne kwoty, inne fragmenty
+albo inne formy pytania — to jest **nowy pomiar i nowa sprawa**, a nie powrót
+do tej. Naturalnym momentem sprawdzenia jest **zmiana modelu bazowego**, bo
+zjawisko jest własnością modelu, nie naszego kodu.
+
+#### Uwaga do metody, kosztowała jeden fałszywy wniosek
+
+Metryka „czy w odpowiedzi pada 12 procent" **nie jest równoznaczna z poprawnością
+odpowiedzi**. Przy pytaniu „czy przy zleceniu za 500 tysięcy złotych mogę dać
+rabat?" wynik 0/5 wyglądał na kolejne niepowodzenie, a odpowiedź była w pełni
+poprawna: pochodziła z fragmentu „Progi decyzyjne", gdzie klauzula o marży nie
+ma zastosowania. Przy badaniu pominięć trzeba sprawdzać, czy pominięta treść
+w ogóle należy do odpowiedzi na zadane pytanie.
 
 ## Dokumentacja BudMax
 

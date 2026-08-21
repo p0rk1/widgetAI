@@ -52,12 +52,17 @@ R3 (liczba z pytania uziemia zdanie tylko w trybie wewnętrznym). Wycięcia 13/4
 będzie uziemiać. R3 stoi na zachowaniu modelu, nie na gwarancji strukturalnej:
 **przy zmianie modelu albo promptu wewnętrznego trzeba go przemierzyć.**
 
-**Nadal otwarte:**
-- Problem 4 **nie jest problemem syntezy dwóch fragmentów** — stara diagnoza
-  obalona pomiarem. Zostaje kruchość na formie powierzchniowej pytania,
-  o nieznanym mechanizmie
-- ~~`numbersAreGrounded()` w trybie **publicznym**~~ — **rozstrzygnięte
-  21.08.2026: zostaje bez zmian**, kandydat R1 sprawdzony i odrzucony
+**Nic nie zostaje otwarte z mapy pięciu problemów.** Oba ostatnie punkty
+zamknięte 21.08.2026:
+- ~~`numbersAreGrounded()` w trybie **publicznym**~~ — **zostaje bez zmian**,
+  kandydat R1 sprawdzony i odrzucony
+- ~~Problem 4~~ — **zamknięty jako granica poznania**. Występuje na ścieżce
+  produkcyjnej (nie jest artefaktem `/debug`), jest **jednym** zjawiskiem, nie
+  dwoma (retrieval niewrażliwy: fragment docelowy na pozycji 0 w 36/36), a
+  wyzwalaczem jest kolokacja „za 500 tysięcy złotych" — zawodzi wyłącznie kwota
+  500 i tylko przy rozwiniętej walucie. Osiem hipotez wykluczonych pomiarem,
+  mechanizmu nie da się ustalić z zewnątrz modelu. Błąd jest **bezpieczny
+  kierunkowo**: model pomija ustępstwo, nigdy go nie wymyśla
 
 Wszystko w „Znane ograniczenia" i `DECYZJE.md`.
 
@@ -482,6 +487,9 @@ Lista jest tutaj, bo zniknięty zapis wraca jako ten sam błąd za trzy sesje.
 - **R1 jako naprawa trybu publicznego** — sprawdzony szerzej 21.08.2026
   i odrzucony: defekt publiczny jest mały (1 odpowiedź zredukowana na 56),
   a R1 rozluźnia jedyną warstwę stojącą na powierzchni klienckiej
+- **Utożsamianie „brak oczekiwanej liczby w odpowiedzi" z „błędna odpowiedź"** —
+  przy pomiarze pominięć sprawdź najpierw, czy pominięta treść w ogóle należy
+  do odpowiedzi na zadane pytanie. Kosztowało jeden fałszywy wniosek 21.08.2026
 - **Mierzenie tego, co widzi użytkownik, przez `/debug`** — `/debug` omija gałąź
   „nie mam takich informacji" → fallback w `handleAsk()`, więc pokazuje
   weryfikację odpowiedzi, które w produkcji do niej nie docierają. Do pytania
@@ -562,7 +570,7 @@ też poprawne parafrazy.
 - **Ściśnięte grupy na stykach obszarów** (problem 3 z mapy) — **zostawione
   świadomie** 19.08.2026. Odpowiedzi są trafne mimo małego odskoku lidera, a
   rozsuwanie fragmentów oznaczałoby przepisywanie treści pod wyszukiwarkę
-- **Problem 4 — stara diagnoza obalona 20.08.2026, zostaje wąska kruchość.**
+- ~~**Problem 4**~~ — **zamknięty 21.08.2026 jako granica poznania.**
   To **nie jest** problem łączenia dwóch fragmentów: klauzula o 12% leży w tym
   samym fragmencie (`i01`, zdanie 2 z 5) co 22% i 14%, a model pomijał zdanie
   z fragmentu, który sam cytował. Zmierzone i wykluczone: pozycja zdania,
@@ -623,13 +631,14 @@ Kolejność jest celowa — uzasadnienie jest częścią decyzji, nie ozdobnikie
      długość fragmentu, retrieval i arytmetykę progu; klauzula, której brakowało,
      leży w **tym samym fragmencie** co reszta odpowiedzi. Nie ma tu żadnej
      syntezy dwóch fragmentów do naprawienia.
-   - **Etap 5 (otwarty): kruchość na formie pytania.** To, co zostało z problemu 4:
-     „500 tysięcy złotych" daje pełną odpowiedź w 2/6 przebiegów, „500 tysięcy"
-     w 6/6, przy identycznym retrievalu. **Mechanizmu nie znamy i nie zgadujemy.**
-     Kolejny krok jest pomiarowy, nie promptowy: ustalić, czy to własność
-     tokenizacji kwoty, czy szerszy wzorzec — dopiero potem cokolwiek zmieniać.
-     **Do tego czasu żadnej reguły w prompcie „pod problem 4"** — poprzednia
-     taka próba złamała zasadę „warunek, nie lista fraz" i nie zadziałała.
+   - ~~**Etap 5: kruchość na formie pytania**~~ — ✅ **zamknięte 21.08.2026 jako
+     granica poznania.** Zmierzone na ścieżce produkcyjnej, osiem hipotez
+     wykluczonych, wyzwalacz zawężony do kolokacji „za 500 tysięcy złotych"
+     (drabina kwot: 410, 450, 550, 600, 800 → komplet; wyłącznie 500 zawodzi).
+     Mechanizmu nie da się ustalić bez wglądu w model. **Zakaz reguły promptu
+     „pod problem 4" zostaje w mocy także po zamknięciu.** Naturalny moment
+     ponownego sprawdzenia to **zmiana modelu bazowego** — zjawisko jest
+     własnością modelu, nie naszego kodu. `DECYZJE.md` → „Problem 4".
 2. **Druga branża** — kancelaria albo gabinet. Sprawdzenie, ile zabezpieczeń jest
    uniwersalnych, a ile to protezy pod budowlankę (wzorce mówią o rabatach
    w hurtowniach — u kancelarii groźne będą terminy przedawnienia i szanse wygranej).

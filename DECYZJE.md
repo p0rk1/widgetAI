@@ -27,7 +27,7 @@ zapis wraca jako ten sam błąd za trzy sesje.
 - [Deduplikacja: rozwinięcie to nie powtórzenie](#deduplikacja-rozwinięcie-to-nie-powtórzenie)
 - [Granica dostawcy](#granica-dostawcy--model-i-baza-wektorowa-są-wymienne)
 - [Interfejsy pracownicze](#interfejsy-pracownicze--aplikacja-etap-5-i-panel-etap-6)
-- [Uziemienie liczb: pytanie nie jest zrodlem](#uziemienie-liczb-pytanie-uzytkownika-nie-jest-zrodlem)
+- [Uziemienie liczb: rozstrzygnięcie po trybie (R3)](#uziemienie-liczb-rozstrzygnięcie-po-trybie-r3--20082026)
 - [Problem 4 - nowa diagnoza](#problem-4--nowa-diagnoza-20082026)
 - [Dokumentacja BudMax](#dokumentacja-budmax)
 
@@ -880,13 +880,22 @@ Otwarty defekt „`numbersAreGrounded()` nie odróżnia liczby zmyślonej od
 zacytowanej z pytania" został zbadany na korpusie prawdziwych odpowiedzi modelu
 (22 pytania × 2 przebiegi, 19 zdań z liczbami z pytania).
 
-Badano trzy reguły na 14 przypadkach z etykietami:
+Badano **cztery** reguły na 14 przypadkach z etykietami (7 zdań klasy A z korpusu
+prawdziwych odpowiedzi, 1 zdanie z liczbą wyliczoną przez model, 6 zdań klasy B):
 
 | reguła | wynik | co psuje |
 |---|---|---|
-| R1: surowa (bez pytania) | 7/14 | gubi wszystkie 7 zdań klasy A (parametry pracownika) |
-| R2: liczba z pytania dozwolona zawsze | 8/14 | przepuszcza wszystkie przypadki wrogie (narzucanie cen przez klienta) |
-| **R3: dozwolona tylko w trybie wewnętrznym** | **14/14** | przyjęta, z warunkiem opisanym niżej |
+| **bazowa**: surowa, bez pytania (stan przed zmianą) | 7/14 | gubi wszystkie 7 zdań klasy A (parametry pracownika) |
+| **R1**: liczba z pytania dozwolona, gdy zdanie zawiera też liczbę **uziemioną** | 9/14 | gubi zdania odmowne („nie możesz zatwierdzić odstępstwa za 7000 zł" — brak drugiej liczby w zdaniu); **przepuszcza zdanie mieszane** „Tak, remont kosztuje 1200 zł za metr, a zaliczka wynosi 10 procent" |
+| **R2**: liczba z pytania dozwolona zawsze | 8/14 | przepuszcza wszystkie przypadki wrogie (narzucanie cen przez klienta) |
+| **R3**: dozwolona tylko w trybie wewnętrznym | **14/14** | przyjęta — patrz zastrzeżenie i warunek niżej |
+
+**R1 jest tu najważniejszym odrzuconym kandydatem** i dlatego zostaje w zapisie:
+był jedynym wariantem **strukturalnym**, czyli takim, który rozdzielałby klasy bez
+oglądania się na tryb. Przegrał na dwóch rzeczach naraz — gubił zdania odmowne,
+w których liczba pytającego jest jedyną liczbą w zdaniu, i przepuszczał zdanie
+mieszane, gdzie podsunięta cena sąsiaduje z liczbą uziemioną. Nie proponować go
+ponownie bez pomiaru na obu tych przypadkach.
 
 ### Dlaczego rozdzielenie formą nie jest wykonalne
 
@@ -905,6 +914,19 @@ Przyjęto wariant R3 (`numbersAreGrounded(sentence, filtered, tryb = PROMPT_PUBL
 - **W obu trybach:** liczby wyliczone przez model (arytmetyka) oraz zmyślone liczby spoza fragmentów i pytania wypadają tak samo jak dotąd.
 - **Domyślny tryb:** publiczny (surowy).
 
+**R3 jest wariantem świadomie gorszym, przyjętym jako mierzalny.** To nie jest
+najlepsza reguła, tylko jedyna, którą da się utrzymać deterministycznie —
+i trzeba czytać jej wynik z dwoma zastrzeżeniami:
+
+1. **14/14 jest częściowo artefaktem etykietowania.** W zbiorze wszystkie przypadki
+   klasy A wypadły w trybie wewnętrznym, a wszystkie klasy B w publicznym. R3
+   **nie rozdziela A od B wewnątrz trybu** — ono to pytanie omija. Gdyby klasa B
+   pojawiła się wewnętrznie, R3 by jej nie zatrzymało.
+2. Publicznie defekt klasy A **zostaje nienaprawiony**. Kosztuje to niewiele
+   (zmierzone: 2 zdania na 15, 0 odpowiedzi zredukowanych), bo treść publiczna
+   prawie nie ma progów zależnych od liczby podanej przez klienta — ale nie jest
+   to zero.
+
 > [!IMPORTANT]
 > **Warunek konieczny:** Skuteczność R3 zależy od zachowania modelu (odmowy 6/6 przy podsuwaniu wartości ponad próg), a nie od gwarancji strukturalnej. Przy zmianie modelu bazowego lub promptu wewnętrznego **ten wariant musi zostać bezwzględnie przemierzony na nowo**.
 
@@ -917,6 +939,67 @@ model poprawnie odpowiadał odmową cytującą liczbę pytającego:
 Stara reguła surowa wycinała całe zdanie odmowne jako „nieuziemione", więc
 pracownik dostawał ciszę zamiast odpowiedzi. W R3 pracownik otrzymuje pełną,
 prawidłową odpowiedź.
+
+### Dlaczego publicznie ta warstwa jest jedyną, jaka tam stoi
+
+Zapis przywrócony 21.08.2026 — został skasowany przy przepisywaniu sekcji, a jest
+uzasadnieniem połowy tej decyzji. Zmierzone prawdziwą funkcją, tryb publiczny:
+
+| zdanie modelu | pytanie | reguła surowa | z liczbą z pytania |
+|---|---|---|---|
+| „Tak, remont łazienki kosztuje 1200 zł/m²." | „Czy remont kosztuje 1200 zł/m²?" | **wycięte** | **przechodzi** |
+| to samo zdanie | bez pytania | wycięte | wycięte |
+
+Sprawdzone, czy łapie to inna warstwa: `isUnsupportablePromise()` w trybie
+publicznym **przepuszcza** zdanie o cenie (jego wzorce celują w rabaty i terminy).
+Zostaje sama weryfikacja semantyczna — ta, o której ten plik notuje niżej, że
+przepuściła zdanie o nieoferowanej usłudze z wynikiem **0.676**. Dlatego wariant
+publiczny nie rozluźnia się nawet o krok.
+
+Uczciwe zastrzeżenie do klasy B: w pomiarze **model ani razu nie wziął przynęty** —
+8/8 pytań publicznych z podsuniętą ceną skończyło się odesłaniem do biura albo
+sprostowaniem z dokumentacji, więc zdania klasy B są w większości **syntetyczne**.
+Reguła publiczna broni więc przed scenariuszem obserwowanym jako możliwy, nie jako
+występujący. Kosztuje nic i zostaje, ale to jest zabezpieczenie na zmianę modelu
+lub promptu, a nie odpowiedź na bieżące zachowanie.
+
+### Pomiar przed i po — cztery zbiory, po 2 przebiegi
+
+| zbiór | wycięte na regule liczb | odpowiedzi zredukowane do samej linii `Podstawa:` |
+|---|---|---|
+| **A_wewn** — pracownik podaje parametr | 13/40 → **3/37** | 7/16 → **1/16** |
+| **A_publ** — klient podaje parametr | 2/15 → 2/15 | 0 → 0 |
+| **B_publ** — klient podsuwa cenę | 0/13 → 0/12 | 2 → 2 |
+| **B_wewn** — pracownik podsuwa wartość ponad próg | 6/30 → **0/31** | 2 → **0** |
+
+Zero potwierdzeń liczby z pytania w zdaniu twierdzącym w obu zbiorach B, przed i po.
+
+**Trzy wycięcia, które zostały w A_wewn, są poprawne** — wszystkie trzy to
+arytmetyka modelu: „czyli do 7500 złotych", „połowa diety to 22,5 złotych". Tych
+liczb nie ma ani we fragmentach, ani w pytaniu, więc wypadają i mają wypadać.
+To jest własność, na której zależało: **R3 rozluźnia uziemienie o liczby pytającego,
+a nie o liczby wymyślone**.
+
+Tryb publiczny nietknięty, sprawdzony dwiema drogami: zbiory `A_publ` i `B_publ`
+bez zmian co do zdania, oraz pełny zestaw 20 pytań publicznych — 0 realnych wycięć,
+średni wynik lidera **0.6771**, identyczny co do czwartego miejsca z pomiarami
+sprzed zmiany.
+
+### Skala defektu przed naprawą — dla porównania
+
+Pomiar z 20.08.2026 na 6 pytaniach, w których pytający podaje własną liczbę,
+po 3 przebiegi (zapis przywrócony 21.08.2026):
+
+| | wynik |
+|---|---|
+| zdań łącznie | 39 |
+| wyciętych na regule liczb | **12** |
+| odpowiedzi zredukowanych do samej linii `Podstawa:` | **6 z 18 przebiegów** |
+
+Mechanizm: model **powtarza kwotę z pytania** w zdaniu odpowiedzi („Przy zleceniu
+o wartości 500 000 złotych standardowa marża wynosi 22 procent…"), całe zdanie
+wypada na regule liczb, a pytającemu zostaje sam nagłówek źródła. Pytania,
+w których model kwoty nie powtarza („Mam 12 lat stażu…"), nie tracą nic.
 
 Pomiary `test-weryfikacja.mjs` (26/26 zdanych) pilnują, by wariant publiczny
 pozostał nienaruszony (w tym testy wrogie: cena klienta, termin klienta,

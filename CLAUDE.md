@@ -36,7 +36,8 @@ każdej sesji, a historia decyzji jest potrzebna kilka razy w miesiącu.
 | 18.08 | Aplikacja Access skonfigurowana, tryb wewnętrzny domknięty pomiarem | `DECYZJE.md` → Cloudflare Access |
 | 19.08 | Rozdzielony prompt, **41 fragmentów treści wewnętrznej**, rozdzielone pliki | `DECYZJE.md` → Prompty, Treść wewnętrzna |
 | 20.08 | Etapy 5 i 6 (aplikacja, panel wewnętrzny), naprawa `isDuplicate()` | `DECYZJE.md` → Deduplikacja, Interfejsy pracownicze |
-| 20.08 | **Trzy zmiany cofnięte**, nowa diagnoza problemu 4, przypięcie `/app` i `/panel` | `DECYZJE.md` → Uziemienie liczb, Problem 4 |
+| 20.08 | **Trzy zmiany cofnięte**, nowa diagnoza problemu 4, przypięcie `/app` i `/panel` | `DECYZJE.md` → Problem 4 |
+| 20.08 | **Uziemienie liczb po trybie (R3)** — defekt zamknięty wewnętrznie, publicznie zostaje | `DECYZJE.md` → Uziemienie liczb (R3) |
 
 **Gdzie jesteśmy:** treści nie brakuje nigdzie, a z pięciu problemów z pomiaru
 **trzy są naprawione** (próg zależny od długości zdania z cytatem dosłownym,
@@ -44,19 +45,26 @@ warstwy weryfikacji znające tryb, prompt niewymuszający listy kroków przy
 fragmencie opisowym), **czwarty — `isDuplicate()` — naprawiony 20.08.2026**.
 Problem ściśniętych grup zostawiony świadomie.
 
-**Nadal otwarte, oba z nową wiedzą z 20.08.2026:**
-- `numbersAreGrounded()` wycina liczbę zacytowaną z pytania. Kierunek „dołóż
-  pytanie do korpusu" **jest zamknięty** — próba cofnięta jako regresja
-  bezpieczeństwa. Zmierzona skala: 12 zdań wyciętych na 39, 6 z 18 odpowiedzi
-  zredukowanych do samej linii `Podstawa:`
+**Piąty — `numbersAreGrounded()` — zamknięty wewnętrznie 20.08.2026** wariantem
+R3 (liczba z pytania uziemia zdanie tylko w trybie wewnętrznym). Wycięcia 13/40 →
+**3/37**, odpowiedzi zredukowanych do samej linii `Podstawa:` 7/16 → **1/16**.
+**Publicznie defekt zostaje otwarty świadomie** — tam liczba z pytania nigdy nie
+będzie uziemiać. R3 stoi na zachowaniu modelu, nie na gwarancji strukturalnej:
+**przy zmianie modelu albo promptu wewnętrznego trzeba go przemierzyć.**
+
+**Nadal otwarte:**
 - Problem 4 **nie jest problemem syntezy dwóch fragmentów** — stara diagnoza
   obalona pomiarem. Zostaje kruchość na formie powierzchniowej pytania,
   o nieznanym mechanizmie
+- `numbersAreGrounded()` w trybie **publicznym** — nienaprawione z wyboru,
+  koszt zmierzony jako mały (2 zdania na 15, 0 odpowiedzi zredukowanych)
 
 Wszystko w „Znane ograniczenia" i `DECYZJE.md`.
 
-**Trzy zmiany cofnięte 20.08.2026** (uziemianie liczb pytaniem, reguła syntezy
-jako lista przykładów, zmiana w `PROMPT_RDZEN`) — powody w „Ślepe uliczki".
+**Trzy zmiany cofnięte 20.08.2026** (uziemianie liczb pytaniem **bez podziału na
+tryby**, reguła syntezy jako lista przykładów, zmiana w `PROMPT_RDZEN`) — powody
+w „Ślepe uliczki". Pierwsza z nich wróciła tego samego dnia w postaci zawężonej
+do trybu wewnętrznego i **w tej postaci jest wdrożona**.
 
 **Zostało po stronie właściciela, nie kodu:** kroki 2 i 3 z `ZERO-TRUST.md`
 (Google i Microsoft jako metody logowania). Dziś działa wyłącznie One-time PIN —
@@ -377,12 +385,20 @@ Kolejno w `verifyClaims()` i funkcjach pomocniczych:
   w pobranych fragmentach. To najważniejsze zabezpieczenie: łapie zmyślone ceny
   ("1500–3000 zł/m²") i terminy ("3–4 miesiące"), których weryfikacja semantyczna
   nie widziała, bo zdanie brzmiało poprawnie.
-  **Pytanie użytkownika NIE jest źródłem uziemienia** — nie wolno go dokładać do
-  korpusu. Próba z 20.08.2026, cofnięta tego samego dnia, pozwalała pytającemu
-  zdecydować, które liczby są uziemione: na „Czy remont kosztuje 1200 zł/m²?"
-  zdanie potwierdzające przechodziło. `isUnsupportablePromise()` tego **nie
-  łapie** — zmierzone. Pilnują tego przypadki wrogie w `test-weryfikacja.mjs`,
-  łącznie ze strażnikiem liczby argumentów funkcji.
+  **Uziemienie z pytania zależy od trybu — od 20.08.2026 (wariant R3):**
+  `numbersAreGrounded(sentence, filtered, tryb = PROMPT_PUBLICZNY, userQuestion = "")`.
+  **Publicznie** zbiór liczb z pytania jest pusty i taki ma zostać: klient jest
+  stroną negocjacji, więc na „Czy remont kosztuje 1200 zł/m²?" potwierdzenie
+  nie może przejść. `isUnsupportablePromise()` tego **nie łapie** — zmierzone,
+  ta warstwa jest tam jedyna. **Wewnętrznie** liczba z pytania uziemia zdanie,
+  bo pracownik podaje parametr, a nie negocjuje sam ze sobą.
+  **W obu trybach** liczba spoza fragmentów i spoza pytania wypada jak dotąd —
+  arytmetyka modelu („czyli do 7500 złotych") ginie tak samo.
+  **Domyślny tryb jest publiczny**: wywołanie, które o trybie zapomni, dostaje
+  wariant surowy. Pilnują tego przypadki wrogie w `test-weryfikacja.mjs`
+  (cena i termin klienta, brak trybu, nieznana nazwa trybu) plus strażnik
+  sygnatury. Uzasadnienie, odrzucone warianty i pomiary: `DECYZJE.md` →
+  „Uziemienie liczb: rozstrzygnięcie po trybie (R3)".
 - **`isUnsupportablePromise(s, tryb)`** — **zna tryb od 19.08.2026.** W obu trybach
   wycina deklaracje wolnych terminów i obietnice zdążenia. Wzorce rabatowe i cenowe
   działają **tylko publicznie**: pracownikowi „przysługuje ci rabat do 3 procent"
@@ -455,8 +471,14 @@ Lista jest tutaj, bo zniknięty zapis wraca jako ten sam błąd za trzy sesje.
 - **Przenoszenie reguły tonu do `BEZWZGLĘDNE ZAKAZY`** — nadpisałaby wolę klienta
 - **Wartości `budmax-reindex-2026` i `gieldowa1q2w3e`** — martwe i spalone,
   nie używać nawet jako przykładów
-- **Pytanie użytkownika jako źródło uziemienia liczb** — cofnięte 20.08.2026,
-  oddawało pytającemu decyzję, które liczby są prawdziwe
+- **Pytanie użytkownika jako źródło uziemienia liczb W TRYBIE PUBLICZNYM** —
+  oddawałoby klientowi decyzję, które liczby są prawdziwe. **Uwaga: wewnętrznie
+  jest to od 20.08.2026 wdrożone zachowanie (R3), nie ślepa uliczka** — zakaz
+  dotyczy wyłącznie trybu publicznego
+- **Rozdzielanie „liczby jako kontekst" od „liczby przypisanej firmie" po budowie
+  zdania** — niewykonalne, różnica leży w znaczeniu; ten sam przyimek obsługuje
+  oba przypadki. Odrzucony kandydat R1 (wymóg drugiej liczby uziemionej w zdaniu)
+  gubił zdania odmowne i przepuszczał zdanie mieszane — 9/14
 - **Reguła promptu „pod problem 4" jako lista przykładów** — cofnięta 20.08.2026,
   łamała zasadę „warunek, nie lista fraz" i nie działała (12% w 1 z 4 przebiegów)
 - **Zmiana `PROMPT_RDZEN` w celu naprawy trybu wewnętrznego** — rdzeń jest wspólny,
@@ -513,15 +535,17 @@ też poprawne parafrazy.
   publiczny **0 na 66 przed i po** — defekt nigdy nie dotykał obecnych klientów,
   bo odpowiedzi dla nich są prozą o zmiennym słownictwie, a nie listą kroków
   powtarzających te same rzeczowniki
-- **`numbersAreGrounded()` nie odróżnia liczby zmyślonej od zacytowanej z pytania** —
-  „przy pojemności 1600 cm3" wycina całe zdanie, bo `1600` przyszło z pytania,
-  a w dokumentacji jest tylko próg 900. Zachowanie jest bezpieczne, ale kosztuje
-  poprawną odpowiedź. Dotyczy obu trybów. **Nienaprawione — i kierunek „dołóż
-  pytanie do korpusu" jest zamknięty** (próba z 20.08.2026 cofnięta jako regresja
-  bezpieczeństwa, `DECYZJE.md` → „Uziemienie liczb"). Zmierzona skala 20.08.2026:
-  na 6 pytaniach z własną liczbą pytającego, po 3 przebiegi — **12 zdań wyciętych
-  na 39**, a **6 z 18 odpowiedzi zredukowanych do samej linii `Podstawa:`**.
-  Uruchamia się wtedy, gdy model powtarza kwotę z pytania
+- ~~**`numbersAreGrounded()` nie odróżnia liczby zmyślonej od zacytowanej z pytania**~~ —
+  **naprawione w trybie wewnętrznym 20.08.2026** wariantem R3. Pomiar: wycięcia
+  13/40 → **3/37**, odpowiedzi zredukowanych do samej linii `Podstawa:` 7/16 →
+  **1/16**; w zbiorze, gdzie pracownik podsuwa wartość ponad próg, 6/30 → **0/30**,
+  bo stara reguła wycinała **zdanie odmowne** cytujące liczbę pytającego.
+  **W trybie publicznym defekt zostaje otwarty świadomie** — tam liczba z pytania
+  nigdy nie będzie uziemiać, a koszt jest mały (2 zdania na 15, 0 odpowiedzi
+  zredukowanych), bo treść publiczna prawie nie ma progów zależnych od liczby
+  klienta. **Warunek utrzymania R3:** stoi na zachowaniu modelu (6/6 odmów), nie
+  na gwarancji strukturalnej — przy zmianie modelu albo promptu wewnętrznego
+  trzeba go przemierzyć. `DECYZJE.md` → „Uziemienie liczb: rozstrzygnięcie po trybie (R3)"
 - **Ściśnięte grupy na stykach obszarów** (problem 3 z mapy) — **zostawione
   świadomie** 19.08.2026. Odpowiedzi są trafne mimo małego odskoku lidera, a
   rozsuwanie fragmentów oznaczałoby przepisywanie treści pod wyszukiwarkę

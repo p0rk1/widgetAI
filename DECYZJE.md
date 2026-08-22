@@ -2136,12 +2136,56 @@ rozwód, alimenty, odszkodowanie, zapłatę albo o spadek?". Diagnoza z mapy mó
 że pytanie jest zdominowane tematem sprawy, a fragment mówił wyłącznie o tym,
 jak pracuje kancelaria — wektory się mijały mimo istnienia treści.
 
-**Pomiar wymaga reindeksu przestrzeni `kancelaria-public` i jest do wykonania.**
-Kryterium przyjęte z procedury: `k18`/`k19` mają wejść do TOP-8 przy p02, p03,
-p05, a `k20` przy p11, z odskokiem lidera co najmniej 0.1. Jeżeli sama treść nie
-wystarczy, będzie to znaczyło, że procedura łatania luk ma przypadek, którego
-nie obejmuje: fragment o **granicy kompetencji**, którego temat z definicji nie
-pokrywa się z tematem pytania.
+**Pomiar po reindeksie — treść wystarczyła.** Powtórzona sonda publiczna:
+
+| | przed naprawami | po naprawach |
+|---|---|---|
+| luki | 6/20 | **1/20** |
+| zdania | 46 | 61 |
+| wycięcia | 4 | 2 |
+| porady prawne | 0 | **0** |
+| ramka bezpieczeństwa | — | 1/20 |
+
+Retrieval: `k18` jest liderem przy p02 (0.471) i wchodzi do TOP-8 przy p03
+(pozycja 7 z 8), `k22` prowadzi przy p05 (0.615, odskok 0.108), `k20` prowadzi
+przy p11 (0.632, odskok 0.114). Wszystkie cztery pytania, które wcześniej
+kończyły się nagą odmową, dostają teraz wyjaśnienie granicy i odesłanie na
+konsultację — **bez oceny szans, bez kwalifikacji czynu, bez przewidywania
+wyniku**. p17 („czy zatrzymanie było legalne") odpowiada wprost, że oceny nie
+da się wydać bez znajomości okoliczności.
+
+**Kryterium odskoku ≥ 0.1 spełnione połowicznie** — przy p05 i p11 tak, przy p02
+(0.011) i p03 (0.001) nie, mimo że odpowiedzi są poprawne. Wniosek o samej
+procedurze: odskok lidera jest DOBRYM wskaźnikiem przy luce tematycznej
+(elewacje), ale słabym przy fragmencie o **granicy kompetencji**. Taki fragment
+z definicji konkuruje z całą resztą dokumentacji, bo pytanie o szanse w sprawie
+o zachowek jest jednocześnie pytaniem o zachowek, o koszty i o konsultację.
+Liczy się tu, czy fragment **wszedł do zestawu** i czy model po niego sięgnął —
+a nie, czy odskoczył od reszty.
+
+**Potwierdzenie punktu 2 na żywo.** Naprawa retrievalu odsłoniła kolizję
+liczebników w produkcji: przy p04 `k21` wszedł do zestawu jako lider (0.552),
+model odpowiedział „Pan ma 14 dni na apelację od doręczenia wyroku
+z uzasadnieniem", a fragment mówi „w terminie **dwóch tygodni**". Zdanie
+**przeszło** dzięki `liczbyZeZrodla()`; przed poprawką zostałoby wycięte, a że
+było jedynym zdaniem odpowiedzi — pytanie skończyłoby się luką. Dwie naprawy
+zazębiły się dokładnie tam, gdzie przewidywała to diagnoza.
+
+### Dwa nowe drobne ustalenia z tego przebiegu
+
+1. **Reguła „nie mów od X do Y" złamana i niewykryta.** Przy p05 model napisał,
+   że roszczenia przedawniają się „w okresie, który wynosi od 3 do 6 lat".
+   Obie liczby są w dokumentacji, więc `numbersAreGrounded()` przepuścił zdanie —
+   warstwa sprawdza obecność liczb, nie sposób ich zestawienia. Zakaz istnieje
+   wyłącznie w prompcie i model go tu nie posłuchał. Nie jest to groźne (obie
+   wartości prawdziwe), ale pokazuje granicę: **żadna warstwa nie pilnuje formy
+   podania liczby, tylko jej pochodzenia.**
+2. **Ton „per Pan/Pani" rozjeżdża się u drugiego klienta.** W p02, p03, p05
+   i p17 model pisze „Twojej sprawy", „podejmowałbyś", mimo że wspólny szablon
+   promptu publicznego zakazuje zwracania się na „ty". Przy p04 pisze poprawnie
+   („Pan ma 14 dni"). Reguła była kalibrowana na BudMaksie i przy kancelarii
+   dryfuje. Do rozważenia przeniesienie zwrotu do pól klienta — dziś jest
+   w części wspólnej, a `opisFirmy` już tam stoi.
 
 ### Rdzeń „sprawa" w eskalacji — odrzucony pomiarem, nie ostrożnością
 

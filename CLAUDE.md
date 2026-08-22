@@ -775,11 +775,20 @@ też poprawne parafrazy.
   zostaje pobrany, model przepisuje go na zdanie odmowne, a `handleAsk()`
   zamienia CAŁĄ odpowiedź na fallback. Klient traci powód, choć powód był
   w materiale. W budowlance ten kształt prawie nie występuje
-- **Fragmenty o granicy informacji i porady są nieosiągalne dla retrievalu** —
-  `k18` i `k19` nie weszły do TOP-8 przy żadnym z czterech pytań, dla których
-  powstały. Pytanie jest zdominowane tematem sprawy, fragment mówi o procedurze
-  kancelarii. To nie jest problem progów: próg nie wciągnie fragmentu, którego
-  retrieval nie zwrócił
+- ~~**Fragmenty o granicy informacji i porady są nieosiągalne dla retrievalu**~~ —
+  **naprawione treścią 22.08.2026.** `k18`–`k20` otwierają się słownictwem pytań
+  („Jakie mam szanse w mojej sprawie? Czy wygram sprawę o zachowek…"), nie nazwą
+  procedury kancelarii. Pomiar po reindeksie: **luki 6/20 → 1/20, nadal zero
+  porad prawnych.** Uwaga o procedurze: **kryterium „odskok lidera ≥ 0.1" jest
+  słabym wskaźnikiem dla fragmentu o GRANICY KOMPETENCJI** — taki fragment
+  z definicji konkuruje z całą resztą dokumentacji. Liczy się, czy wszedł do
+  zestawu, nie czy odskoczył
+- **Żadna warstwa nie pilnuje FORMY podania liczby, tylko jej pochodzenia** —
+  zmierzone 22.08.2026: „przedawniają się w okresie od 3 do 6 lat" przeszło,
+  bo obie liczby są w dokumentacji, choć prompt zakazuje mówienia „od X do Y"
+- **Reguła tonu „per Pan/Pani" dryfuje u drugiego klienta** — w czterech
+  odpowiedziach kancelarii model pisze „Twojej sprawy" mimo zakazu w części
+  wspólnej promptu. Do rozważenia przeniesienie zwrotu do pól klienta
 - **Wycięcie ZAKAZU odwraca sens odpowiedzi** — warstwa progowa nie odróżnia
   trybu zdania. Zmierzone: „Aplikant nie może sporządzać skargi kasacyjnej"
   wycięte przy 0.469 wobec progu 0.48. W budowlance wycinane zdania były opisowe
@@ -874,10 +883,11 @@ Kolejność jest celowa — uzasadnienie jest częścią decyzji, nie ozdobnikie
      Pomiary: ramka 1/20 bez fałszywych alarmów, liczebniki 0 zmian na 119
      zdaniach sondy przy reprodukcji w teście celowanym, BudMax 4→3 luki na 8.
    - **Zostało otwarte po naprawach:**
-     - **Pomiar punktu 4** — wymaga `/reindex?klient=kancelaria&space=public`
-       i powtórzenia sondy publicznej. Kryterium: `k18`/`k19` w TOP-8 przy p02,
-       p03, p05 i `k20` przy p11. Jeśli treść nie wystarczy, procedura łatania
-       luk ma przypadek, którego nie obejmuje
+     - ~~**Pomiar punktu 4**~~ — ✅ **wykonany 22.08.2026: treść wystarczyła.**
+       Luki 6/20 → 1/20, wycięcia 4 → 2, porady prawne 0 → 0, ramka
+       bezpieczeństwa 1/20. Przy okazji potwierdzony na żywo punkt 2: `k21`
+       wszedł do zestawu i „14 dni" przeszło mimo zapisu „dwóch tygodni"
+       w dokumentacji
      - **Wrogie sprawdzenie `obietnicePubliczne` kancelarii** — 0 wyzwoleń na
        46 zdaniach nie jest dowodem, że działają
      - **Eskalacja: w16 i naruszenie ochrony danych** — obie znane drogi naprawy

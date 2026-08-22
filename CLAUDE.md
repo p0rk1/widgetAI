@@ -50,6 +50,7 @@ każdej sesji, a historia decyzji jest potrzebna kilka razy w miesiącu.
 | 21.08 | Test na realnych pytaniach: homonimy w eskalacji, rzeczowniki urazowe, 3 nowe fragmenty | `DECYZJE.md` → Test na realnych pytaniach |
 | 22.08 | **Etap 1 drugiej branży: wybór klienta przez host**, słowniki branżowe wyjęte z silnika | `DECYZJE.md` → Wybór klienta: host, nie parametr |
 | 22.08 | **Etap 2: treść kancelarii** (24+25 fragmentów, własny słownik eskalacji), pomiar na 40 pytaniach | `DECYZJE.md` → Kancelaria — pomiar na 40 pytaniach |
+| 22.08 | **Naprawy 1–4 z mapy**: ramka bezpieczeństwa, liczebniki słowne, odmowa z uzasadnieniem, treść `k18`–`k20` | `DECYZJE.md` → Naprawy po mapie kancelarii |
 
 **Gdzie jesteśmy:** treści nie brakuje nigdzie, a z pięciu problemów z pomiaru
 **trzy są naprawione** (próg zależny od długości zdania z cytatem dosłownym,
@@ -328,6 +329,15 @@ a przychodzą przez `klient.eskalacja`. W `worker.js` został sam mechanizm.
 Poniższe reguły dotyczą mechanizmu i obowiązują każdą branżę; kalibracja wzorców
 jest osobna dla każdej.
 
+**RAMKA BEZPIECZEŃSTWA W TRYBIE PUBLICZNYM — od 22.08.2026.** Kategoria może
+mieć pole `publiczna` z tekstem dla KLIENTA; wtedy `wykryjOstrzezenie()` doklei
+go poza weryfikacją, tak jak eskalacja robi to dla pracownika. Powstało dlatego,
+że warstwa liczb wycięła numer 112 z odpowiedzi dla osoby zgłaszającej
+zagrożenie. **Domyślnie nie ma go żadna kategoria** — dodanie ramki jest decyzją,
+nie skutkiem ubocznym. Dziś ma je wyłącznie `zagrozenie_osoby` u kancelarii;
+BudMax nie ma żadnej i jego bot publiczny jest niezmieniony. Biała lista numerów
+w `numbersAreGrounded()` została **odrzucona** — patrz „Ślepe uliczki".
+
 **Reguły, których nie wolno rozluźnić:**
 - **Rdzeń dwuznaczny wyzwala dopiero ze swoim DOPEŁNIENIEM** (od 21.08.2026).
   `potrac`, `zlama`, `spadl z`, `zawali` znaczą na budowie także „potrącimy
@@ -394,6 +404,15 @@ lokalnie, bez wywoływania modelu.
 - **Zdanie o braku informacji musi zostać dosłowne w obu trybach.** `handleAsk()`
   rozpoznaje brak odpowiedzi wyrażeniem `/nie mam takich informacji/i` na surowym
   tekście modelu. Inne sformułowanie po cichu rozjeżdża tę ścieżkę.
+- **Odmowa zapada w fallback tylko wtedy, gdy nie ma obok niej treści** —
+  `tylkoOdmowa()`, od 22.08.2026. Odmowa dopisana obok treści jest usuwana
+  (`usunZdaniaOdmowne()`), a treść przechodzi pełną weryfikację. Rdzeń promptu
+  mówi przy tym wprost, że wyjaśnienie „dlaczego nie podajemy" JEST odpowiedzią.
+  Prawdziwe „nie wiem" — samo zdanie odmowne, także z grzecznością — nadal
+  zapada i nadal liczy się jako luka. **Skutek uboczny zmierzony na BudMaksie:**
+  4 luki na 8 → 3 na 8; pytanie o wolny termin przestało być luką, bo model
+  podaje teraz powód zamiast frazy odmownej. Wariant odwrotu, gdyby wskaźnik
+  luk spadł szerzej: zawęzić regułę promptu do trybu wewnętrznego
 - **Publicznego promptu nie rusza się przy okazji zmian w wewnętrznym** — jest
   kalibrowany od wielu sesji. Przy zmianie rozdzielającej cokolwiek na klientów
   kryterium jest **wynik bajt w bajt identyczny** — sprawdzalne migawką promptu
@@ -524,8 +543,13 @@ Uprawnienia są **rozdzielone na dwa niezależne mechanizmy** — patrz sekcja
 
 Kolejno w `verifyClaims()` i funkcjach pomocniczych:
 
-- **`numbersAreGrounded()`** — każda liczba w zdaniu musi dosłownie występować
-  w pobranych fragmentach. To najważniejsze zabezpieczenie: łapie zmyślone ceny
+- **`numbersAreGrounded()`** — każda liczba w zdaniu musi występować w pobranych
+  fragmentach. **Od 22.08.2026 zbiór uziemiający buduje `liczbyZeZrodla()`**:
+  cyfry, liczebniki zapisane słownie („dwóch tygodni" → 2 i 14) oraz tygodnie
+  przeliczone na dni. Rozszerzenie działa **wyłącznie po stronie źródła** —
+  liczebnik w odpowiedzi nie jest zamieniany na cyfrę, bo to zaostrzyłoby
+  warstwę. Miesiące **nie są** przeliczane na dni. Powód: dokumenty formalne
+  zapisują terminy słownie, więc kolizja czeka u większości klientów. To najważniejsze zabezpieczenie: łapie zmyślone ceny
   ("1500–3000 zł/m²") i terminy ("3–4 miesiące"), których weryfikacja semantyczna
   nie widziała, bo zdanie brzmiało poprawnie.
   **Uziemienie z pytania zależy od trybu — od 20.08.2026 (wariant R3):**
@@ -635,6 +659,15 @@ Lista jest tutaj, bo zniknięty zapis wraca jako ten sam błąd za trzy sesje.
   przypadek tej samej pomyłki w projekcie. **Przed pomiarem sprawdź, czy metryka
   mierzy to, co chcesz wiedzieć, a nie to, co łatwo policzyć**: przeczytaj kilka
   odpowiedzi w całości i sprawdź, czy licznik zgadza się z Twoją oceną
+- **Biała lista numerów alarmowych w `numbersAreGrounded()`** — odrzucona
+  22.08.2026. Uziemiałaby numer w KAŻDYM zdaniu, więc „cena wynosi 997 zł"
+  przechodziłoby jako liczba pokryta. Numer alarmowy podaje **ramka
+  bezpieczeństwa**, doklejana poza weryfikacją
+- **Rdzeń `sprawa` jako dopełnienie `termin` w eskalacji kancelarii** — odrzucony
+  **pomiarem** 22.08.2026: 5 fałszywych alarmów na 6 zdań („termin spotkania
+  w sprawie rozwodowej przesuwamy na jutro" dostaje ramkę procesową). „Sprawa"
+  jest w kancelarii tym, czym „człowiek" na budowie. Uwaga: wariant przechodził
+  cały test 68/68 — zestaw negatywny nie zawierał takich zdań, dziś zawiera
 - **Parametr w żądaniu jako źródło wyboru KLIENTA** — odrzucony 22.08.2026 z tego
   samego powodu, dla którego nazwa przestrzeni nie przychodzi z żądania: cała
   rozłączność klientów wisiałaby wtedy na poprawności sprawdzenia uprawnień.
@@ -834,12 +867,21 @@ Kolejność jest celowa — uzasadnienie jest częścią decyzji, nie ozdobnikie
      (wszystkie bezpieczne — **zero porad prawnych**), wewnętrzne 0 luk/20.
      Mapa problemów i werdykt o uniwersalności warstw: `DECYZJE.md` →
      „Kancelaria — pomiar na 40 pytaniach".
-   - **Etap 3: decyzje po mapie** — nic nie jest jeszcze poprawione. Do
-     rozstrzygnięcia w kolejności kosztu: uziemienie liczb wobec zapisu słownego
-     i stałych bezpieczeństwa, nieosiągalność `k18`/`k19` w retrievalu, odmowa
-     zjadająca własne uzasadnienie, przeoczenie eskalacji przy „przekroczyliśmy
-     termin" bez nazwy pisma. **Wrogie sprawdzenie `obietnicePubliczne`
-     kancelarii** — 0 wyzwoleń na 46 zdaniach nie jest dowodem, że działają.
+   - ~~**Etap 3: decyzje po mapie**~~ — ✅ **cztery punkty naprawione i wdrożone
+     22.08.2026** (`DECYZJE.md` → „Naprawy po mapie kancelarii"): ramka
+     bezpieczeństwa w trybie publicznym, liczebniki słowne po stronie źródła,
+     odmowa z uzasadnieniem, treść `k18`–`k20` przepisana pod słownictwo pytań.
+     Pomiary: ramka 1/20 bez fałszywych alarmów, liczebniki 0 zmian na 119
+     zdaniach sondy przy reprodukcji w teście celowanym, BudMax 4→3 luki na 8.
+   - **Zostało otwarte po naprawach:**
+     - **Pomiar punktu 4** — wymaga `/reindex?klient=kancelaria&space=public`
+       i powtórzenia sondy publicznej. Kryterium: `k18`/`k19` w TOP-8 przy p02,
+       p03, p05 i `k20` przy p11. Jeśli treść nie wystarczy, procedura łatania
+       luk ma przypadek, którego nie obejmuje
+     - **Wrogie sprawdzenie `obietnicePubliczne` kancelarii** — 0 wyzwoleń na
+       46 zdaniach nie jest dowodem, że działają
+     - **Eskalacja: w16 i naruszenie ochrony danych** — obie znane drogi naprawy
+       w16 są gorsze niż defekt, patrz „Ślepe uliczki"
    - **Etap 4 (po stronie właściciela): trasy i Access dla kancelarii** — trzy
      wpisy w `[[routes]]` i dwie aplikacje Access. Dopiero wtedy demo da się
      pokazać na żywo i zmierzyć przez `POST /`, a nie przez `/debug`.

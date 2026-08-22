@@ -2026,6 +2026,142 @@ Po pierwszym zderzeniu z drugą branżą obraz z 22.08.2026 wygląda tak:
 | Flaga `prog` w kategorii eskalacji | **NIE uniwersalna** — wymusiła osobną kategorię (patrz „Wybór klienta") |
 | Rozpoznawanie braku odpowiedzi po frazie | **NIE uniwersalne** — myli „nie wiem" z „świadomie nie mówimy" |
 
+## Naprawy po mapie kancelarii — cztery punkty i ich pomiary (22.08.2026)
+
+Kolejność wynikała z kosztu błędu, nie z trudności naprawy.
+
+### Punkt 1 — numer alarmowy wycięty z odpowiedzi dla osoby w zagrożeniu
+
+**Rozważone i odrzucone: wyjątek w warstwie liczb.** Biała lista numerów
+alarmowych uziemiałaby je w KAŻDYM zdaniu, więc „cena wynosi 997 zł" albo
+„odszkodowanie 112 tysięcy" przechodziłyby weryfikację jako liczby pokryte.
+Warunkowanie listy kontekstem („zadzwoń pod…") byłoby listą fraz, a nie
+warunkiem. Furtka w jedynej warstwie stojącej na powierzchni klienckiej jest
+za drogim rozwiązaniem problemu, który da się rozwiązać obok niej.
+
+**Wdrożone: ramka bezpieczeństwa w trybie publicznym.** Kategoria eskalacji
+może mieć pole `publiczna` — tekst doklejany PO weryfikacji, ze stałej w kodzie,
+dokładnie jak ramka pracownicza. Numer alarmowy nie jest twierdzeniem
+o dokumentacji klienta, tylko stałą operacyjną, więc nie ma czego weryfikować.
+
+**Korekta założenia z rozmowy:** eskalacja **nie działała** w trybie publicznym
+(`wykryjEskalacje` zwraca `null` dla `public`), więc nie było to „doklejenie do
+istniejącej ramki", tylko wprowadzenie ramki do trybu publicznego. Zrobione
+wąsko: wyzwalają wyłącznie kategorie z jawnym polem `publiczna`, domyślnie żadna.
+BudMax nie ma ani jednej i jego bot publiczny jest niezmieniony.
+
+Rozstrzyganie jest wspólne z eskalacją — `dopasujKategorie()` wydzielone z pętli,
+żeby dwie kopie nie rozjechały się przy pierwszej poprawce progu.
+
+**Pomiar:** detektor puszczony po wszystkich 20 pytaniach publicznych sondy —
+**1 wyzwolenie na 20**, dokładnie na pytaniu o groźby ze strony męża. Zero
+fałszywych alarmów na pytaniach o cennik, terminy, sankcje karne i zakres spraw.
+Test: 9 przypadków w `test-eskalacja-prawna.mjs`, w tym cztery negatywne
+i sprawdzenie, że kategoria bez pola `publiczna` nie daje ramki publicznej.
+
+### Punkt 2 — liczebniki zapisane słownie
+
+**Sprostowanie diagnozy.** Pierwotny wniosek („`k21` mówi «dwóch tygodni», model
+napisał «14 dni», warstwa wycięła") był **błędny co do przyczyny**. Sprawdzenie
+zestawu pokazało, że `k21` w ogóle nie został pobrany — osiem fragmentów
+o konsultacji i honorarium. Model podał „14 dni" z własnej wiedzy, więc wycięcie
+było **poprawne**. To trzeci raz w tym projekcie, kiedy brak oczekiwanej liczby
+wzięto za defekt warstwy przed sprawdzeniem, co trafiło do zestawu.
+
+**Kolizja jest jednak realna i została zamknięta.** Dokumenty formalne — umowy,
+regulaminy, pisma, akty prawne — zapisują terminy słownie z zasady, więc czeka
+u większości klientów. `liczbyZeZrodla()` rozszerza **wyłącznie zbiór
+uziemiający**: cyfry, liczebniki zapisane słownie oraz tygodnie przeliczone
+na dni. Liczebnik w ODPOWIEDZI nie jest zamieniany na cyfrę — to zaostrzyłoby
+warstwę i wycinałoby zdania, które dziś przechodzą.
+
+Czego nie rozluźnia: liczba spoza źródła wypada jak dotąd, arytmetyka modelu
+wypada jak dotąd, miesiące **nie są** przeliczane na dni (miesiąc nie ma stałej
+liczby dni, więc przeliczenie byłoby zgadywaniem, a nie tym samym zapisem).
+
+**Pomiar:** odtworzenie całej sondy na poprawionej warstwie — **0 zmian na 119
+zdaniach**, bo w zmierzonym materiale kolizja ani razu nie zaszła. Reprodukuje
+się w teście celowanym: przy `k21` w zestawie zdanie z „14 dni" przechodzi,
+a „30 dni" i „2800 złotych" nadal wypadają. Test: 9 przypadków, pięć wrogich.
+
+### Punkt 3 — treść, której sensem jest odmowa
+
+**Ustalenie z pomiaru:** w p11 model wyprodukował **wyłącznie** zdanie odmowne,
+mimo że `k20` był pobrany na pozycji 3. Zapadnięcie nastąpiło więc w MODELU,
+nie w `handleAsk()`. Sama poprawa detekcji frazy nie wystarczy.
+
+Naprawa dwuczęściowa:
+1. **`PROMPT_RDZEN.brakInformacji`** mówi teraz wprost: jeżeli fragmenty
+   wyjaśniają, dlaczego danej informacji nie podajemy, to wyjaśnienie JEST
+   odpowiedzią i nie należy używać zdania odmownego.
+2. **`handleAsk()` zapada w fallback tylko wtedy, gdy obok odmowy nie ma
+   żadnej treści** (`tylkoOdmowa()`). Odmowa dopisana obok treści jest usuwana
+   (`usunZdaniaOdmowne()`), a treść idzie do pełnej weryfikacji bez ulg.
+   Prawdziwe „nie wiem" — samo zdanie odmowne, także z grzecznością — nadal
+   zapada i nadal liczy się jako luka w metrykach.
+
+Przy wdrażaniu test złapał usterkę w warunku: samo zdanie odmowne kończy się
+odesłaniem do biura, więc `isConnectiveSentence()` klasyfikuje je jako
+grzecznościowe i lista „istotnych" robiła się pusta z niewłaściwego powodu.
+Odmowę trzeba odsiać osobno, przed grzecznościami.
+
+**Pomiar — regresja na kliencie, który wypadł czysto.** Osiem pytań publicznych
+do BudMaksa przez `POST /` (ścieżka produkcyjna, nie `/debug`), przed zmianą
+i po niej:
+
+| | przed | po |
+|---|---|---|
+| luki | 4/8 | **3/8** |
+| trimmed | 1 | 1 |
+| obietnice, zmyślone liczby | 0 | 0 |
+
+Zmieniła się jedna odpowiedź: „Czy macie wolny termin na wrzesień?" przestało
+być luką i brzmi teraz „Nie jestem w stanie podać konkretnych informacji
+o dostępności terminów. Zapraszamy do kontaktu…". Odpowiedź jest bezpieczna —
+nie deklaruje terminu, czyli nie łamie zakazu, dla którego ta reguła powstała.
+
+**Skutek uboczny do świadomej decyzji:** takie pytanie przestaje liczyć się jako
+luka w `/stats`. Można to czytać dwojako — albo panel traci sygnał o brakach
+w dokumentacji, albo przestaje pokazywać jako brak coś, co brakiem nie jest
+(dokumentacja **celowo** nie zawiera grafiku ekip). Jeżeli okaże się, że wskaźnik
+luk spada szerzej, wariantem odwrotu jest zawężenie reguły promptu do trybu
+wewnętrznego — bez ruszania `handleAsk()`.
+
+### Punkt 4 — treść bezpieczeństwa poza zasięgiem retrievalu
+
+Naprawiane **treścią**, zgodnie z procedurą łatania luk — mechanizmu nie ruszano.
+`k18`, `k19` i `k20` otwierają się teraz słownictwem PYTAŃ, a nie nazwą procedury
+kancelarii: „Jakie mam szanse w mojej sprawie? Czy wygram sprawę o zachowek,
+rozwód, alimenty, odszkodowanie, zapłatę albo o spadek?". Diagnoza z mapy mówiła,
+że pytanie jest zdominowane tematem sprawy, a fragment mówił wyłącznie o tym,
+jak pracuje kancelaria — wektory się mijały mimo istnienia treści.
+
+**Pomiar wymaga reindeksu przestrzeni `kancelaria-public` i jest do wykonania.**
+Kryterium przyjęte z procedury: `k18`/`k19` mają wejść do TOP-8 przy p02, p03,
+p05, a `k20` przy p11, z odskokiem lidera co najmniej 0.1. Jeżeli sama treść nie
+wystarczy, będzie to znaczyło, że procedura łatania luk ma przypadek, którego
+nie obejmuje: fragment o **granicy kompetencji**, którego temat z definicji nie
+pokrywa się z tematem pytania.
+
+### Rdzeń „sprawa" w eskalacji — odrzucony pomiarem, nie ostrożnością
+
+Sprawdzone wprost: dopisanie `sprawa` do dopełnień rdzenia `termin` daje
+**5 fałszywych alarmów na 6 zdań**. „Termin spotkania z klientem w sprawie
+rozwodowej przesuwamy na jutro" i „Minął termin płatności faktury w sprawie
+Kowalskiego" dostają ramkę procesową z poleceniem natychmiastowego telefonu.
+„Sprawa" jest w kancelarii tym, czym „człowiek" na budowie — pada niemal
+w każdym zdaniu, więc jako dopełnienie nie odróżnia niczego. To ten sam wynik,
+co przy odrzuconym wariancie „jakikolwiek człowiek w zdaniu" z 21.08.2026.
+
+Ważniejsze od samego wyniku: **zestaw testowy tego nie łapał.** Wariant z rdzeniem
+`sprawa` przechodził 68/68, bo wśród przypadków negatywnych nie było ani jednego
+zdania łączącego „termin" ze „sprawą" i sygnałem bliskości. Cztery takie zdania
+zostały dopisane na stałe.
+
+Przeoczenie z mapy (w16, „przekroczyliśmy termin w sprawie klienta") **zostaje
+otwarte** — obie znane drogi naprawy są gorsze niż defekt: rdzeń `sprawa` daje
+fałszywe alarmy, a lista fraz łamie zasadę „warunek, nie lista sformułowań".
+
 ## Dokumentacja BudMax
 
 53 fragmenty w tablicy `CHUNKS`, oparte na realnych przepisach:

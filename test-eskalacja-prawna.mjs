@@ -39,6 +39,17 @@ const PRZYPADKI = [
   ["Termin spotkania z klientem przesuwamy na piątek", null, WEW],
   ["Minął termin płatności faktury za tłumaczenie", null, WEW],
   ["Klient prosi o wcześniejszy termin konsultacji, najlepiej jutro", null, WEW],
+  // --- NEGATYWNE: „termin" + „sprawa" + sygnał bliskości ---
+  // Te zdania powstały 22.08.2026, gdy sprawdzano, czy dopisać rdzeń `sprawa`
+  // do dopełnień `termin` (żeby złapać „przekroczyliśmy termin w sprawie
+  // klienta"). Pomiar: 5 fałszywych alarmów na 6 zdań. „Sprawa" jest w kancelarii
+  // tym, czym „człowiek" na budowie — pada niemal w każdym zdaniu, więc jako
+  // dopełnienie nie odróżnia niczego. Wariant odrzucony, a te przypadki zostają,
+  // bo poprzedni zestaw negatywny ich nie zawierał i wariant przechodził testy.
+  ["Termin spotkania z klientem w sprawie rozwodowej przesuwamy na jutro", null, WEW],
+  ["Minął termin płatności faktury w sprawie Kowalskiego", null, WEW],
+  ["Jutro mamy termin oględzin lokalu w sprawie spadkowej", null, WEW],
+  ["Wczoraj ustaliliśmy termin płatności zaliczki w tej sprawie", null, WEW],
 
   // --- ZATRZYMANIE: terminy w godzinach ---
   ["Klienta zatrzymała policja wczoraj wieczorem", "zatrzymanie", WEW],

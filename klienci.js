@@ -90,6 +90,12 @@ export const KLIENCI = {
     prompt: {
       fallback: FALLBACK_BUDMAX,
       opisFirmy: "firmą budowlaną",
+      // Forma zwracania się do klienta. Przeniesiona tu 22.08.2026 z części
+      // wspólnej promptu — reguła była kalibrowana na budowlance i dryfowała
+      // u drugiego klienta (model pisał „Twojej sprawy" mimo zakazu).
+      // TEKST BUDMAKSU JEST PRZEPISANY BEZ ZMIANY ANI JEDNEGO ZNAKU: prompt
+      // publiczny ma wyjść z tej zmiany bajt w bajt taki sam.
+      zwrotDoKlienta: `- Zwracaj się do klienta per Pan/Pani albo bezosobowo ("zapraszamy do kontaktu", "wycenę przygotowuje biuro"). NIGDY po imieniu ani na "ty" — to pierwszy kontakt z firmą budowlaną, nie rozmowa ze znajomym. Zachowaj uprzejmy, profesjonalny dystans.`,
       cenaDopisek: " Przy pytaniu o cenę bez pokrycia w dokumentacji — poinformuj, że wycenę przygotowuje biuro po wizji lokalnej.",
       rozroznienia: `Zachowaj szczególną ostrożność przy podobnie brzmiących, ale różnych usługach — to częsty błąd, którego musisz unikać:
 - "ogród" (zieleń, rośliny, krajobraz) to NIE to samo co "ogrodzenie" (płot, brama, infrastruktura działki) — to dwie różne, osobno wycenione usługi.
@@ -183,12 +189,31 @@ Zanim odpowiesz, sprawdź, czy fragment, z którego korzystasz, dotyczy DOKŁADN
       /(sprawa potrwa|zakończy się w ciągu|sąd rozstrzygnie w|wyrok zapadnie|potrwa (około|maksymalnie|nie dłużej)|sprawa zakończy się do)/,
       // kwalifikacja i interpretacja pod pytającego
       /(przysługuje panu|przysługuje pani|należy się panu|należy się pani|ma pan prawo do|ma pani prawo do|grozi panu|grozi pani|zostanie pan skazan|to jest przestępstw|pana roszczenie|pani roszczenie).{0,40}(przedawni)?/,
-      /(może pan bezpiecznie|może pani bezpiecznie|proszę się nie martwić|nic panu nie grozi|nic pani nie grozi)/,
+      /(może pan bezpiecznie|może pani bezpiecznie)/,
+      // „sprawa do wygrania" bez wyrazu „jest" — zmierzone, model tak pisze.
+      /sprawa (jest )?do wygrania/,
+    ],
+
+    // Wzorce obowiązujące MIMO wyjątku dla zaprzeczeń — patrz komentarz przy
+    // `isUnsupportablePromise()`. Każdy niesie własne `(?<!nie )`, więc zdanie
+    // odmowne („nie wygramy tej sprawy", „nie gwarantujemy wyniku") nadal
+    // przechodzi. Tu trafiają wyłącznie sformułowania, w których zaprzeczenie
+    // stoi OBOK obietnicy, a nie znosi jej: uspokajanie klienta jest w tej
+    // branży formą zapewnienia o wyniku.
+    obietniceBezwyjatku: [
+      /(?<!nie )(wygramy|wygra pan|wygra pani|wygrasz)/,
+      /(?<!nie )(gwarantujemy|zapewniamy)\s+(wygran|sukces|korzystn|uniewinnien|skuteczn)/,
+      /(proszę się nie martwić|nie ma się czym martwić|nic (panu|pani) nie grozi|to zwykła formalność)/,
     ],
 
     prompt: {
       fallback: "Nie mam takich informacji w mojej dokumentacji — proszę o kontakt z sekretariatem kancelarii.",
       opisFirmy: "kancelarią adwokacką",
+      // Wersja MOCNIEJSZA niż u BudMaksu, bo zmierzono, że tu reguła pęka:
+      // w czterech odpowiedziach z sondy model pisał „Twojej sprawy",
+      // „podejmowałbyś". Sam zakaz nie wystarczał — dopisane są formy, które
+      // model faktycznie produkował, oraz gotowe zamienniki.
+      zwrotDoKlienta: `- Zwracaj się do klienta per Pan/Pani albo bezosobowo ("zapraszamy na konsultację", "ocenę sprawy wydaje adwokat"). NIGDY po imieniu ani na "ty". Dotyczy to także form dzierżawczych i osobowych: nie pisz "Twoja sprawa", "Twoje roszczenie", "podejmowałbyś", "możesz" — pisz "Pana/Pani sprawa", "sprawa, o którą Pan/Pani pyta", "może Pan/Pani". Osoba pytająca kancelarię jest często w trudnej sytuacji i pierwszy kontakt ma być uprzejmy i zdystansowany, nie poufały.`,
       cenaDopisek: " Przy pytaniu o wysokość honorarium w konkretnej sprawie — poinformuj, że stawkę ustala adwokat przed przyjęciem sprawy, po zapoznaniu się z nią na konsultacji.",
       rozroznienia: `Zachowaj szczególną ostrożność przy pojęciach, które brzmią podobnie, a znaczą co innego — to częsty błąd, którego musisz unikać:
 - "honorarium kancelarii" to NIE to samo co "koszty sądowe i opłaty" (opłata od pozwu, zaliczka na biegłego, opłata skarbowa od pełnomocnictwa) — te drugie trafiają do sądu, nie do kancelarii.

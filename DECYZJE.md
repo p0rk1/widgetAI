@@ -2206,6 +2206,137 @@ Przeoczenie z mapy (w16, „przekroczyliśmy termin w sprawie klienta") **zostaj
 otwarte** — obie znane drogi naprawy są gorsze niż defekt: rdzeń `sprawa` daje
 fałszywe alarmy, a lista fraz łamie zasadę „warunek, nie lista sformułowań".
 
+## Domknięcie drugiej branży — cztery ostatnie punkty (22.08.2026)
+
+### Wrogie sprawdzenie warstwy obietnic
+
+Zero wyzwoleń na 46 zdaniach z realnego pomiaru to brak dowodu, nie dowód.
+Zestaw wrogi (`test-obietnice-prawne.mjs`, 32 przypadki) konstruuje zdania,
+które model mógłby napisać, gdyby uległ naciskowi na ocenę: zapewnienia
+o wyniku, o terminie rozstrzygnięcia i o kwalifikacji prawnej.
+
+**Trzy dziury, dwie w mechanizmie wspólnym.** Wyjątek dla zaprzeczeń jest testem
+PODCIĄGU, więc wystarczy „nie" albo „bez" gdziekolwiek w zdaniu, żeby wyłączyć
+całą warstwę dla tego zdania:
+
+| zdanie | przed | przyczyna |
+|---|---|---|
+| „Tę sprawę wygramy **bez** większych problemów." | przechodziło | `bez ` w wyjątku |
+| „Proszę się **nie** martwić, to zwykła formalność." | przechodziło | `nie ` w wyjątku |
+| „To jest sprawa do wygrania." | przechodziło | wzorzec wymagał „sprawa **jest** do wygrania" |
+
+**Rozwiązanie: `obietniceBezwyjatku` w tablicy klienta** — wzorce sprawdzane
+PRZED wyjątkiem. Nie zwężono samego wyjątku, bo odróżnienie zaprzeczenia
+odnoszącego się do obietnicy od zaprzeczenia stojącego obok niej wymaga
+rozumienia zdania, a przepuszczanie zdań odmownych jest ważniejsze niż łapanie
+wszystkich obietnic. Każdy wzorzec z listy niesie własne `(?<!nie )`, więc
+„nie wygramy", „nie gwarantujemy wyniku" i „nie mogę ocenić szans" nadal
+przechodzą — sprawdzone czterema przypadkami.
+
+**Ta sama dziura istnieje u BudMaksu i została świadomie nieruszona:**
+„Bez problemu zdążymy przed zimą" i „Bez obaw, mamy wolne terminy" nie są
+łapane, choć samo „Zdążymy przed zimą" jest. Naprawa wymaga własnych wzorców
+z lookbehindem, a jego warstwa jest skalibrowana i wypada czysto w pomiarach —
+decyzja o dopisaniu należy do właściciela, nie do refaktoru przy okazji.
+
+### Kategoria `naruszenie_danych`
+
+Ósma kategoria kancelarii, **pilna**, choć nikomu nie dzieje się krzywda
+fizyczna. Powód jest ten sam co przy terminie procesowym: biegnie zegar,
+którego nie da się zatrzymać dobrą pracą — 72 godziny na zgłoszenie naruszenia,
+liczone od jego stwierdzenia, a przy utracie akt dochodzi tajemnica adwokacka,
+czyli obowiązek bezterminowy.
+
+Rdzenie `zgubi`, `zostawilem`, `skradzion` są **dwuznaczne** i wymagają
+dopełnienia `NOSNIK_DANYCH` — w kancelarii gubi się też klucze, parasol i wątek
+rozmowy. Zmierzone: 5 trafień, 3 poprawne przemilczenia, w tym „Zgubiłem klucze
+do biura" i „Zgubiłem wątek w tej rozmowie".
+
+### Forma zwracania się do klienta w polach klienta
+
+Reguła „per Pan/Pani" była w części wspólnej promptu, kalibrowana na budowlance,
+i pękała u kancelarii — w czterech odpowiedziach z sondy model pisał „Twojej
+sprawy", „podejmowałbyś". Przeniesiona do `klient.prompt.zwrotDoKlienta`.
+
+Tekst BudMaksu przepisano **bez zmiany jednego znaku**: migawka promptu
+publicznego różni się od tej sprzed całego etapu klientów wyłącznie zdaniem
+dopisanym świadomie w punkcie 3. Wersja kancelarii jest mocniejsza — wymienia
+formy, które model faktycznie produkował („Twoja sprawa", „podejmowałbyś",
+„możesz"), i podaje zamienniki.
+
+**Pomiar na BudMaksie po zmianie:** 3 luki na 8, `trimmed` 1, zero form na „ty" —
+profil identyczny jak przed przeniesieniem. Weryfikacja tonu u kancelarii wymaga
+ponownej sondy publicznej.
+
+### Uzupełnienie procedury łatania luk
+
+Zapisane w `CLAUDE.md`: **kryterium odskoku ≥ 0.1 stosuje się do luk
+tematycznych, nie do fragmentów o granicy kompetencji.** Fragment opisujący to,
+czego firma świadomie nie robi albo nie ocenia, z definicji konkuruje z całą
+dokumentacją. Tam kryterium brzmi: czy fragment wszedł do zestawu i czy model
+po niego sięgnął.
+
+## Podsumowanie drugiej branży — co uniwersalne, co branżowe, ile kosztuje klient
+
+### Werdykt o warstwach po pełnym cyklu
+
+| Warstwa | Werdykt | Podstawa |
+|---|---|---|
+| Granica dostawcy, routing, tożsamość, separacja przestrzeni | **uniwersalne** | zero zmian przy drugim kliencie |
+| Weryfikacja zdanie po zdaniu, progi, cytat dosłowny, deduplikacja | **uniwersalne** | 2 wycięcia na 61 zdań, oba poprawne |
+| Mechanizm eskalacji (weto, dopełnienia, rozstrzyganie, pozycja ramki) | **uniwersalny** | przeniesiony bez zmian, 80/80 na własnym słowniku |
+| `leaksInstructions` | uniwersalny, nieujawniony | 0 wyzwoleń w obu branżach |
+| **`numbersAreGrounded`** | uniwersalny **po poprawce** | zapis słowny terminów wymusił `liczbyZeZrodla()` |
+| **Rozpoznawanie braku odpowiedzi** | uniwersalne **po poprawce** | treść, której sensem jest odmowa, wymusiła `tylkoOdmowa()` |
+| **Wyjątek dla zaprzeczeń w warstwie obietnic** | **wadliwy w obu branżach** | test podciągu; obejście przez `obietniceBezwyjatku` |
+| **Ramka bezpieczeństwa w trybie publicznym** | nowa zdolność uniwersalna | wymuszona przez wycięcie numeru 112 |
+| Wzorce eskalacji, wzorce obietnic, teksty ramek, progi, treść, ton | **branżowe** | wymienione w całości |
+
+**Wniosek główny: protezą były wzorce i teksty, nie reguły.** Ani jedna zasada
+nie okazała się budowlana. Druga branża wymusiła **cztery zmiany w silniku** —
+i wszystkie cztery są ulepszeniami uniwersalnymi, z których skorzysta także
+pierwszy klient, a nie protezami pod kancelarię.
+
+### Czego druga branża NIE ruszyła
+
+Zero zmian w: `worker.js` w częściach RAG i retrievalu, progach (`TOP_K`,
+`MIN_SIMILARITY`, `CITATION_THRESHOLD`), `isDuplicate`, `wystepujeDoslownie`,
+`vectorSearch`, granicy dostawcy, weryfikacji tokenu Access, routingu ról,
+strukturze promptów i w treści BudMaksu. To jest miara tego, ile z projektu
+było produktem, a nie jednym klientem.
+
+### Ile kosztuje trzeci klient
+
+Rozpisane z faktycznie wykonanej pracy przy kancelarii:
+
+| Pozycja | Nakład przy kancelarii | Prognoza przy trzecim kliencie |
+|---|---|---|
+| Treść publiczna | 24 fragmenty | **bez zmian** — to jedyna pozycja, która nie maleje |
+| Treść wewnętrzna | 25 fragmentów | **bez zmian** |
+| Słownik eskalacji | 8 kategorii, 4 słowniki dopełnień, progi, teksty | podobnie, ale ze wzorcem do naśladowania |
+| Wzorce obietnic + odporne na zaprzeczenia | 8 wzorców | podobnie |
+| Pola promptu i `ui` | 12 + 7 pól | mechanicznie, ~godzina |
+| Testy własne klienta | 80 + 32 przypadki | podobnie — i to one wyłapały wszystkie błędy kalibracji |
+| Zmiany w silniku | **4** | **oczekiwane 0–1** |
+| Infrastruktura | 3 trasy, 2 aplikacje Access, 2 zmienne, 2 reindeksy | identycznie, ~15 minut |
+| Rundy kalibracji po pomiarze | 3 | 1–2 |
+
+**Struktura kosztu jest więc taka: 80% to treść i słowniki branżowe, 15% testy
+i kalibracja, 5% infrastruktura.** Praca w silniku dąży do zera i to jest
+najważniejsza wiadomość dla wyceny — koszt trzeciego klienta jest przewidywalny,
+bo składa się prawie wyłącznie z pisania treści, a nie z odkrywania, co pęknie.
+
+**Czego nie da się wycenić z góry:** liczby rund kalibracji. Przy kancelarii
+były trzy i wszystkie trzy wyszły z POMIARU, nie z przeglądu kodu — słownik
+eskalacji na przypadkach wrogich, mapa problemów z 40 pytań, wrogi test obietnic.
+Bez tych trzech przebiegów wdrożenie wyglądałoby na gotowe i miałoby cztery
+defekty, z których jeden usuwał numer alarmowy z odpowiedzi dla osoby
+w zagrożeniu.
+
+**Wniosek dla sprzedaży:** pierwszy klient nowej branży kosztuje treść plus
+trzy rundy pomiaru. Kolejny klient TEJ SAMEJ branży kosztuje samą treść —
+słownik, wzorce i kalibracja są już jego.
+
 ## Dokumentacja BudMax
 
 53 fragmenty w tablicy `CHUNKS`, oparte na realnych przepisach:

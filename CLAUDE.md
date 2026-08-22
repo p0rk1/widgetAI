@@ -137,6 +137,7 @@ wystarcza do testów i jednego użytkownika, nie wystarcza dla zespołu klienta.
 | `test-stats-internal.mjs`| Test statystyk wewnętrznych i zliczania eskalacji | repo |
 | `test-klienci.mjs` | Test wymiaru klienta: host, przestrzenie, obowiązkowość klienta, szablony | repo |
 | `test-eskalacja-prawna.mjs` | Test słownika eskalacji kancelarii (`node test-eskalacja-prawna.mjs`) | repo |
+| `test-obietnice-prawne.mjs` | Wrogi test warstwy obietnic kancelarii | repo |
 
 **Treść jest w osobnych plikach od 19.08.2026** — stanowiła ponad połowę wagi
 `worker.js`, a zadanie dotyczące logiki nigdy jej nie potrzebuje. Bundler
@@ -324,6 +325,12 @@ milczeć, bo ktoś musi wiedzieć, co zrobić w pierwszej minucie.
 | `kontrola` | organ (PIP, PINB, sanepid) **oraz** jego obecność/żądanie | po treści |
 | `finanse_prog` | pieniądze **oraz** decyzja **oraz** przekroczony próg (3% / 300 zł) | po treści |
 
+Kancelaria ma własny zestaw ośmiu kategorii w `eskalacja-prawna.js` — odpowiednikiem
+wypadku jest tam **termin procesowy, który upływa albo upłynął**, a od 22.08.2026
+dochodzi **`naruszenie_danych`** (72 godziny na zgłoszenie, plus tajemnica
+adwokacka przy utracie akt). Obie są pilne, obie z tego samego powodu: biegnie
+zegar, którego nie da się zatrzymać dobrą pracą.
+
 **Wzorce są branżowe i mieszkają w `eskalacja-budowlana.js`** (od 22.08.2026),
 a przychodzą przez `klient.eskalacja`. W `worker.js` został sam mechanizm.
 Poniższe reguły dotyczą mechanizmu i obowiązują każdą branżę; kalibracja wzorców
@@ -418,8 +425,14 @@ lokalnie, bez wywoływania modelu.
   kryterium jest **wynik bajt w bajt identyczny** — sprawdzalne migawką promptu
   sprzed zmiany (tak domknięto etap 1 drugiej branży).
 - **Z promptu wychodzi do klienta tylko to, co MÓWI O BRANŻY**: nazwa firmy,
-  rozróżnienia mylonych usług, zakazy branżowe, przykłady stanowisk i zdanie
-  odmowne. Struktura, kolejność akapitów i `PROMPT_RDZEN` są wspólne.
+  rozróżnienia mylonych usług, zakazy branżowe, przykłady stanowisk, zdanie
+  odmowne i **forma zwracania się do klienta** (`zwrotDoKlienta`, od 22.08.2026).
+  Struktura, kolejność akapitów i `PROMPT_RDZEN` są wspólne.
+- **Reguła tonu przeniesiona do pól klienta 22.08.2026**, bo była kalibrowana na
+  budowlance i pękała u kancelarii (model pisał „Twojej sprawy"). Tekst BudMaksu
+  przepisano bez zmiany jednego znaku — sprawdzone migawką: prompt publiczny
+  wychodzi bajt w bajt taki sam. Wersja kancelarii jest mocniejsza: wymienia
+  formy, które model faktycznie produkował, i podaje zamienniki.
 - `/debug` pokazuje w polu `tryb_promptu`, który wariant poszedł do modelu.
 
 Co zmienia wariant wewnętrzny i jak został skalibrowany: `DECYZJE.md` → „Prompty".
@@ -566,6 +579,16 @@ Kolejno w `verifyClaims()` i funkcjach pomocniczych:
   (cena i termin klienta, brak trybu, nieznana nazwa trybu) plus strażnik
   sygnatury. Uzasadnienie, odrzucone warianty i pomiary: `DECYZJE.md` →
   „Uziemienie liczb: rozstrzygnięcie po trybie (R3)".
+- **`obietniceBezwyjatku` klienta — wzorce odporne na wyjątek dla zaprzeczeń**
+  (od 22.08.2026). Wyjątek dla zaprzeczeń jest testem PODCIĄGU, więc jedno „nie"
+  albo „bez" gdziekolwiek w zdaniu wyłącza całą warstwę: zmierzone zestawem
+  wrogim — „Tę sprawę wygramy **bez** większych problemów" i „Proszę się **nie**
+  martwić, to zwykła formalność" przechodziły. Wzorce z tej listy sprawdzane są
+  PRZED wyjątkiem i każdy niesie własne `(?<!nie )`, więc „nie wygramy" i „nie
+  gwarantujemy" nadal przechodzą. **Ta sama dziura istnieje u BudMaksu** —
+  „Bez problemu zdążymy przed zimą" nie jest łapane — i została **świadomie
+  nieruszona**, bo jego warstwa jest skalibrowana, a naprawa wymaga własnych
+  wzorców z lookbehindem
 - **`isUnsupportablePromise(s, tryb)`** — **zna tryb od 19.08.2026.** W obu trybach
   wycina deklaracje wolnych terminów i obietnice zdążenia. Wzorce rabatowe i cenowe
   działają **tylko publicznie**: pracownikowi „przysługuje ci rabat do 3 procent"
@@ -713,6 +736,17 @@ Sposób postępowania do powtórzenia, wypracowany na przypadku elewacji.
 5. **Weryfikacja przez `/debug`** — nowy fragment powinien odskoczyć od reszty
    **o co najmniej 0.1**. Elewacje po poprawce: 0.577 vs 0.482 (pytanie jednowyrazowe)
    i 0.739 vs 0.533 (pełne pytanie), odpowiedzi w obu wariantach identyczne merytorycznie.
+
+**Kryterium odskoku ≥ 0.1 stosuje się do LUK TEMATYCZNYCH — nie do fragmentów
+o granicy kompetencji** (uzupełnienie z 22.08.2026). Fragment opisujący to,
+czego firma świadomie NIE robi albo NIE ocenia („nie oceniamy szans sprawy",
+„nie podajemy przewidywanego czasu trwania"), z definicji konkuruje z całą
+dokumentacją: pytanie „jakie mam szanse w sprawie o zachowek" jest jednocześnie
+pytaniem o zachowek, o koszty i o konsultację. Taki fragment może być poprawnie
+użyty przy odskoku 0.001. **Kryterium brzmi wtedy: czy fragment wszedł do
+zestawu i czy model po niego sięgnął** — a nie, czy odskoczył od reszty.
+Zmierzone na kancelarii: `k18` liderem przy jednym pytaniu i na pozycji 7 z 8
+przy drugim, odpowiedzi poprawne w obu.
 
 **Przy usłudze nieobecnej w dokumentacji weryfikacja semantyczna nie jest ostatnią
 linią obrony.** Przed poprawką model odpowiedział „tak, wykonujemy elewacje", cytując
@@ -864,8 +898,12 @@ Kolejność jest celowa — uzasadnienie jest częścią decyzji, nie ozdobnikie
      „pod problem 4" zostaje w mocy także po zamknięciu.** Naturalny moment
      ponownego sprawdzenia to **zmiana modelu bazowego** — zjawisko jest
      własnością modelu, nie naszego kodu. `DECYZJE.md` → „Problem 4".
-2. **Druga branża** — kancelaria. Sprawdzenie, ile zabezpieczeń jest uniwersalnych,
-   a ile to protezy pod budowlankę. Ważne poznawczo, ale **nie blokuje sprzedaży**.
+2. ~~**Druga branża**~~ — ✅ **ZAMKNIĘTA 22.08.2026.** Werdykt: protezą były
+   wzorce i teksty, nie reguły — ani jedna zasada nie okazała się budowlana.
+   Druga branża wymusiła **cztery zmiany w silniku** i wszystkie są ulepszeniami
+   uniwersalnymi. **Struktura kosztu kolejnego klienta: 80% treść i słowniki
+   branżowe, 15% testy i kalibracja, 5% infrastruktura; praca w silniku dąży
+   do zera.** Pełne rozliczenie: `DECYZJE.md` → „Podsumowanie drugiej branży".
    - ~~**Etap 1: mechanizm wyboru klienta**~~ — ✅ **wykonane 22.08.2026.**
      Klient wynika z hosta, przestrzeń ma dwa wymiary, słowniki branżowe wyjęte
      z silnika, log i panele podpisane klientem, przełącznik demo pod `DEMO`.

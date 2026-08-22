@@ -49,6 +49,11 @@ const ORGAN_SCIGANIA = /(?<![a-z0-9])(policj|prokurator|cba(?![a-z])|abw(?![a-z]
 // w kancelarii „klient" występuje w każdym zdaniu, więc sam nie wystarcza.
 const OSOBA_ZAGROZONA = /(?<![a-z0-9])(zon[aeęy]|mez|meza|mezem|maz|partner|konkubent|ojciec|ojca|matk|dziecko|dziecka|dzieci|corka|corki|syn[aeu]?(?![a-z])|rodzin|bylym?|byla zona|sasiad|tesc|brat|siostr)/;
 
+// Nośnik albo dokument, którego utrata jest naruszeniem ochrony danych.
+// „Zgubiłem" i „skradziono" same nie wystarczają: w kancelarii gubi się też
+// klucze, parasol i wątek rozmowy.
+const NOSNIK_DANYCH = /(?<![a-z0-9])(laptop|komputer|telefon|dysk|pendrive|nosnik|akta|akt(?![a-z])|teczk|dokument|segregator|kopert|korespondencj|maila|mail(?![a-z])|skan)/;
+
 const KATEGORIE_ESKALACJI_PRAWNE = [
   {
     id: "termin_procesowy",
@@ -97,6 +102,23 @@ const KATEGORIE_ESKALACJI_PRAWNE = [
     // przechodzi przez weryfikację, więc nie ma jej jak wyciąć.
     publiczna: `JEŻELI JESTEŚ W NIEBEZPIECZEŃSTWIE: zadzwoń pod numer alarmowy 112. Jeżeli zagrożenie trwa albo boisz się wrócić do domu, zrób to najpierw — sprawy prawne można załatwić później, bezpieczeństwa nie da się odzyskać. Całodobowa Niebieska Linia dla osób doświadczających przemocy: 800 120 002.`,
     tekst: `NAJPIERW BEZPIECZEŃSTWO: jeżeli zagrożenie trwa, przekaż numer alarmowy 112 i nie kończ rozmowy, dopóki nie ustalisz, że rozmówca jest bezpieczny i ma się gdzie schronić. Zaraz potem powiadom adwokata prowadzącego, a przy jego nieobecności wspólnika dyżurnego — nie odkładaj na następny dzień roboczy. Nie oceniaj kwalifikacji prawnej zdarzenia ani jego skutków.`,
+  },
+  {
+    id: "naruszenie_danych",
+    // PILNA, choć nikomu nie dzieje się krzywda fizyczna — bo biegnie zegar.
+    // Kancelaria ma 72 godziny na zgłoszenie naruszenia ochrony danych, a bieg
+    // liczy się od stwierdzenia naruszenia, nie od decyzji, że „to poważne".
+    // To ten sam kształt kosztu, co przy terminie procesowym: nieodwracalny
+    // i niezależny od tego, jak dobrze sprawa zostanie potem poprowadzona.
+    // Dochodzi drugi powód, którego nie ma przy innych kategoriach: przy utracie
+    // akt w grę wchodzi tajemnica adwokacka, czyli obowiązek bezterminowy.
+    pilne: true,
+    zdarzenie: /(?<![a-z0-9])(wyciek danych|wyciekly dane|naruszenie ochrony danych|do zlego adresata|do niewlasciwego adresata|nie do tego adresata|pomylkowo (wyslal|wyslalem|wyslano|wysylajac)|wyslalem (nie )?do|72 godzin|zostawilem w (pociagu|taksowce|autobusie|restauracji)|wlamanie|zaszyfrowal|ransomware|phishing)/,
+    dwuznaczne: [
+      { wzorzec: /(?<![a-z0-9])(zgubi|zagubi|zostawilem|zostawila)/, kontekst: () => NOSNIK_DANYCH },
+      { wzorzec: /(?<![a-z0-9])(skradzion|kradziez|ukradl|ukradziono)/, kontekst: () => NOSNIK_DANYCH },
+    ],
+    tekst: `NAJPIERW POWIADOM: zgłoś zdarzenie adwokatowi prowadzącemu i wspólnikowi zarządzającemu jeszcze dzisiaj — na zgłoszenie naruszenia ochrony danych są 72 godziny liczone od jego stwierdzenia, a przy aktach sprawy w grę wchodzi też tajemnica adwokacka. Nie kasuj korespondencji, nie poprawiaj wpisów i nie kontaktuj się samodzielnie z adresatem ani z klientem — treść zawiadomienia ustala wspólnik zarządzający.`,
   },
   {
     id: "konflikt_interesow",

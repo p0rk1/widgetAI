@@ -71,6 +71,20 @@ const PRZYPADKI = [
   ["Za to przestępstwo grozi kara pozbawienia wolności do lat pięciu", null, WEW],
   ["Czy grozi nam grzywna za nieterminowe złożenie sprawozdania?", null, WEW],
 
+  // --- NARUSZENIE OCHRONY DANYCH (kategoria dodana 22.08.2026) ---
+  // Pilna, choć nikomu nie dzieje się krzywda fizyczna: biegnie 72-godzinny
+  // zegar liczony od stwierdzenia naruszenia, a przy aktach dochodzi tajemnica
+  // adwokacka. Ten sam kształt kosztu, co przy terminie procesowym.
+  ["Zgubiłem służbowego laptopa z aktami sprawy, co teraz?", "naruszenie_danych", WEW],
+  ["Wysłałem pismo do złego adresata, były tam dane klienta", "naruszenie_danych", WEW],
+  ["Skradziono mi teczkę z dokumentami klienta z samochodu", "naruszenie_danych", WEW],
+  ["Zostawiłem akta w pociągu", "naruszenie_danych", WEW],
+  ["Ktoś zaszyfrował nam dyski, wygląda na ransomware", "naruszenie_danych", WEW],
+  // NEGATYWNE: „zgubić" bez nośnika danych i pytanie o samą procedurę
+  ["Zgubiłem klucze do biura", null, WEW],
+  ["Jak zabezpieczamy dane przy pracy poza kancelarią?", null, WEW],
+  ["Zgubiłem wątek w tej rozmowie z klientem", null, WEW],
+
   // --- KONFLIKT INTERESÓW ---
   ["Zgłosił się klient ze sprawą przeciwko byłemu klientowi kancelarii", "konflikt_interesow", WEW],
   ["Dzwoni strona przeciwna z naszej sprawy i prosi o ustalenia", "konflikt_interesow", WEW],

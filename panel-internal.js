@@ -68,7 +68,7 @@ body::before{
 .q .fl.esc{border:1px solid color-mix(in srgb, var(--danger) 50%, transparent);color:var(--danger);font-weight:bold}
 .q .txt{flex:1;line-height:1.5;color:var(--chalk)}
 .q .meta{font-family:var(--font-mono);font-size:9.5px;color:var(--dim);margin-top:4px;letter-spacing:.05em;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-.tag-esc{display:inline-block;padding:1px 6px;font-size:8.5px;text-transform:uppercase;border-radius:2px;letter-spacing:.06em}
+.tag-esc{padding:2px 6px;font-size:8.5px;text-transform:uppercase;letter-spacing:.06em}
 .tag-esc.pilne{background:color-mix(in srgb, var(--danger) 15%, transparent);border:1px solid var(--danger);color:var(--danger)}
 .tag-esc.standard{background:color-mix(in srgb, var(--warn) 12%, transparent);border:1px solid var(--warn);color:var(--warn)}
 
@@ -109,7 +109,7 @@ body::before{
       <span class="mark"></span>
       <div>
         <b>{{marka}}</b>
-        <span class="badge-internal">wewnętrzny</span>
+        <span class="znacznik badge-internal">wewnętrzny</span>
         <div class="sub">{{podtytulPanelWew}}</div>
       </div>
       <button class="reload" id="rl">
@@ -231,7 +231,7 @@ function draw(d){
           <span class="meta">
             \${ago(r.ts)}
             \${r.source ? \` · Źródło: \${esc(r.source)}\` : ''}
-            \${r.eskalacja ? \`<span class="tag-esc \${KATEGORIE[r.eskalacja]?.pilne?'pilne':'standard'}">\${KATEGORIE[r.eskalacja]?.nazwa || esc(r.eskalacja)}</span>\` : ''}
+            \${r.eskalacja ? \`<span class="znacznik tag-esc \${KATEGORIE[r.eskalacja]?.pilne?'pilne':'standard'}">\${KATEGORIE[r.eskalacja]?.nazwa || esc(r.eskalacja)}</span>\` : ''}
           </span>
         </span>
       </div>\`).join('')

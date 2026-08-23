@@ -2645,6 +2645,25 @@ głębsze, a linie mocniejsze — hierarchia z odstępów i typografii zamiast z
 3.55 (ciemny) i **2.92** (jasny) względem tła. Po korekcie 4.47 i 4.23. To był
 defekt, który przy jasnym motywie stałby się widoczny od razu.
 
+### Etykiety w obramowaniu — poprawione u źródła (24.08.2026)
+
+Objaw: „WEWNĘTRZNY" w panelu nachodziło na podtytuł pod spodem. Przyczyna nie
+jest jednostkowa — **pionowy padding i obramowanie elementu `inline` nie
+powiększają wiersza**, więc pudełko maluje się poza nim. To ten sam kształt
+w trzech plikach: `.tag-int`, `.badge-internal` i `.tag-esc` to jedna etykieta
+napisana trzy razy, a `display:inline-block` miała **tylko jedna z nich**.
+
+Naprawa punktowa dodałaby czwartą kopię tej samej reguły. Zamiast tego powstała
+klasa **`.znacznik`** w `motywCss()` — bo wstrzykiwany motyw jest **jedynym
+arkuszem, który te trzy pliki dzielą**. Nowa etykieta gdziekolwiek w interfejsie
+dostaje poprawną geometrię przez dopisanie jednej klasy, a `border-radius`
+przychodzi z motywu, więc jest kanciasta u BudMaksu i łagodna u kancelarii.
+
+**Uwaga z tej samej poprawki:** komentarz CSS z odwróconymi apostrofami wewnątrz
+szablonu w backtickach **zamknął literał** — `node --check` przeszedł, a `import`
+wywalił się na `Unexpected identifier`. To drugi udokumentowany przypadek tej
+pułapki. W treści szablonu nie ma odwróconych apostrofów, także w komentarzach.
+
 ### Czego nie ruszono
 
 Zero zmian w logice, treści dokumentacji, warstwach weryfikacji, eskalacji,

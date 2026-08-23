@@ -411,6 +411,19 @@ function motywCss(klient) {
   --ramka-akcentu:${m.akcentRamki ? "1" : "0"};
   --rozmycie:${m.rozmycie};
   --sp:cubic-bezier(.22,1,.36,1);
+}
+
+/* ZNACZNIK — etykieta w obramowaniu.
+   Pionowy padding i obramowanie elementu INLINE nie powiększają wiersza,
+   więc pudełko maluje się poza nim i nachodzi na tekst poniżej. Zmierzone
+   24.08.2026 na „WEWNĘTRZNY" w panelu. To wspólny kształt, nie jednostkowy
+   błąd: .tag-int, .badge-internal i .tag-esc to ta sama etykieta
+   w trzech plikach, a tylko jedna z nich miała inline-block.
+   Reguła stoi tutaj, bo wstrzykiwany motyw jest jedynym arkuszem,
+   który te trzy pliki dzielą. */
+.znacznik{
+  display:inline-block;line-height:1.35;vertical-align:middle;
+  white-space:nowrap;border-radius:var(--promien);
 }`;
 }
 

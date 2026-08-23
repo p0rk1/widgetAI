@@ -188,7 +188,7 @@ textarea::placeholder{color:var(--dim)}
   <div class="top-in">
     <span class="mark"></span>
     <span class="brand">{{marka}}</span>
-    <span class="tag-int">baza procedur</span>
+    <span class="znacznik tag-int">baza procedur</span>
     <div class="nav-links">
       <a href="/panel" class="btn-nav" title="Panel kierownictwa">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>

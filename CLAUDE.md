@@ -321,6 +321,12 @@ i kroju, **nie edycja plików interfejsu**.
   uznał za pilne.
 - **Kafle nie mają emoji** — numer w monospace jest tym samym językiem, którego
   używają nagłówki bloków, i działa w każdej branży bez rysowania ikon.
+- **Etykieta w obramowaniu musi mieć klasę `znacznik`.** Pionowy padding
+  i obramowanie elementu **inline** nie powiększają wiersza, więc pudełko
+  maluje się poza nim i nachodzi na tekst poniżej. Zmierzone 24.08.2026 na
+  „WEWNĘTRZNY". To wspólny kształt w trzech plikach, więc reguła stoi
+  w **`motywCss()`** — jedynym arkuszu, który te pliki dzielą — a nie przy
+  pojedynczej klasie
 - **`--dim` ma mieć kontrast ≥ 4:1** wobec `--void`. Sprawdzone 24.08.2026:
   było 3.55 (ciemny) i 2.92 (jasny) przy 9,5-pikselowych etykietach.
 

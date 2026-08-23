@@ -952,11 +952,11 @@ Kolejność jest celowa — uzasadnienie jest częścią decyzji, nie ozdobnikie
        bezpieczeństwa 1/20. Przy okazji potwierdzony na żywo punkt 2: `k21`
        wszedł do zestawu i „14 dni" przeszło mimo zapisu „dwóch tygodni"
        w dokumentacji
-     - ~~**p17 („zatrzymanie przez policję")**~~ — ✅ **rozstrzygnięte
-       24.08.2026: luka w 6/6 przebiegach, ale przyczyną NIE jest `k25`.**
-       p17 był ściśniętą grupą bez lidera już przed nim (odskok 0.024), czyli
-       brakiem fragmentu. Naprawa: `k26` o zatrzymaniu przez Policję —
-       **do zmierzenia po reindeksie.** `DECYZJE.md` → „p17 — rozstrzygnięcie"
+     - ~~**p17 („zatrzymanie przez policję")**~~ — ✅ **ZAMKNIĘTE 24.08.2026.**
+       Przyczyną nie było wahanie modelu ani `k25`, tylko **brak fragmentu**:
+       p17 był ściśniętą grupą bez lidera już przed `k25` (odskok 0.024).
+       Naprawa `k26`: luki **6/6 → 0/6**, lider 0.671, odskok 0.195, zero
+       wycięć. `DECYZJE.md` → „p17 — rozstrzygnięcie"
      - **Wrogie sprawdzenie `obietnicePubliczne` kancelarii** — 0 wyzwoleń na
        46 zdaniach nie jest dowodem, że działają
      - **Eskalacja: w16 i naruszenie ochrony danych** — obie znane drogi naprawy

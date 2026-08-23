@@ -2523,6 +2523,30 @@ znika w 6/6 przebiegach. Kryterium odskoku ≥ 0.1 stosuje się tu **z
 zastrzeżeniem** — fragment niesie też granicę kompetencji, więc może
 konkurować z `k18` i `k19`; liczy się, czy wszedł i czy model po niego sięgnął.
 
+### Pomiar po reindeksie — diagnoza potwierdzona
+
+| Miara | Przed `k26` | Po `k26` |
+|---|---|---|
+| Luka w 6 przebiegach | **6/6** | **0/6** |
+| Lider | `k25` (nie na temat), 0.467 | **`k26`, 0.671** |
+| Odskok | 0.032 | **0.195** |
+| Wycięcia | — | 0 na 25 zdań w 6 przebiegach |
+| Forma zwracania się | — | „Pani/Pana" w 6/6, zero form na „ty" |
+
+Zachowanie stabilne po obu stronach zmiany, więc rozstrzygnięcie jest mocne:
+**przyczyną był brak fragmentu i nic poza tym.** Odskok 0.195 przekracza nawet
+kryterium ≥ 0.1, którego dla fragmentu z granicą kompetencji nie wymagaliśmy.
+
+Rozwiązała się przy okazji obawa o „przyciąganie pytań ościennych" przez `k25`:
+po dodaniu `k26` spadł on przy p17 na pozycję 2 (0.467), za `k23` (0.476).
+Fragment na temat wypycha fragment nie na temat sam, bez zmiany progów i bez
+dzielenia czegokolwiek.
+
+Potwierdziło się też drugie: `k26` napisany bezosobowo daje odpowiedź w formie
+„Pani/Pana" we wszystkich sześciu przebiegach — ten sam efekt co przy `k25`.
+Rejestr propaguje się z pobranego fragmentu **powtarzalnie**, co jest najlepszym
+argumentem za tym, że rezygnacja z rewritera form była trafna.
+
 ### Wniosek metodologiczny
 
 Trzeci raz w tym projekcie pierwsze wyjaśnienie objawu okazało się nietrafione

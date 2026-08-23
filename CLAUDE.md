@@ -30,7 +30,7 @@ każdej sesji, a historia decyzji jest potrzebna kilka razy w miesiącu.
 - **Wymiar klienta** — `KLIENCI` w `klienci.js`, klient wynika z hosta tak samo
   jak rola. Przestrzeń w Vectorize, treść, prompty, eskalacja, wzorce obietnic
   i nazwy w interfejsach są zależne od klienta. Nieznany host dostaje 404
-- **Drugi klient: kancelaria** — 24 fragmenty publiczne, 25 wewnętrznych,
+- **Drugi klient: kancelaria** — 25 fragmentów publicznych, 25 wewnętrznych,
   8 kategorii eskalacji, obie przestrzenie zaindeksowane. **Hosty nie mają jeszcze
   tras w `wrangler.toml` ani aplikacji Access** — to stan zamierzony, diagnostyka
   chodzi przez `?klient=kancelaria`
@@ -51,6 +51,7 @@ każdej sesji, a historia decyzji jest potrzebna kilka razy w miesiącu.
 | 22.08 | **Etap 1 drugiej branży: wybór klienta przez host**, słowniki branżowe wyjęte z silnika | `DECYZJE.md` → Wybór klienta: host, nie parametr |
 | 22.08 | **Etap 2: treść kancelarii** (24+25 fragmentów, własny słownik eskalacji), pomiar na 40 pytaniach | `DECYZJE.md` → Kancelaria — pomiar na 40 pytaniach |
 | 22.08 | **Naprawy 1–4 z mapy**: ramka bezpieczeństwa, liczebniki słowne, odmowa z uzasadnieniem, treść `k18`–`k20` | `DECYZJE.md` → Naprawy po mapie kancelarii |
+| 23.08 | **Ton: granica, nie naprawa** — rewriter form odrzucony; `k25` (przemoc domowa) napisany bezosobowo, sonda w repo | `DECYZJE.md` → Poprawianie form adresatywnych, Fragment `k25` |
 
 **Gdzie jesteśmy:** treści nie brakuje nigdzie, a z pięciu problemów z pomiaru
 **trzy są naprawione** (próg zależny od długości zdania z cytatem dosłownym,
@@ -116,7 +117,7 @@ wystarcza do testów i jednego użytkownika, nie wystarcza dla zespołu klienta.
 | `worker.js` | Backend — RAG, weryfikacja, prompty, tożsamość, routing, **silnik niezależny od branży** | Cloudflare Worker `knowbase-budmax` |
 | `klienci.js` | `KLIENCI` — tablica klientów i indeks `host → {klient, rola}`. **Wszystko, co zależy od firmy** | importowane przez `worker.js` |
 | `eskalacja-budowlana.js` | `ESKALACJA_BUDOWLANA` — słownik branżowy eskalacji (kategorie, dopełnienia, progi, teksty) | importowane przez `klienci.js` |
-| `content-kancelaria-public.js` | `CHUNKS_KANCELARIA` — 24 fragmenty publiczne kancelarii | importowane przez `klienci.js` |
+| `content-kancelaria-public.js` | `CHUNKS_KANCELARIA` — 25 fragmentów publicznych kancelarii | importowane przez `klienci.js` |
 | `content-kancelaria-internal.js` | `INTERNAL_CHUNKS_KANCELARIA` — 25 fragmentów wewnętrznych kancelarii | importowane przez `klienci.js` |
 | `eskalacja-prawna.js` | `ESKALACJA_PRAWNA` — słownik eskalacji kancelarii, 8 kategorii | importowane przez `klienci.js` |
 | `content-public.js` | `CHUNKS` — 53 fragmenty publiczne | importowane przez `worker.js` |
@@ -138,6 +139,7 @@ wystarcza do testów i jednego użytkownika, nie wystarcza dla zespołu klienta.
 | `test-klienci.mjs` | Test wymiaru klienta: host, przestrzenie, obowiązkowość klienta, szablony | repo |
 | `test-eskalacja-prawna.mjs` | Test słownika eskalacji kancelarii (`node test-eskalacja-prawna.mjs`) | repo |
 | `test-obietnice-prawne.mjs` | Wrogi test warstwy obietnic kancelarii | repo |
+| `sonda-klienta.mjs` | Zbiorczy przebieg diagnostyczny klienta (`node sonda-klienta.mjs <sekret> <klient> [zakres]`) — odtwarza ścieżkę produkcyjną, osobno liczy eskalacje i ramki bezpieczeństwa | repo, wyniki do katalogu tymczasowego |
 
 **Treść jest w osobnych plikach od 19.08.2026** — stanowiła ponad połowę wagi
 `worker.js`, a zadanie dotyczące logiki nigdy jej nie potrzebuje. Bundler
@@ -702,6 +704,15 @@ Lista jest tutaj, bo zniknięty zapis wraca jako ten sam błąd za trzy sesje.
 - **Przemianowanie przestrzeni BudMaksu na `budmax-public`** — odrzucone:
   kosztowałoby reindeks i migrację na działającej produkcji, a zysk jest wyłącznie
   estetyczny. Nazwy są wpisane jawnie w tablicy klienta i mogą być niesymetryczne
+- **Deterministyczne poprawianie form adresatywnych po generacji** — odrzucone
+  23.08.2026. Rewriter **mutuje tekst po weryfikacji**, więc zdanie wysłane do
+  klienta przestaje być tym, które zweryfikowano, a `wystepujeDoslownie()` traci
+  sens przy pierwszej podmianie. Analogia do ramki eskalacyjnej **nie działa** —
+  ramka jest DOKLEJANA, nie edytowana, i to jest różnica decydująca o tym, czy
+  warstwa może ominąć weryfikację. Do tego przypadek, który zamówił naprawę
+  (p14, zły przypadek WEWNĄTRZ form Pan/Pani), leży w klasie nierozwiązywalnej
+  bez parsera. **Detektor bez podmiany odrzucony razem z nim** — warstwa bez
+  zmierzonej potrzeby
 - **Rozpoznawanie roli hosta po podciągu nazwy** (`includes("wewnetrzny")`) —
   zmiana nazw hostów 21.08.2026 odebrałaby rolę obu hostom po cichu. Nazwy żyją
   w `HOSTY`, dopasowanie jest dokładne
@@ -820,9 +831,14 @@ też poprawne parafrazy.
 - **Żadna warstwa nie pilnuje FORMY podania liczby, tylko jej pochodzenia** —
   zmierzone 22.08.2026: „przedawniają się w okresie od 3 do 6 lat" przeszło,
   bo obie liczby są w dokumentacji, choć prompt zakazuje mówienia „od X do Y"
-- **Reguła tonu „per Pan/Pani" dryfuje u drugiego klienta** — w czterech
-  odpowiedziach kancelarii model pisze „Twojej sprawy" mimo zakazu w części
-  wspólnej promptu. Do rozważenia przeniesienie zwrotu do pól klienta
+- **Reguła tonu „per Pan/Pani" dryfuje u drugiego klienta** — **granica przyjęta
+  23.08.2026, nie defekt do naprawienia.** Po przeniesieniu `zwrotDoKlienta` do
+  pól klienta dryf spadł z 4/20 do **2/20** odpowiedzi i tam został. Naprawa
+  deterministyczna po generacji **odrzucona** — patrz „Ślepe uliczki" i
+  `DECYZJE.md` → „Poprawianie form adresatywnych". Osobny kształt: model potrafi
+  pomylić **przypadek i rodzaj wewnątrz** form grzecznościowych („Panie grozi…
+  udzielić Panu"), czego żadna podmiana wzorcem nie dosięga. Przeciwdziała się
+  temu **treścią pisaną bezosobowo** tam, gdzie pomyłka boli najbardziej (`k25`)
 - **Wycięcie ZAKAZU odwraca sens odpowiedzi** — warstwa progowa nie odróżnia
   trybu zdania. Zmierzone: „Aplikant nie może sporządzać skargi kasacyjnej"
   wycięte przy 0.469 wobec progu 0.48. W budowlance wycinane zdania były opisowe
@@ -926,6 +942,11 @@ Kolejność jest celowa — uzasadnienie jest częścią decyzji, nie ozdobnikie
        bezpieczeństwa 1/20. Przy okazji potwierdzony na żywo punkt 2: `k21`
        wszedł do zestawu i „14 dni" przeszło mimo zapisu „dwóch tygodni"
        w dokumentacji
+     - **p17 („zatrzymanie przez policję") — luka w jednym przebiegu z dwóch.**
+       `k25` jest przy tym pytaniu liderem (0.467), choć tematycznie nie pasuje.
+       Zestaw TOP_K poza tym niezmieniony, `k19` w nim jest — więc przy n=1 nie
+       da się odróżnić wahania od skutku treści. Rozstrzygnąć kilkoma przebiegami
+       samego p17; jeśli to treść, naprawą jest **podział `k25`**, nie progi
      - **Wrogie sprawdzenie `obietnicePubliczne` kancelarii** — 0 wyzwoleń na
        46 zdaniach nie jest dowodem, że działają
      - **Eskalacja: w16 i naruszenie ochrony danych** — obie znane drogi naprawy

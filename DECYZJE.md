@@ -2276,6 +2276,151 @@ czego firma świadomie nie robi albo nie ocenia, z definicji konkuruje z całą
 dokumentacją. Tam kryterium brzmi: czy fragment wszedł do zestawu i czy model
 po niego sięgnął.
 
+## Poprawianie form adresatywnych po generacji — odrzucone (23.08.2026)
+
+Reguła tonu „per Pan/Pani" dryfuje u kancelarii mimo dwóch rund wzmacniania
+promptu. Pomiar na 20 pytaniach publicznych: **4 → 2 odpowiedzi na 20** z formą
+na „ty" po przeniesieniu `zwrotDoKlienta` do pól klienta (22.08.2026). Pytanie
+brzmiało: czy da się to domknąć deterministycznie po generacji — tak jak ramka
+eskalacyjna i cytat dosłowny — skoro formy adresatywne w polskim są zbiorem
+skończonym, w przeciwieństwie do intencji zdania, której nie dało się rozdzielić
+przy liczbach.
+
+**Odpowiedź: nie. Zbiór jest skończony tylko w klasach, które nie naprawiają
+tego, po co warstwa miałaby powstać.**
+
+### Rozkład zmierzony na 40 odpowiedziach sondy (20 publicznych + 20 wewnętrznych)
+
+| Klasa | Wystąpienia | Czy podmiana jest mechaniczna |
+|---|---|---|
+| A. Dzierżawcze `twój*` | 3 (p17) | **tak** — każda forma → `Pana/Pani`, rzeczownik zachowuje przypadek |
+| B. Zaimki osobowe (`Cię`) | 1 (p12) | prawie — ale `ci` koliduje ze wskazującym („ci klienci") |
+| C. Czasowniki 2 os. (`możesz`, `dołączasz`) | 3 publicznie, 7 wewnętrznie | **nie** — wymaga wstawienia podmiotu i zmiany szyku |
+| D. Tryb rozkazujący | 0 publicznie | nie — nieregularny |
+| E. Zły przypadek/rodzaj WEWNĄTRZ form Pan/Pani | **1 (p14)** | **nie** — wymaga przypisania przypadka, czyli parsowania |
+
+Klasa C wygląda na regularną (`-esz/-asz/-isz` → `-e/-a/-i` działa dla
+„możesz→może", „dołączasz→dołącza"), ale problemem nie jest odmiana czasownika,
+tylko **wstawienie wyrazu w miejsce zależne od składni**: „Do obu wniosków
+dołączasz oświadczenie" → „Do obu wniosków dołącza **Pan/Pani** oświadczenie".
+Przy przeczeniu i zaimku zwrotnym pozycja jest inna, a formy przeszłe
+i warunkowe 2 os. są rodzajowe („podejmowałbyś" → „podejmowałby Pan /
+podejmowałaby Pani") — jedno słowo nie ma jednego następnika.
+
+**Przypadek, który zamówił tę analizę, leży w klasie E.** W p14 („mąż mi grozi
+i boję się wrócić do domu") model **nie użył formy na „ty"** — użył form
+grzecznościowych w złym przypadku i niespójnym rodzaju: *„Panie grozi przemoc
+domowa… może udzielić Panu niezbędnej pomocy"*. Rewriter typu `twój→Pana/Pani`
+przeszedłby przez tę odpowiedź nie zmieniając ani znaku. Do naprawy trzeba znać
+przypadek wymagany przez czasownik, a przy „Panie" nie da się nawet rozstrzygnąć
+bez składni, czy to błąd — „Panie Mecenasie" jest poprawnym wołaczem. Rodzaj
+adresata jest przy tym **nieznany i niepoznawalny**: widget publiczny jest
+anonimowy.
+
+### Argument przesądzający: rewriter mutuje tekst PO weryfikacji
+
+Niezależny od lingwistyki i mocniejszy od niej.
+
+**Analogia do ramki eskalacyjnej nie działa, bo ramka jest DOKLEJANA, nie
+edytowana.** To jest różnica, która decyduje o tym, czy warstwa może ominąć
+weryfikację. Ramce wolno ominąć `verifyClaims()`, bo nie jest twierdzeniem
+o dokumentacji i bo `isDuplicate()` nigdy jej nie widzi — dokłada tekst obok
+zweryfikowanego, nie zmienia go.
+
+Rewriter form robi coś przeciwnego: **modyfikuje zdania, które już przeszły
+weryfikację**. Skutek jest taki, że tekst wysłany do klienta przestaje być
+tekstem, który zweryfikowano. Najdotkliwiej ginie `wystepujeDoslownie()` —
+zdanie wpuszczone dlatego, że **dosłownie** występuje we fragmencie, po pierwszej
+podmianie już w nim dosłownie nie występuje. Zamieniamy najtwardszą gwarancję
+w projekcie na poprawność stylistyczną.
+
+Wariant odwrotny — rewriter **przed** `verifyClaims()` — nie jest lepszy: zmienia
+embedding każdego dotkniętego zdania, więc wpływa na to, co przechodzi próg.
+Kierunek jest prawdopodobnie korzystny (dokumentacja jest pisana w rejestrze
+Pan/Pani, więc cosinus raczej wzrośnie), ale „prawdopodobnie" nie wystarcza, a
+warstwa stylistyczna ląduje wtedy na ścieżce krytycznej dla bezpieczeństwa.
+W `isDuplicate()` token `Pana/Pani` nie strypuje się do niczego, więc licznik
+nowych słów przesuwa się o ±1 przy progu 4.
+
+**Odrzucony razem z rewriterem: detektor bez podmiany** (liczenie form klasy A+B
+obok `cicho: {duplikat, instrukcje}`). Byłby bezpieczny, ale to warstwa bez
+zmierzonej potrzeby — dryf jest już mierzony przy każdym przebiegu sondy.
+
+### Co zrobiono zamiast
+
+Treść, nie kod — fragment `k25` napisany **bezosobowo**, żeby model miał z czego
+kopiować rejestr przy pytaniu, w którym pomylona forma trafia w osobę w kryzysie.
+Zgodne ze strukturą kosztu klienta (80% treść) i nie dotyka silnika.
+
+**Uwaga na przyszłość:** dobra wiadomość z pomiaru jest taka, że forma
+z ukośnikiem **już dziś przechodzi weryfikację** — p06 i p19 zawierają
+„Pan/Pani", „Pana/Pani", „Panu/Pani" i mają 0 wycięć. Gdyby ktoś kiedyś do tego
+wracał, to nie ta rzecz będzie blokadą; blokadą są klasa E i mutacja po
+weryfikacji.
+
+
+## Fragment `k25` — przemoc domowa, pomiar po reindeksie (23.08.2026)
+
+Naprawa **treścią**, nie kodem, po odrzuceniu deterministycznego poprawiania form
+(patrz rozdział wyżej). Fragment napisany **bezosobowo**, żeby model miał z czego
+kopiować rejestr przy jedynym pytaniu tej branży, w którym pomylona forma trafia
+w osobę w kryzysie.
+
+### Co się udało — mierzalne i przypisywalne
+
+| Miara | Przed (22–23.08) | Po `k25` |
+|---|---|---|
+| Lider przy p14 | `k23` „Sprawy pilne", 0.470 | **`k25`, 0.675**, odskok 0.155 |
+| Zdania w odpowiedzi p14 | 3 | **7**, 0 wycięć |
+| Formy grzecznościowe w p14 | `Panie` + `Panu` (dwa przypadki, niespójny rodzaj) | **wyłącznie `Pani`** |
+| `112` i `800 120 002` w odpowiedzi | wycinane przez `numbersAreGrounded()` | **przechodzą** — są teraz w dokumentacji |
+| Ramka `zagrozenie_osoby` | działa | **działa nadal**, stoi przed treścią |
+
+Rejestr się ustabilizował dokładnie tak, jak zakładała hipoteza: model kopiuje
+formę zwracania się z pobranego fragmentu. To jest **przypisywalne**, bo fragment
+jest nowy i dominuje w zestawie z odskokiem 0.155.
+
+Uboczny, ale istotny skutek: numer alarmowy jest teraz uziemiony **w treści**,
+więc ramka bezpieczeństwa przestała być jedyną drogą jego dostarczenia. Ramka
+zostaje — jest potrzebna wtedy, gdy `k25` do zestawu nie wejdzie.
+
+### Czego pomiar NIE rozstrzyga
+
+**`k25` został liderem także przy p17** („zatrzymała mnie policja na 48 godzin"),
+z wynikiem 0.467 — pytanie nie ma z przemocą domową nic wspólnego. p17 wypadło
+w tym przebiegu jako LUKA, choć poprzednio dostawało odpowiedź.
+
+**Przyczyny nie da się przypisać treści przy jednym przebiegu.** Porównanie
+zestawów TOP_K przed i po jest niemal identyczne: `k25` wchodzi na pozycję 0,
+`k23` **rośnie** 0.427 → 0.435 (efekt dopisanego odsyłacza), a jedyne, co wypada
+z ósemki, to nieistotne „RODO i dane osobowe" (0.352). Fragment `k19` — ten,
+z którego zbudowana była poprzednia odpowiedź — **jest w zestawie w obu
+przebiegach na tym samym 0.386**. Materiał do odpowiedzi więc nie zniknął, a
+projekt ma udokumentowane wahania między uruchomieniami. Rozstrzygnięcie wymaga
+kilku przebiegów samego p17, nie jednego.
+
+**Obserwacja do zapamiętania mimo to:** `k25` ma 1730 znaków przy medianie 676
+i poprzednim maksimum 1068 w tej tablicy. Długi fragment obejmujący wiele
+pojęć sąsiednich („policja", „pilne", „zatrzymanie") **przyciąga pytania
+ościenne**. Jeśli przy kolejnych pomiarach zacznie wypierać `k23` przy pytaniach
+o pilność, naprawą jest podział na „pierwsze kroki" i „w czym pomaga kancelaria",
+nie zmiana progów.
+
+### Reszta przebiegu
+
+- **Publicznie:** luki 2/20 (p17 wyżej, p20 „zniżka za przedpłatę" — luka
+  bezpieczna, zostawiona świadomie), wycięcia 2/63, ramek 1/20, eskalacji 0/20
+- **Wycięcia są oba poprawne:** p04 wyciął zdanie z datą `12 marca` podaną przez
+  pytającego — to **zamierzone działanie R3 w trybie publicznym**, nie defekt;
+  p13 wyciął zdanie syntetyzujące „te dwie kategorie są odrębne" przy 0.386, bez
+  pokrycia w źródle
+- **Wewnętrznie bez zmian:** 0 luk na 20, 0 wycięć na 75 zdań, 6 eskalacji
+  w 6 różnych kategoriach — słownik prawny działa na całej szerokości
+- **Dryf tonu 2/20 → 1/20** (zostało jedno „Twojej" w p08). **Nie liczyć tego
+  jako dowodu** — trzy przebiegi po n=1 (4 → 2 → 1) pokazują kierunek, nie efekt.
+  Granica z rozdziału wyżej zostaje w mocy
+
+
 ## Podsumowanie drugiej branży — co uniwersalne, co branżowe, ile kosztuje klient
 
 ### Werdykt o warstwach po pełnym cyklu

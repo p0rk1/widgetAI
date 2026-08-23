@@ -2613,12 +2613,29 @@ więc błąd wychodzi przy `--dry-run`, a nie na ekranie klienta.
 
 | | BudMax | Kancelaria |
 |---|---|---|
-| Schemat | ciemny | **jasny, papierowy** (`#F6F4F0`) |
+| Tło | **ciepły grafit `#17181B`** | **papier `#E8E6E0`** |
 | Nagłówki | Archivo, rozstrzelone `.08em` | **Source Serif 4**, bez rozstrzelenia |
-| Akcent | pomarańcz hi-vis `#FF6A1F` | **butelkowa zieleń `#1B4D3E`** |
-| Siatka techniczna | rzadsza i słabsza: 48 px/.45 → **64 px/.16** | **wyłączona** |
-| Narożniki | 0 px | 3 px |
-| Ramka znacznika marki | **usunięta** | brak |
+| Akcent | **pomarańcz stonowany `#E2662C`** | **granat `#26456B`** |
+| Siatka techniczna | 48 px/.45 → **80 px/.09** | **wyłączona** |
+| Rozmycie pasków | 12 px | **0 — zero szkła** |
+| Narożniki / ramka znacznika | 0 px / **usunięta** | 3 px / brak |
+
+**Druga iteracja palet (24.08.2026, po obejrzeniu podglądu).** Pierwsza wersja
+była zbyt dosłowna w obie strony: BudMax wyglądał jak pulpit sci-fi (granatowa
+czerń `#090C10` plus cyjan `#4CC9F0` i limonka `#3DDC97`), a kancelaria świeciła
+czystą bielą paneli, przez co ginął podział na sekcje. Poprawki:
+- **BudMax: grafit zamiast granatowej czerni, neony wycięte.** Tło w górę
+  (`#090C10` → `#17181B`), cyjan → stalowy `#7BA3B8`, limonka → stonowana zieleń
+  `#6FA987`, pomarańcz zdjęty z jaskrawości (`#FF6A1F` → `#E2662C`). Siatka
+  jeszcze rzadsza i słabsza, poświata pod przyciskiem zamieniona na zwykły cień.
+- **Kancelaria: papier zamiast bieli.** Tło `#F6F4F0` → `#E8E6E0`, panele
+  z `#FFFFFF` → `#F4F3EF`, rozmycie pasków wyłączone.
+- **Akcent kancelarii: granat zamiast butelkowej zieleni** — kontrast między
+  branżami idzie teraz czytelną osią ciepłe/zimne, pomarańcz kontra granat.
+  Zieleń była trzecim kierunkiem, który tej osi nie budował.
+
+Podłoga kontrastu po zmianie: **4.05** (najniższy `--dim` kancelarii wobec tła);
+wszystkie tokeny obu motywów ≥ 4:1 wobec tła i paneli.
 
 BudMax został przy języku rysunku technicznego, ale z mniejszą liczbą ozdób:
 siatka schodzi na drugi plan, znika podwójna ramka wokół znacznika, tło jest

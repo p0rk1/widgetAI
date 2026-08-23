@@ -177,21 +177,24 @@ Zanim odpowiesz, sprawdź, czy fragment, z którego korzystasz, dotyczy DOKŁADN
     // mniej ozdób, więcej porządku.
     motyw: {
       schemat: "ciemny",
-      themeColor: "#090C10",
+      themeColor: "#17181B",
       fontyUrl: "https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap",
       fontNaglowek: "'Archivo',system-ui,sans-serif",
       fontTekst: "'Instrument Sans',system-ui,sans-serif",
       fontMono: "'JetBrains Mono',ui-monospace,monospace",
       promien: "0px",
-      siatka: { widoczna: true, rozmiar: "64px", krycie: "0.16" },
+      siatka: { widoczna: true, rozmiar: "80px", krycie: "0.09" },
+      rozmycie: "12px",
       akcentRamki: false,
       tropNaglowka: ".08em",
       kolory: {
-        void: "#090C10", deck: "#0F1418", panel: "#151B21",
-        line: "#273039", lineSoft: "#1B242B",
-        chalk: "#EDF0F2", mute: "#93A0AC", dim: "#6E7A85",
-        hi: "#FF6A1F", blue: "#4CC9F0", ok: "#3DDC97", warn: "#FFB84D", danger: "#FF5A5A",
-        cien: "0 24px 70px -24px rgba(0,0,0,.75)",
+        // Grafit ciepły, nie granatowa czerń. Neony wyszły: cyjan i limonka
+        // robiły z tego pulpit sci-fi, a nie narzędzie budowlane.
+        void: "#17181B", deck: "#1D1F22", panel: "#232629",
+        line: "#34383D", lineSoft: "#26292D",
+        chalk: "#E8E6E3", mute: "#A2A5A8", dim: "#8A8F94",
+        hi: "#E2662C", blue: "#7BA3B8", ok: "#6FA987", warn: "#D2A24C", danger: "#D96A5F",
+        cien: "0 18px 48px -20px rgba(0,0,0,.55)",
       },
     },
   },
@@ -339,21 +342,25 @@ Zanim odpowiedzisz, sprawdź, czy fragment, z którego korzystasz, dotyczy DOKŁ
     // widoczny od pierwszego spojrzenia — inny produkt, nie inna nazwa.
     motyw: {
       schemat: "jasny",
-      themeColor: "#F6F4F0",
+      themeColor: "#E8E6E0",
       fontyUrl: "https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap",
       fontNaglowek: "'Source Serif 4',Georgia,serif",
       fontTekst: "'Inter',system-ui,sans-serif",
       fontMono: "'IBM Plex Mono',ui-monospace,monospace",
       promien: "3px",
       siatka: { widoczna: false, rozmiar: "64px", krycie: "0" },
+      rozmycie: "0px",   // zero szkła — pasek ma być kartką, nie taflą
       akcentRamki: false,
       tropNaglowka: "0",
       kolory: {
-        void: "#F6F4F0", deck: "#FFFFFF", panel: "#FFFFFF",
-        line: "#D9D3C9", lineSoft: "#EAE5DD",
-        chalk: "#16191C", mute: "#5A6069", dim: "#6F757E",
-        hi: "#1B4D3E", blue: "#2F5E72", ok: "#1B4D3E", warn: "#8A6520", danger: "#8F2E27",
-        cien: "0 10px 30px -12px rgba(22,25,28,.14)",
+        // Papier, nie biała kartka: tło zeszedło z #F6F4F0, a panele z czystej
+        // bieli — czysta biel świeciła i kasowała podział na sekcje.
+        // Akcent: granat. Kontrast wobec BudMaksu idzie osią ciepłe/zimne.
+        void: "#E8E6E0", deck: "#F4F3EF", panel: "#F4F3EF",
+        line: "#CFCAC0", lineSoft: "#DEDAD2",
+        chalk: "#1B1E22", mute: "#55595F", dim: "#6B6F75",
+        hi: "#26456B", blue: "#4A6B84", ok: "#3E6B52", warn: "#7E5C1C", danger: "#8B2F28",
+        cien: "0 8px 24px -12px rgba(27,30,34,.16)",
       },
     },
   },

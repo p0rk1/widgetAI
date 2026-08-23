@@ -409,6 +409,7 @@ function motywCss(klient) {
   --siatka-rozmiar:${m.siatka.rozmiar};
   --siatka-krycie:${m.siatka.widoczna ? m.siatka.krycie : "0"};
   --ramka-akcentu:${m.akcentRamki ? "1" : "0"};
+  --rozmycie:${m.rozmycie};
   --sp:cubic-bezier(.22,1,.36,1);
 }`;
 }

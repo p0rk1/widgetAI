@@ -29,7 +29,7 @@ body::before{
 /* topbar */
 .top{
   border-bottom:1px solid var(--line);position:sticky;top:0;
-  background:color-mix(in srgb, var(--void) 92%, transparent);backdrop-filter:blur(16px);z-index:50;
+  background:color-mix(in srgb, var(--void) 92%, transparent);backdrop-filter:blur(var(--rozmycie));z-index:50;
 }
 .top-in{
   max-width:760px;margin:0 auto;padding:0 16px;height:58px;
@@ -130,7 +130,7 @@ body::before{
 /* input bar */
 .bottom-dock{
   position:sticky;bottom:0;background:color-mix(in srgb, var(--void) 95%, transparent);
-  backdrop-filter:blur(16px);border-top:1px solid var(--line);
+  backdrop-filter:blur(var(--rozmycie));border-top:1px solid var(--line);
   padding:12px 16px env(safe-area-inset-bottom, 12px);z-index:50;
 }
 .input-wrap{

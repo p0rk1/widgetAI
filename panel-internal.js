@@ -23,7 +23,7 @@ body::before{
 @media(max-width:600px){.wrap{padding:0 16px}}
 
 /* header */
-.top{border-bottom:1px solid var(--line);position:sticky;top:0;background:color-mix(in srgb, var(--void) 86%, transparent);backdrop-filter:blur(16px) saturate(150%);z-index:50}
+.top{border-bottom:1px solid var(--line);position:sticky;top:0;background:color-mix(in srgb, var(--void) 86%, transparent);backdrop-filter:blur(var(--rozmycie));z-index:50}
 .top-in{display:flex;align-items:center;gap:13px;height:68px}
 .mark{width:10px;height:10px;background:var(--hi);flex-shrink:0;position:relative}
 .mark::after{content:"";position:absolute;inset:-5px;border:1px solid var(--hi);opacity:calc(var(--ramka-akcentu) * .35)}

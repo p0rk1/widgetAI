@@ -2471,6 +2471,67 @@ To zawęża pytanie o p17 do jednego miejsca: **skoro zestaw fragmentów jest st
 rozrzut wyniku może pochodzić wyłącznie z generacji.** Stąd `sonda-powtorka.mjs`.
 
 
+## p17 — rozstrzygnięcie: to nie było wahanie ani skutek `k25` (24.08.2026)
+
+Sześć przebiegów `sonda-powtorka.mjs` na pytaniu „zatrzymała mnie policja na
+48 godzin, czy to było legalne?": **luka w 6/6, zachowanie stabilne**. Model
+w każdym przebiegu produkuje samo zdanie odmowne, więc `tylkoOdmowa()` słusznie
+przepuszcza je do fallbacku. Wahanie modelu wykluczone.
+
+**Ale to nie dowodzi jeszcze, że przyczyną jest `k25`** — stan sprzed zmiany
+zmierzono raz, więc równie dobrze mógł być niestabilny. Kontrfaktyku nie da się
+odtworzyć bez usunięcia `k25` z indeksu, ale nie jest potrzebny, bo odpowiedzi
+udziela **rozkład wyników sprzed zmiany**:
+
+| | Lider | Odskok | Rozpiętość całej ósemki |
+|---|---|---|---|
+| p17 **przed** `k25` | 0.427 | **0.024** | 0.075 |
+| p17 **po** `k25` | 0.467 | 0.032 | 0.113 |
+| p01 (zdrowe) | 0.745 | 0.141 | 0.205 |
+| p14 (po `k25`) | 0.675 | 0.155 | 0.290 |
+
+**p17 był ściśniętą grupą bez lidera już przed dodaniem `k25`** — cała ósemka
+mieściła się w 0.075, odskok 0.024. Zgodnie z „Procedurą łatania luk" taki
+rozkład oznacza **brak fragmentu**, nie problem progu, promptu ani sąsiedniej
+treści. Luka istniała wcześniej; przed zmianą model raz złożył odpowiedź
+zastępczą z fragmentów o granicy informacji i porady, po zmianie przestał.
+`k25` nie stworzył luki, tylko przestał ją maskować.
+
+### Dlaczego NIE podział `k25`
+
+Podział był planowaną naprawą, gdyby przyczyną była treść — i przyczyną jest
+treść, tylko inna niż zakładano. Podział `k25` nie pomógłby: połowa „pierwsze
+kroki" nadal zawiera słownictwo policyjne i nadal nie odpowiada na pytanie
+o zatrzymanie, a dokumentacja **nie miała nigdzie** praw osoby zatrzymanej ani
+terminu na zażalenie. `k23` wymienia zatrzymanie wyłącznie jako powód pilnego
+kontaktu. Do tego hipoteza o długości została w tym samym pomiarze obalona
+(rozdział wyżej), więc dzielenie fragmentu z powodu jego objętości nie ma
+podstawy.
+
+### Naprawa: `k26`
+
+Nowy fragment „Zatrzymanie przez Policję — ile trwa, jakie prawa ma zatrzymany
+i co dalej", 1315 znaków, napisany bezosobowo jak `k25`. Treść: 48 godzin
+zatrzymania i 24 godziny sądu na decyzję (72 łącznie), katalog praw osoby
+zatrzymanej, protokół zatrzymania, zażalenie do sądu rejonowego w terminie 7 dni
+oraz jawna granica — legalność zatrzymania rozstrzyga **sąd** na skutek
+zażalenia, a kancelaria ocenia szanse po zapoznaniu się z dokumentami.
+Odsyłacze w obie strony do `k19` i `k23`.
+
+**Do zmierzenia po reindeksie:** czy `k26` zostaje liderem p17 i czy luka
+znika w 6/6 przebiegach. Kryterium odskoku ≥ 0.1 stosuje się tu **z
+zastrzeżeniem** — fragment niesie też granicę kompetencji, więc może
+konkurować z `k18` i `k19`; liczy się, czy wszedł i czy model po niego sięgnął.
+
+### Wniosek metodologiczny
+
+Trzeci raz w tym projekcie pierwsze wyjaśnienie objawu okazało się nietrafione
+(po „syntezie dwóch fragmentów" i „artefakcie metryki"). Wzorzec jest ten sam:
+**zmiana zbiegła się w czasie z objawem i została wzięta za jego przyczynę.**
+Tanim testem okazało się spojrzenie na rozkład wyników SPRZED zmiany — dane już
+były, wystarczyło ich nie pominąć.
+
+
 ## Podsumowanie drugiej branży — co uniwersalne, co branżowe, ile kosztuje klient
 
 ### Werdykt o warstwach po pełnym cyklu

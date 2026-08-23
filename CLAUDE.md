@@ -30,7 +30,7 @@ każdej sesji, a historia decyzji jest potrzebna kilka razy w miesiącu.
 - **Wymiar klienta** — `KLIENCI` w `klienci.js`, klient wynika z hosta tak samo
   jak rola. Przestrzeń w Vectorize, treść, prompty, eskalacja, wzorce obietnic
   i nazwy w interfejsach są zależne od klienta. Nieznany host dostaje 404
-- **Drugi klient: kancelaria** — 25 fragmentów publicznych, 25 wewnętrznych,
+- **Drugi klient: kancelaria** — 26 fragmentów publicznych, 25 wewnętrznych,
   8 kategorii eskalacji, obie przestrzenie zaindeksowane. **Hosty nie mają jeszcze
   tras w `wrangler.toml` ani aplikacji Access** — to stan zamierzony, diagnostyka
   chodzi przez `?klient=kancelaria`
@@ -117,7 +117,7 @@ wystarcza do testów i jednego użytkownika, nie wystarcza dla zespołu klienta.
 | `worker.js` | Backend — RAG, weryfikacja, prompty, tożsamość, routing, **silnik niezależny od branży** | Cloudflare Worker `knowbase-budmax` |
 | `klienci.js` | `KLIENCI` — tablica klientów i indeks `host → {klient, rola}`. **Wszystko, co zależy od firmy** | importowane przez `worker.js` |
 | `eskalacja-budowlana.js` | `ESKALACJA_BUDOWLANA` — słownik branżowy eskalacji (kategorie, dopełnienia, progi, teksty) | importowane przez `klienci.js` |
-| `content-kancelaria-public.js` | `CHUNKS_KANCELARIA` — 25 fragmentów publicznych kancelarii | importowane przez `klienci.js` |
+| `content-kancelaria-public.js` | `CHUNKS_KANCELARIA` — 26 fragmentów publicznych kancelarii | importowane przez `klienci.js` |
 | `content-kancelaria-internal.js` | `INTERNAL_CHUNKS_KANCELARIA` — 25 fragmentów wewnętrznych kancelarii | importowane przez `klienci.js` |
 | `eskalacja-prawna.js` | `ESKALACJA_PRAWNA` — słownik eskalacji kancelarii, 8 kategorii | importowane przez `klienci.js` |
 | `content-public.js` | `CHUNKS` — 53 fragmenty publiczne | importowane przez `worker.js` |
@@ -952,11 +952,11 @@ Kolejność jest celowa — uzasadnienie jest częścią decyzji, nie ozdobnikie
        bezpieczeństwa 1/20. Przy okazji potwierdzony na żywo punkt 2: `k21`
        wszedł do zestawu i „14 dni" przeszło mimo zapisu „dwóch tygodni"
        w dokumentacji
-     - **p17 („zatrzymanie przez policję") — luka w jednym przebiegu z dwóch.**
-       `k25` jest przy tym pytaniu liderem (0.467), choć tematycznie nie pasuje.
-       Zestaw TOP_K poza tym niezmieniony, `k19` w nim jest — więc przy n=1 nie
-       da się odróżnić wahania od skutku treści. Rozstrzygnąć kilkoma przebiegami
-       samego p17; jeśli to treść, naprawą jest **podział `k25`**, nie progi
+     - ~~**p17 („zatrzymanie przez policję")**~~ — ✅ **rozstrzygnięte
+       24.08.2026: luka w 6/6 przebiegach, ale przyczyną NIE jest `k25`.**
+       p17 był ściśniętą grupą bez lidera już przed nim (odskok 0.024), czyli
+       brakiem fragmentu. Naprawa: `k26` o zatrzymaniu przez Policję —
+       **do zmierzenia po reindeksie.** `DECYZJE.md` → „p17 — rozstrzygnięcie"
      - **Wrogie sprawdzenie `obietnicePubliczne` kancelarii** — 0 wyzwoleń na
        46 zdaniach nie jest dowodem, że działają
      - **Eskalacja: w16 i naruszenie ochrony danych** — obie znane drogi naprawy

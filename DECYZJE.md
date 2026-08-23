@@ -2556,6 +2556,96 @@ Tanim testem okazało się spojrzenie na rozkład wyników SPRZED zmiany — dan
 były, wystarczyło ich nie pominąć.
 
 
+## Motyw jako pole klienta — parametryzacja, nie przebudowa (24.08.2026)
+
+### Co pokazał audyt przed zmianą
+
+Pytanie brzmiało: ile obecnego wyglądu jest wpisane na sztywno, a ile da się
+wyprowadzić do pól klienta. Odpowiedź okazała się **dwuczęściowa**, i to jest
+najważniejszy wynik tego audytu.
+
+**Kolor i typografia: parametryzacja.** Wszystkie trzy interfejsy produktu miały
+już identyczny słownik zmiennych CSS — te same nazwy, te same wartości. Ale
+**miały go w trzech osobnych kopiach**, po jednej na plik. To nie był wspólny
+motyw, tylko trzy duplikaty czekające na rozjechanie się.
+
+**Sprostowanie do własnego audytu:** pierwsze oszacowanie mówiło o „10 twardych
+kolorach poza `:root`". Było zaniżone, bo liczyło wyłącznie zapisy szesnastkowe.
+Faktycznie było ich **45**: 38 zapisanych jako `rgba()` z wpisaną wprost trójką
+RGB (`rgba(255,106,31,.06)`) i 7 szesnastkowych. Żadny z nich nie zareagowałby
+na zmianę motywu. Wniosek na przyszłość: **licząc twarde kolory, szukaj też
+`rgba()`, nie samych `#`.**
+
+**Treść interfejsu: przebudowa, i to nie kosmetyczna.** W plikach siedziała twarda
+treść BudMaksu, której żaden motyw by nie przykrył:
+
+| Gdzie | Co |
+|---|---|
+| `app-internal.js` | sześć kafli z pytaniami o rusztowanie, zbrojenie i delegację; opis „Asystent pracownika budowy"; teksty ramki odsyłające do **kierownika budowy** |
+| `panel-internal.js` | `NAZWY_ESKALACJI` przypisane do 5 kategorii budowlanych, 5 kart licznikowych pod nie, „pytania **z budowy**", „procedury, **bhp** i luki szkoleniowe" |
+
+Kancelaria ma **dziewięć innych kategorii**, więc jej panel pokazywał karty
+„Wypadki (BHP)" z zerami, a aplikacja pracownicza proponowała adwokatowi pytanie
+o odbiór zbrojenia. **Przy tym stanie przełączenie na prezentacji pokazywałoby ten
+sam produkt z inną nazwą** — czyli dokładnie to, czego zmiana miała uniknąć.
+
+Proporcja pracy wyszła **20% motyw / 80% treść**. Sam motyw by nie wystarczył.
+
+### Jak to jest zrobione
+
+Silnik nie zna żadnej branży ani żadnej palety. `motywCss()`, `linkFontow()`,
+`kafleHtml()` i `eskalacjeJson()` biorą `klient.motyw` i `klient.ui` i zamieniają
+je na kawałki HTML/CSS wstrzykiwane przez **istniejący** mechanizm `{{klucz}}` —
+nie powstał żaden nowy mechanizm szablonowania.
+
+Nazwy zmiennych CSS zostały **te same**, co przed zmianą, więc wszystkie reguły
+w plikach interfejsu działają bez przeróbek. Kolory z alfa składają się teraz
+przez `color-mix(in srgb, var(--hi) 6%, transparent)` zamiast `rgba()`, dzięki
+czemu reagują na motyw.
+
+**Pilność kategorii eskalacji nie jest przepisywana ręcznie** — `eskalacjeJson()`
+bierze nazwę z `ui`, ale flagę `pilne` ze **słownika branżowego**. Inaczej panel
+mógłby pokazać jako spokojne coś, co słownik uznał za pilne. Doszła też asercja
+przy starcie modułu: klucze `ui.nazwyEskalacji` muszą pokrywać słownik co do znaku,
+więc błąd wychodzi przy `--dry-run`, a nie na ekranie klienta.
+
+### Dwa języki wizualne
+
+| | BudMax | Kancelaria |
+|---|---|---|
+| Schemat | ciemny | **jasny, papierowy** (`#F6F4F0`) |
+| Nagłówki | Archivo, rozstrzelone `.08em` | **Source Serif 4**, bez rozstrzelenia |
+| Akcent | pomarańcz hi-vis `#FF6A1F` | **butelkowa zieleń `#1B4D3E`** |
+| Siatka techniczna | rzadsza i słabsza: 48 px/.45 → **64 px/.16** | **wyłączona** |
+| Narożniki | 0 px | 3 px |
+| Ramka znacznika marki | **usunięta** | brak |
+
+BudMax został przy języku rysunku technicznego, ale z mniejszą liczbą ozdób:
+siatka schodzi na drugi plan, znika podwójna ramka wokół znacznika, tło jest
+głębsze, a linie mocniejsze — hierarchia z odstępów i typografii zamiast z efektów.
+
+**Kontrast `--dim` poprawiony w obu motywach.** Etykiety 9,5-pikselowe miały
+3.55 (ciemny) i **2.92** (jasny) względem tła. Po korekcie 4.47 i 4.23. To był
+defekt, który przy jasnym motywie stałby się widoczny od razu.
+
+### Czego nie ruszono
+
+Zero zmian w logice, treści dokumentacji, warstwach weryfikacji, eskalacji,
+promptach i routingu. Zmiana dotknęła wyłącznie wyglądu i tekstów interfejsu.
+`index.html` **został nietknięty** — to własna strona BudMaksu na GitHub Pages
+z osadzonym widgetem, a nie powierzchnia produktu; jej motyw stanie się tematem
+dopiero przy skrypcie osadzającym.
+
+### Wyjątek, którego trzeba było zrobić
+
+**Publiczna ramka bezpieczeństwa zwraca się do czytelnika na „ty"**
+(„zadzwoń pod numer alarmowy 112") — wbrew regule tonu całej reszty kancelarii.
+Zostawione świadomie i **nie jest to niedopatrzenie**: to komunikat ratunkowy dla
+osoby w zagrożeniu, gdzie tryb rozkazujący jest szybszy do przeczytania niż forma
+grzecznościowa. Odnotowane, żeby nikt tego nie „naprawił" przy najbliższym
+porządkowaniu.
+
+
 ## Podsumowanie drugiej branży — co uniwersalne, co branżowe, ile kosztuje klient
 
 ### Werdykt o warstwach po pełnym cyklu

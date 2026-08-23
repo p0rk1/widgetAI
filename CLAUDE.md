@@ -31,9 +31,10 @@ każdej sesji, a historia decyzji jest potrzebna kilka razy w miesiącu.
   jak rola. Przestrzeń w Vectorize, treść, prompty, eskalacja, wzorce obietnic
   i nazwy w interfejsach są zależne od klienta. Nieznany host dostaje 404
 - **Drugi klient: kancelaria** — 26 fragmentów publicznych, 25 wewnętrznych,
-  8 kategorii eskalacji, obie przestrzenie zaindeksowane. **Hosty nie mają jeszcze
-  tras w `wrangler.toml` ani aplikacji Access** — to stan zamierzony, diagnostyka
-  chodzi przez `?klient=kancelaria`
+  9 kategorii eskalacji, obie przestrzenie zaindeksowane. **Trzy trasy w `wrangler.toml` są od 24.08.2026**, ale
+  `ACCESS_AUD_KANCELARIA*` są puste — host publiczny odpowiada, a pracowniczy
+  i właścicielski oddają **503 z nazwą brakującej zmiennej** (fail-closed).
+  Dwie aplikacje Access do utworzenia: `ZERO-TRUST.md`, krok 10
 
 **Ostatnie sesje, w skrócie:**
 
@@ -52,6 +53,7 @@ każdej sesji, a historia decyzji jest potrzebna kilka razy w miesiącu.
 | 22.08 | **Etap 2: treść kancelarii** (24+25 fragmentów, własny słownik eskalacji), pomiar na 40 pytaniach | `DECYZJE.md` → Kancelaria — pomiar na 40 pytaniach |
 | 22.08 | **Naprawy 1–4 z mapy**: ramka bezpieczeństwa, liczebniki słowne, odmowa z uzasadnieniem, treść `k18`–`k20` | `DECYZJE.md` → Naprawy po mapie kancelarii |
 | 23.08 | **Ton: granica, nie naprawa** — rewriter form odrzucony; `k25` (przemoc domowa) napisany bezosobowo, sonda w repo | `DECYZJE.md` → Poprawianie form adresatywnych, Fragment `k25` |
+| 24.08 | **Motyw jako pole klienta** + treść interfejsu wyprowadzona z plików, trasy i AUD-y kancelarii | `DECYZJE.md` → Motyw jako pole klienta |
 
 **Gdzie jesteśmy:** treści nie brakuje nigdzie, a z pięciu problemów z pomiaru
 **trzy są naprawione** (próg zależny od długości zdania z cytatem dosłownym,
@@ -139,6 +141,7 @@ wystarcza do testów i jednego użytkownika, nie wystarcza dla zespołu klienta.
 | `test-klienci.mjs` | Test wymiaru klienta: host, przestrzenie, obowiązkowość klienta, szablony | repo |
 | `test-eskalacja-prawna.mjs` | Test słownika eskalacji kancelarii (`node test-eskalacja-prawna.mjs`) | repo |
 | `test-obietnice-prawne.mjs` | Wrogi test warstwy obietnic kancelarii | repo |
+| `test-motyw.mjs` | Test motywu i treści interfejsu: brak surowych `{{pól}}`, brak słownictwa cudzej branży, różność motywów | repo |
 | `sonda-klienta.mjs` | Zbiorczy przebieg diagnostyczny klienta (`node sonda-klienta.mjs <sekret> <klient> [zakres]`) — odtwarza ścieżkę produkcyjną, osobno liczy eskalacje i ramki bezpieczeństwa | repo, wyniki do katalogu tymczasowego |
 | `sonda-powtorka.mjs` | To samo pytanie N razy — odróżnia wahanie modelu od skutku zmiany (`node sonda-powtorka.mjs <sekret> <klient> <space> <N> "pytanie"`) | repo |
 
@@ -283,6 +286,46 @@ Co jest branżowe, a co produktowe (pełna tabela: `DECYZJE.md` → „Wybór kl
 protezą okazały się **wzorce**, nie reguły. Uziemienie liczb, progi, deduplikacja
 i cytat dosłowny zostały w silniku bez wymiaru klienta — ale to hipoteza z braku
 dowodu przeciwnego, nie wynik pomiaru na drugiej branży.
+
+## Motyw i treść interfejsu — pola klienta, od 24.08.2026
+
+Wygląd i teksty interfejsów są **polami w `KLIENCI`**, tak samo jak
+`zwrotDoKlienta` i słownik eskalacji. Trzecia branża to dopisanie palety
+i kroju, **nie edycja plików interfejsu**.
+
+| Pole | Co trzyma |
+|---|---|
+| `motyw.kolory` | 13 tokenów barwnych + `cien`; nazwy te same, co wcześniej w `:root` |
+| `motyw.font*` | adres Google Fonts i trzy kroje: nagłówkowy, tekstowy, monospace |
+| `motyw.siatka` | kalka techniczna: widoczność, rozmiar oczka, krycie |
+| `motyw.promien`, `.tropNaglowka`, `.akcentRamki` | kanciaście kontra łagodnie, rozstrzelenie nagłówków, ramka znacznika |
+| `ui.kafle` | kafle szybkiego startu: etykieta + pytanie + `pilny` |
+| `ui.nazwyEskalacji` | nazwy kategorii w panelu; **pilność bierze się ze słownika**, nie stąd |
+| `ui.opisTytul/opisTekst/podtytulPanelWew/zrodloPytan/przelozony*` | teksty, które były wpisane w plikach |
+| `ui.etykietaPrzelacznika` | **branża, nie nazwa firmy** — „przełącz na kancelarię" |
+
+**Reguły, których nie wolno rozluźnić:**
+- **Żadnego koloru, kroju ani tekstu branżowego nie wpisuje się do
+  `app-internal.js`, `panel-internal.js` ani `panel.js`.** Do 24.08.2026 każdy
+  z tych plików miał **własną kopię** tego samego bloku `:root` — trzy duplikaty,
+  które rozjechałyby się przy pierwszej zmianie. Dziś jest tam `{{motywCss}}`.
+- **Kolor z alfa składa się przez `color-mix`**, nigdy przez `rgba()` z wpisaną
+  trójką RGB. Taką trójką było zapisanych **38 kolorów** i żaden nie reagowałby
+  na zmianę motywu.
+- **`ui.nazwyEskalacji` musi pokrywać słownik branżowy co do klucza** — pilnuje
+  tego asercja przy starcie modułu, więc błąd wychodzi przy `--dry-run`.
+  Bez niej nowa kategoria daje w panelu kartę z surowym `id`, a literówka —
+  kartę, która nigdy się nie zapala. Oba błędy są ciche.
+- **Pilność kategorii nie jest przepisywana ręcznie** — `eskalacjeJson()` bierze
+  ją ze słownika. Inaczej panel mógłby pokazać jako spokojne coś, co słownik
+  uznał za pilne.
+- **Kafle nie mają emoji** — numer w monospace jest tym samym językiem, którego
+  używają nagłówki bloków, i działa w każdej branży bez rysowania ikon.
+- **`--dim` ma mieć kontrast ≥ 4:1** wobec `--void`. Sprawdzone 24.08.2026:
+  było 3.55 (ciemny) i 2.92 (jasny) przy 9,5-pikselowych etykietach.
+
+**Test:** `node test-motyw.mjs` — 81 przypadków. Uruchamiać po każdej zmianie
+w motywie, w `ui` i w plikach interfejsu.
 
 ## Separacja przestrzeni wiedzy
 

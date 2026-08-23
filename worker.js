@@ -70,6 +70,15 @@ const FRAZA_ODMOWY = /nie mam takich informacji/i;
 for (const k of Object.values(KLIENCI)) {
   if (!FRAZA_ODMOWY.test(k.prompt.fallback)) {
     throw new Error(`Klient ${k.id}: zdanie odmowne musi zawierać frazę „nie mam takich informacji".`);
+  // Nazwy kategorii w panelu muszą pokrywać słownik branżowy. Bez tej asercji
+  // dodanie kategorii do słownika daje w panelu kartę z surowym `id`, a literówka
+  // w kluczu — kartę, która nigdy się nie zapala. Oba błędy są ciche.
+  const zeSlownika = (k.eskalacja?.kategorie || []).map((c) => c.id).sort().join(",");
+  const zNazw = Object.keys(k.ui?.nazwyEskalacji || {}).sort().join(",");
+  if (zeSlownika !== zNazw) {
+    throw new Error(`Klient ${k.id}: ui.nazwyEskalacji nie pokrywa się ze słownikiem eskalacji.\n` +
+      `  słownik: ${zeSlownika}\n  nazwy:   ${zNazw}`);
+  }
   }
 }
 
@@ -369,13 +378,92 @@ function odpowiedzBrakKonfiguracji(url, env, request) {
   );
 }
 
+// ============================================================
+// MOTYW I TREŚĆ INTERFEJSU — składane z pól klienta (24.08.2026)
+//
+// Silnik nie zna żadnej branży ani żadnej palety: bierze `klient.motyw`
+// i `klient.ui` i zamienia je na kawałki HTML/CSS wstrzykiwane przez
+// istniejący mechanizm `{{klucz}}`. Trzecia branża to dopisanie palety
+// i kroju w `klienci.js`, bez dotykania plików interfejsu.
+//
+// Wszystkie trzy interfejsy miały do 24.08.2026 własną kopię tego samego
+// bloku `:root` — trzy duplikaty, które rozjechałyby się przy pierwszej zmianie.
+// ============================================================
+
+// Blok `:root` motywu. Nazwy zmiennych zostają te same, co przed zmianą,
+// więc wszystkie reguły CSS w plikach interfejsu działają bez przeróbek.
+function motywCss(klient) {
+  const m = klient.motyw;
+  const k = m.kolory;
+  return `:root{
+  --void:${k.void};--deck:${k.deck};--panel:${k.panel};
+  --line:${k.line};--line-soft:${k.lineSoft};
+  --chalk:${k.chalk};--mute:${k.mute};--dim:${k.dim};
+  --hi:${k.hi};--blue:${k.blue};--ok:${k.ok};--warn:${k.warn};--danger:${k.danger};
+  --cien:${k.cien};
+  --promien:${m.promien};
+  --trop:${m.tropNaglowka};
+  --font-naglowek:${m.fontNaglowek};
+  --font-tekst:${m.fontTekst};
+  --font-mono:${m.fontMono};
+  --siatka-rozmiar:${m.siatka.rozmiar};
+  --siatka-krycie:${m.siatka.widoczna ? m.siatka.krycie : "0"};
+  --ramka-akcentu:${m.akcentRamki ? "1" : "0"};
+  --sp:cubic-bezier(.22,1,.36,1);
+}`;
+}
+
+function linkFontow(klient) {
+  return `<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="${klient.motyw.fontyUrl}" rel="stylesheet">`;
+}
+
+// Kafle szybkiego startu. Numer w monospace zamiast emoji — ten sam język,
+// którego używają nagłówki bloków w panelach, i jeden mechanizm dla każdej branży.
+function kafleHtml(klient) {
+  return (klient.ui.kafle || [])
+    .map((kafel, i) => {
+      const nr = String(i + 1).padStart(2, "0");
+      const klasa = kafel.pilny ? "chip danger-chip" : "chip";
+      return `<button class="${klasa}" data-q="${escapeHtml(kafel.pytanie)}">` +
+        `<span class="chip-nr">/ ${nr}</span>${escapeHtml(kafel.etykieta)}</button>`;
+    })
+    .join("\n      ");
+}
+
+// Kategorie eskalacji dla panelu: nazwa z `ui`, pilność ze SŁOWNIKA.
+// Pilność nie jest przepisywana ręcznie, żeby panel nie mógł pokazać czegoś
+// jako spokojne, gdy słownik uznał to za pilne.
+function eskalacjeJson(klient) {
+  const pilne = new Map((klient.eskalacja?.kategorie || []).map((c) => [c.id, !!c.pilne]));
+  const out = {};
+  for (const [id, nazwa] of Object.entries(klient.ui.nazwyEskalacji || {})) {
+    out[id] = { nazwa, pilne: pilne.get(id) === true };
+  }
+  return JSON.stringify(out);
+}
+
+function escapeHtml(t) {
+  return String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
 // PODSTAWIANIE NAZW W SZABLONACH HTML.
 // Szablony są stringami z placeholderami `{{klucz}}`, wypełnianymi z `klient.ui`.
 // Bez frameworka i bez logiki w szablonie: to ma zamieniać nazwy, a nie budować
 // widoki. Nieznany placeholder zostaje w tekście — widać go od razu na ekranie,
 // zamiast cicho zniknąć.
 function renderHtml(szablon, klient, env, rola) {
-  const dane = { ...klient.ui, przelacznikDemo: przelacznikDemo(env, klient, rola) };
+  const dane = {
+    ...klient.ui,
+    przelacznikDemo: przelacznikDemo(env, klient, rola),
+    motywCss: motywCss(klient),
+    fontyLink: linkFontow(klient),
+    themeColor: klient.motyw.themeColor,
+    kafle: kafleHtml(klient),
+    eskalacjeJson: eskalacjeJson(klient),
+  };
   return szablon.replace(/\{\{(\w+)\}\}/g, (m, k) => (k in dane ? dane[k] : m));
 }
 
@@ -395,7 +483,7 @@ function przelacznikDemo(env, klient, rola) {
   const inni = Object.values(KLIENCI).filter((k) => k.id !== klient.id && k.hosty[rola]);
   if (!inni.length) return "";
   const linki = inni
-    .map((k) => `<a href="https://${k.hosty[rola]}/" style="color:inherit">${k.ui.nazwaKrotka}</a>`)
+    .map((k) => `<a href="https://${k.hosty[rola]}/" style="color:inherit">${k.ui.etykietaPrzelacznika}</a>`)
     .join(" · ");
   return `<div style="position:fixed;left:0;right:0;bottom:0;padding:4px 10px;font:11px/1.4 ui-monospace,monospace;` +
     `color:#8a8a8a;background:rgba(0,0,0,.55);text-align:center;letter-spacing:.04em;z-index:9999">` +
@@ -2149,6 +2237,8 @@ export {
   // Podstawianie nazw w szablonach — test pilnuje, żeby nowy klient nie zostawił
   // w interfejsie surowego `{{placeholdera}}` ani cudzej nazwy.
   renderHtml,
+  // Skladanie motywu i tresci interfejsu z pol klienta.
+  motywCss, linkFontow, kafleHtml, eskalacjeJson,
   buildSystemPrompt,
 };
 

@@ -134,6 +134,65 @@ Zanim odpowiesz, sprawdź, czy fragment, z którego korzystasz, dotyczy DOKŁADN
       tytulPanel: "BudMax — panel asystenta",
       tytulPanelWew: "BudMax — panel procedur i szkoleń",
       domenaLogowania: "@budmax.pl",
+
+      // TRESC INTERFEJSU — branżowa, tak jak słownik eskalacji. Do 24.08.2026
+      // była wpisana na sztywno w `app-internal.js` i `panel-internal.js`,
+      // więc kancelaria dostawała kafel „Odbiór zbrojenia" i kartę „Wypadki (BHP)".
+      etykietaPrzelacznika: "BudMax",
+      opisTytul: "Asystent pracownika budowy",
+      opisTekst: "Wyszukuje procedury BHP, instrukcje na budowie, zasady delegacji, zakupów i odbiorów. W sytuacjach wypadkowych natychmiast wskazuje pierwsze kroki.",
+      podtytulPanelWew: "procedury, bhp i luki szkoleniowe",
+      zrodloPytan: "z budowy",
+      przelozonyPilne: "Wymagany natychmiastowy kontakt z kierownikiem budowy / służbami.",
+      przelozonyStandard: "Wymaga zgody kierownika budowy lub zarządu.",
+
+      // Kafle szybkiego startu. Bez emoji od 24.08.2026 — numeracja monospace
+      // jest tym samym językiem, którego używają nagłówki bloków w panelach.
+      kafle: [
+        { etykieta: "Wypadek na budowie", pilny: true, pytanie: "Pracownik spadł z rusztowania, co robić natychmiast?" },
+        { etykieta: "Praca powyżej 2 m", pytanie: "Jakie środki ochrony i zasady obowiązują przy pracy powyżej 2 metrów?" },
+        { etykieta: "Odbiór zbrojenia", pytanie: "Co muszę sprawdzić przed zakryciem zbrojenia lub izolacji?" },
+        { etykieta: "Rozliczenie delegacji", pytanie: "Ile wynosi ryczałt i stawka za kilometr samochodem prywatnym w delegacji?" },
+        { etykieta: "Zakup na budowie", pytanie: "Do jakiej kwoty brygadzista może zrobić zakup drobny na budowie?" },
+        { etykieta: "Dziennik budowy", pytanie: "Kto ma prawo dokonywać wpisów w dzienniku budowy?" },
+      ],
+
+      // Nazwy kategorii eskalacji w panelu. Klucze muszą zgadzać się z `id`
+      // w słowniku branżowym — pilność bierze się ze słownika, nie stąd.
+      nazwyEskalacji: {
+        wypadek: "Wypadki (BHP)",
+        zagrozenie_zycia: "Zagrożenie życia / awaria",
+        spor_prawny: "Spór prawny / roszczenie",
+        kontrola: "Kontrola organu (PIP/PINB)",
+        finanse_prog: "Próg finansowy",
+      },
+    },
+
+    // MOTYW — język wizualny klienta. Trzecia branża to dopisanie palety
+    // i kroju, nie edycja plików interfejsu.
+    //
+    // BudMax: rysunek techniczny i hi-vis. Względem stanu sprzed 24.08.2026
+    // siatka jest rzadsza i słabsza (48 px / .45 → 64 px / .16), znika podwójna
+    // ramka wokół znacznika marki, tło schodzi niżej, a linie idą w górę —
+    // mniej ozdób, więcej porządku.
+    motyw: {
+      schemat: "ciemny",
+      themeColor: "#090C10",
+      fontyUrl: "https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap",
+      fontNaglowek: "'Archivo',system-ui,sans-serif",
+      fontTekst: "'Instrument Sans',system-ui,sans-serif",
+      fontMono: "'JetBrains Mono',ui-monospace,monospace",
+      promien: "0px",
+      siatka: { widoczna: true, rozmiar: "64px", krycie: "0.16" },
+      akcentRamki: false,
+      tropNaglowka: ".08em",
+      kolory: {
+        void: "#090C10", deck: "#0F1418", panel: "#151B21",
+        line: "#273039", lineSoft: "#1B242B",
+        chalk: "#EDF0F2", mute: "#93A0AC", dim: "#6E7A85",
+        hi: "#FF6A1F", blue: "#4CC9F0", ok: "#3DDC97", warn: "#FFB84D", danger: "#FF5A5A",
+        cien: "0 24px 70px -24px rgba(0,0,0,.75)",
+      },
     },
   },
 
@@ -243,6 +302,59 @@ Zanim odpowiedzisz, sprawdź, czy fragment, z którego korzystasz, dotyczy DOKŁ
       tytulPanel: "Zaremba — panel kancelarii",
       tytulPanelWew: "Zaremba — panel spraw i terminów",
       domenaLogowania: "@zaremba.przyklad.pl",
+
+      etykietaPrzelacznika: "kancelarię",
+      opisTytul: "Asystent kancelarii",
+      opisTekst: "Wyszukuje procedury kancelarii, terminy procesowe, zasady rozmowy z klientem i obiegu akt. Przy sprawach pilnych wskazuje pierwsze czynności i osobę do kontaktu.",
+      podtytulPanelWew: "terminy, procedury i luki szkoleniowe",
+      zrodloPytan: "z kancelarii",
+      przelozonyPilne: "Wymagany natychmiastowy kontakt z adwokatem prowadzącym lub wspólnikiem dyżurnym.",
+      przelozonyStandard: "Wymaga zgody adwokata prowadzącego.",
+
+      kafle: [
+        { etykieta: "Termin upływa dziś", pilny: true, pytanie: "Co zrobić, gdy termin na apelację upływa jutro, a adwokat jest na rozprawie?" },
+        { etykieta: "Klient zatrzymany", pilny: true, pytanie: "Klienta zatrzymała policja wczoraj wieczorem, co mam zrobić?" },
+        { etykieta: "Konflikt interesów", pytanie: "Jak sprawdzić konflikt interesów przed przyjęciem sprawy?" },
+        { etykieta: "Rozmowa z rodziną", pytanie: "Dzwoni matka klienta i pyta o jego sprawę, co mogę powiedzieć?" },
+        { etykieta: "Bieg terminu", pytanie: "Jak wpisujemy termin procesowy do kalendarza sprawy?" },
+        { etykieta: "Wydanie akt", pytanie: "Klient prosi o wydanie oryginałów dokumentów, co robię?" },
+      ],
+
+      nazwyEskalacji: {
+        termin_procesowy: "Terminy procesowe",
+        zatrzymanie: "Zatrzymanie klienta",
+        zagrozenie_osoby: "Zagrożenie osoby",
+        naruszenie_danych: "Naruszenie ochrony danych",
+        konflikt_interesow: "Konflikt interesów",
+        poza_kompetencjami: "Poza kompetencjami",
+        porada_dla_nieklienta: "Porada dla nieklienta",
+        decyzja_finansowa: "Decyzje finansowe",
+        ustepstwo_wobec_klienta: "Ustępstwa wobec klienta",
+      },
+    },
+
+    // Kancelaria: narzędzie do pracy z dokumentem, nie panel SaaS. Jasne tło
+    // papierowe, szeryf w nagłówkach, jeden stonowany akcent (butelkowa zieleń),
+    // zero siatki, poblasku i gradientów. Kontrast wobec BudMaksu ma być
+    // widoczny od pierwszego spojrzenia — inny produkt, nie inna nazwa.
+    motyw: {
+      schemat: "jasny",
+      themeColor: "#F6F4F0",
+      fontyUrl: "https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap",
+      fontNaglowek: "'Source Serif 4',Georgia,serif",
+      fontTekst: "'Inter',system-ui,sans-serif",
+      fontMono: "'IBM Plex Mono',ui-monospace,monospace",
+      promien: "3px",
+      siatka: { widoczna: false, rozmiar: "64px", krycie: "0" },
+      akcentRamki: false,
+      tropNaglowka: "0",
+      kolory: {
+        void: "#F6F4F0", deck: "#FFFFFF", panel: "#FFFFFF",
+        line: "#D9D3C9", lineSoft: "#EAE5DD",
+        chalk: "#16191C", mute: "#5A6069", dim: "#6F757E",
+        hi: "#1B4D3E", blue: "#2F5E72", ok: "#1B4D3E", warn: "#8A6520", danger: "#8F2E27",
+        cien: "0 10px 30px -12px rgba(22,25,28,.14)",
+      },
     },
   },
 };

@@ -6,54 +6,47 @@ export const APP_INTERNAL_HTML = `<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<meta name="theme-color" content="#0A0D11">
+<meta name="theme-color" content="{{themeColor}}">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>{{tytulApp}}</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+{{fontyLink}}
 <style>
-:root{
-  --void:#0A0D11;--deck:#101519;--panel:#161C22;--line:#222B33;--line-soft:#1A2229;
-  --chalk:#E9ECEF;--mute:#8B98A5;--dim:#5A646E;
-  --hi:#FF6A1F;--blue:#4CC9F0;--ok:#3DDC97;--warn:#FFB84D;--danger:#FF4D4D;
-  --sp:cubic-bezier(.22,1,.36,1);
-}
+{{motywCss}}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 body{
   margin:0;background:var(--void);color:var(--chalk);
-  font-family:'Instrument Sans',system-ui,sans-serif;-webkit-font-smoothing:antialiased;
+  font-family:var(--font-tekst);-webkit-font-smoothing:antialiased;
   display:flex;flex-direction:column;min-height:100vh;min-height:100dvh;
 }
 body::before{
-  content:"";position:fixed;inset:0;z-index:0;pointer-events:none;opacity:.45;
+  content:"";position:fixed;inset:0;z-index:0;pointer-events:none;opacity:var(--siatka-krycie);
   background-image:linear-gradient(var(--line-soft) 1px,transparent 1px),linear-gradient(90deg,var(--line-soft) 1px,transparent 1px);
-  background-size:48px 48px;
+  background-size:var(--siatka-rozmiar) var(--siatka-rozmiar);
 }
-.mono{font-family:'JetBrains Mono',monospace}
+.mono{font-family:var(--font-mono)}
 
 /* topbar */
 .top{
   border-bottom:1px solid var(--line);position:sticky;top:0;
-  background:rgba(10,13,17,.92);backdrop-filter:blur(16px);z-index:50;
+  background:color-mix(in srgb, var(--void) 92%, transparent);backdrop-filter:blur(16px);z-index:50;
 }
 .top-in{
   max-width:760px;margin:0 auto;padding:0 16px;height:58px;
   display:flex;align-items:center;gap:12px;
 }
 .mark{width:10px;height:10px;background:var(--hi);flex-shrink:0;position:relative}
-.mark::after{content:"";position:absolute;inset:-4px;border:1px solid var(--hi);opacity:.35}
-.brand{font-family:'Archivo';font-weight:800;font-size:15px;letter-spacing:.02em}
+.mark::after{content:"";position:absolute;inset:-4px;border:1px solid var(--hi);opacity:calc(var(--ramka-akcentu) * .35)}
+.brand{font-family:var(--font-naglowek);font-weight:800;font-size:15px;letter-spacing:var(--trop)}
 .tag-int{
-  font-family:'JetBrains Mono';font-size:9px;padding:2px 7px;
-  border:1px solid var(--blue);color:var(--blue);background:rgba(76,201,240,.08);
+  font-family:var(--font-mono);font-size:9px;padding:2px 7px;
+  border:1px solid var(--blue);color:var(--blue);background:color-mix(in srgb, var(--blue) 8%, transparent);
   text-transform:uppercase;letter-spacing:.06em;
 }
 .nav-links{margin-left:auto;display:flex;gap:8px}
 .btn-nav{
   background:transparent;border:1px solid var(--line);color:var(--mute);
-  padding:6px 11px;font-family:'JetBrains Mono';font-size:10px;letter-spacing:.06em;
+  padding:6px 11px;font-family:var(--font-mono);font-size:10px;letter-spacing:.06em;
   text-decoration:none;display:inline-flex;align-items:center;gap:5px;
   transition:all .2s var(--sp);
 }
@@ -69,16 +62,18 @@ body::before{
 .chips-wrap{overflow-x:auto;padding-bottom:4px;scrollbar-width:none}
 .chips-wrap::-webkit-scrollbar{display:none}
 .chips{display:flex;gap:8px;width:max-content}
-.chip{
+.chip{border-radius:var(--promien);
   background:var(--panel);border:1px solid var(--line);color:var(--chalk);
-  padding:8px 12px;font-size:12px;font-family:'Instrument Sans';font-weight:500;
+  padding:8px 12px;font-size:12px;font-family:var(--font-tekst);font-weight:500;
   cursor:pointer;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;
   transition:all .2s var(--sp);
 }
+.chip-nr{font-family:var(--font-mono);font-size:9px;color:var(--dim);margin-right:7px;letter-spacing:.06em}
+.chip:hover .chip-nr,.chip.danger-chip .chip-nr{color:inherit;opacity:.7}
 .chip:active{transform:scale(.97)}
-.chip:hover{border-color:var(--hi);background:rgba(255,106,31,.06)}
-.chip.danger-chip{border-color:rgba(255,77,77,.35);color:#FFA4A4}
-.chip.danger-chip:hover{border-color:var(--danger);background:rgba(255,77,77,.1)}
+.chip:hover{border-color:var(--hi);background:color-mix(in srgb, var(--hi) 6%, transparent)}
+.chip.danger-chip{border-color:color-mix(in srgb, var(--danger) 35%, transparent);color:var(--danger)}
+.chip.danger-chip:hover{border-color:var(--danger);background:color-mix(in srgb, var(--danger) 10%, transparent)}
 
 /* chat feed */
 .feed{flex:1;display:flex;flex-direction:column;gap:14px}
@@ -88,27 +83,27 @@ body::before{
 
 .msg.user{align-self:flex-end}
 .msg.user .bubble{
-  background:linear-gradient(135deg,rgba(255,106,31,.2),rgba(255,106,31,.08));
-  border:1px solid rgba(255,106,31,.4);color:var(--chalk);
+  background:linear-gradient(135deg,color-mix(in srgb, var(--hi) 20%, transparent),color-mix(in srgb, var(--hi) 8%, transparent));
+  border:1px solid color-mix(in srgb, var(--hi) 40%, transparent);color:var(--chalk);
   padding:12px 16px;font-size:14px;line-height:1.5;
 }
 
 .msg.bot{align-self:flex-start;max-width:100%}
 .msg.bot .bubble{
   background:var(--panel);border:1px solid var(--line);
-  padding:16px;font-size:14.5px;line-height:1.6;color:#E1E5EA;position:relative;
+  padding:16px;font-size:14.5px;line-height:1.6;color:var(--chalk);position:relative;
 }
 
 /* escalation banners */
 .alert-box{
   margin-bottom:12px;padding:10px 12px;display:flex;gap:10px;align-items:flex-start;
-  font-family:'JetBrains Mono';font-size:11.5px;letter-spacing:.02em;
+  font-family:var(--font-mono);font-size:11.5px;letter-spacing:.02em;
 }
 .alert-box.pilne{
-  background:rgba(255,77,77,.14);border:1px solid var(--danger);color:#FFBDBD;
+  background:color-mix(in srgb, var(--danger) 14%, transparent);border:1px solid var(--danger);color:#FFBDBD;
 }
 .alert-box.standard{
-  background:rgba(255,184,77,.12);border:1px solid var(--warn);color:#FFE0B2;
+  background:color-mix(in srgb, var(--warn) 12%, transparent);border:1px solid var(--warn);color:#FFE0B2;
 }
 .alert-box .icon{font-weight:bold;font-size:13px}
 
@@ -117,24 +112,24 @@ body::before{
   display:flex;gap:8px;margin-top:6px;align-items:baseline;
 }
 .msg.bot .step-num{
-  font-family:'JetBrains Mono';font-size:11px;color:var(--hi);font-weight:bold;
+  font-family:var(--font-mono);font-size:11px;color:var(--hi);font-weight:bold;
   width:16px;flex-shrink:0;
 }
 .msg.bot .podstawa{
   margin-top:12px;padding-top:8px;border-top:1px dashed var(--line);
-  font-family:'JetBrains Mono';font-size:10px;color:var(--blue);letter-spacing:.04em;
+  font-family:var(--font-mono);font-size:10px;color:var(--blue);letter-spacing:.04em;
 }
 
 /* meta time */
 .msg-meta{
-  font-family:'JetBrains Mono';font-size:9.5px;color:var(--dim);
+  font-family:var(--font-mono);font-size:9.5px;color:var(--dim);
   padding:0 4px;letter-spacing:.04em;
 }
 .msg.user .msg-meta{text-align:right}
 
 /* input bar */
 .bottom-dock{
-  position:sticky;bottom:0;background:rgba(10,13,17,.95);
+  position:sticky;bottom:0;background:color-mix(in srgb, var(--void) 95%, transparent);
   backdrop-filter:blur(16px);border-top:1px solid var(--line);
   padding:12px 16px env(safe-area-inset-bottom, 12px);z-index:50;
 }
@@ -147,7 +142,7 @@ body::before{
 
 textarea{
   flex:1;background:transparent;border:none;color:var(--chalk);
-  font-family:'Instrument Sans',system-ui,sans-serif;font-size:14.5px;
+  font-family:var(--font-tekst);font-size:14.5px;
   line-height:1.45;resize:none;max-height:120px;padding:6px 0;outline:none;
 }
 textarea::placeholder{color:var(--dim)}
@@ -159,7 +154,7 @@ textarea::placeholder{color:var(--dim)}
 }
 .btn-icon:hover{color:var(--chalk);border-color:var(--line)}
 .btn-icon.active-rec{
-  color:var(--danger);border-color:var(--danger);background:rgba(255,77,77,.15);
+  color:var(--danger);border-color:var(--danger);background:color-mix(in srgb, var(--danger) 15%, transparent);
   animation:pulse 1.2s infinite;
 }
 @keyframes pulse{0%{opacity:1}50%{opacity:.5}100%{opacity:1}}
@@ -169,7 +164,7 @@ textarea::placeholder{color:var(--dim)}
   background:var(--hi);color:#0A0D11;border:none;cursor:pointer;
   flex-shrink:0;transition:all .2s var(--sp);
 }
-.btn-send:hover{background:#FF823F;transform:translateY(-1px)}
+.btn-send:hover{background:color-mix(in srgb, var(--hi) 84%, var(--chalk));transform:translateY(-1px)}
 .btn-send:disabled{opacity:.4;cursor:not-allowed;transform:none}
 
 /* loading dots */
@@ -181,10 +176,10 @@ textarea::placeholder{color:var(--dim)}
 
 /* note */
 .hero-note{
-  background:rgba(255,255,255,.02);border:1px dashed var(--line);
+  background:color-mix(in srgb, var(--chalk) 2%, transparent);border:1px dashed var(--line);
   padding:16px;font-size:13px;color:var(--mute);line-height:1.6;
 }
-.hero-note b{color:var(--chalk);font-family:'Archivo'}
+.hero-note b{color:var(--chalk);font-family:var(--font-naglowek)}
 </style>
 </head>
 <body>
@@ -205,18 +200,13 @@ textarea::placeholder{color:var(--dim)}
 
 <div class="main">
   <div class="hero-note">
-    <b>Asystent pracownika budowy</b><br>
-    Wyszukuje procedury BHP, instrukcje na budowie, zasady delegacji, zakupów i odbiorów. W sytuacjach wypadkowych natychmiast wskazuje pierwsze kroki.
+    <b>{{opisTytul}}</b><br>
+    {{opisTekst}}
   </div>
 
   <div class="chips-wrap">
     <div class="chips">
-      <button class="chip danger-chip" data-q="Pracownik spadł z rusztowania, co robić natychmiast?">🚨 Wypadek na budowie</button>
-      <button class="chip" data-q="Jakie środki ochrony i zasady obowiązują przy pracy powyżej 2 metrów?">🏗️ Praca powyżej 2m</button>
-      <button class="chip" data-q="Co muszę sprawdzić przed zakryciem zbrojenia lub izolacji?">📋 Odbiór zbrojenia</button>
-      <button class="chip" data-q="Ile wynosi ryczałt i stawka za kilometr samochodem prywatnym w delegacji?">🚗 Rozliczenie delegacji</button>
-      <button class="chip" data-q="Do jakiej kwoty brygadzista może zrobić zakup drobny na budowie?">💶 Zakup na budowie</button>
-      <button class="chip" data-q="Kto ma prawo dokonywać wpisów w dzienniku budowy?">📖 Dziennik budowy</button>
+      {{kafle}}
     </div>
   </div>
 
@@ -317,7 +307,7 @@ function formatBotAnswer(ans, eskalacja){
     const pilne = eskalacja.pilne;
     escBox = \`<div class="alert-box \${pilne?'pilne':'standard'}">
       <span class="icon">\${pilne?'⚠️ PILNE:':'ℹ️ PROCEDURA:'}</span>
-      <span>\${pilne ? 'Wymagany natychmiastowy kontakt z kierownikiem budowy / służbami.' : 'Wymaga zgody kierownika budowy lub zarządu.'}</span>
+      <span>\${pilne ? '{{przelozonyPilne}}' : '{{przelozonyStandard}}'}</span>
     </div>\`;
   }
 

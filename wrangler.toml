@@ -49,6 +49,16 @@ ACCESS_AUD = "31995d69e22347f8708921b157570232f11113d68beb57edb35b2773f782c1c0" 
 # zmiennej, nie milczące 403.
 ACCESS_AUD_PANEL = "49c77c8db986774c2b12555dbffed0da65324ce50f695a64fe5e8df9e4ddb133"  # aplikacja "BudMax — panel właściciela"
 
+# DRUGI KLIENT — kancelaria. Nazwy tych zmiennych są wpisane w `audVars`
+# w klienci.js i muszą się zgadzać co do znaku.
+#
+# PUSTE = ochrona jeszcze nie istnieje, i to jest stan bezpieczny: hosty
+# pracowniczy i właścicielski kancelarii oddadzą wtedy 503 z nazwą brakującej
+# zmiennej, a nie interfejs bez ochrony. Wypełnij AUD-ami dwóch aplikacji
+# Access — krok po kroku w ZERO-TRUST.md, krok 10.
+ACCESS_AUD_KANCELARIA = ""        # aplikacja "Kancelaria — tryb wewnętrzny"
+ACCESS_AUD_KANCELARIA_PANEL = ""  # aplikacja "Kancelaria — panel właściciela"
+
 # TRYB DEMONSTRACYJNY — wyłącznie na potrzeby prezentacji.
 #
 # Przy DEMO = "1" interfejsy pracownicze i panele dostają na dole dyskretny pasek
@@ -97,4 +107,27 @@ custom_domain = true
 # z adresu, a nie z pola `Path` w polityce ani z listy e-maili w kodzie.
 [[routes]]
 pattern = "budmax-wlasciciel.know-base.app"
+custom_domain = true
+
+# ------------------------------------------------------------
+# Trasy drugiego klienta — kancelaria.
+#
+# KOLEJNOŚĆ JEST REGUŁĄ, nie preferencją: host w `wrangler.toml` i host
+# w Access zmienia się razem, a jeśli osobno — to NAJPIERW kod i trasy.
+# Tutaj jest to bezpieczne, bo `ACCESS_AUD_KANCELARIA*` są puste, więc
+# `odpowiedzBrakKonfiguracji()` nie wyda ani `/app`, ani `/panel`, ani `GET /`.
+# Odwrotna kolejność (Access przed trasą) zostawiłaby aplikację Access
+# wskazującą na host, którego Worker nie obsługuje.
+#
+# Host publiczny aplikacji Access NIE MA i mieć nie może — to bot dla klientów.
+[[routes]]
+pattern = "kancelaria.know-base.app"
+custom_domain = true
+
+[[routes]]
+pattern = "kancelaria-pracownik.know-base.app"
+custom_domain = true
+
+[[routes]]
+pattern = "kancelaria-wlasciciel.know-base.app"
 custom_domain = true

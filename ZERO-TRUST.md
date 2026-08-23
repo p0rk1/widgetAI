@@ -643,3 +643,97 @@ Punkt 3 oznacza **własny AUD dla każdego klienta**, a `ACCESS_AUD` jest dziś
 pojedynczą wartością. Przy drugim kliencie trzeba to zamienić na mapę
 `host → AUD`. To jest znany dług, nie przeoczenie — nie ma sensu budować mapy
 dla jednego wpisu, ale nie da się jej ominąć przy drugim.
+
+---
+
+## Krok 10. Drugi klient — kancelaria ⬜ do zrobienia
+
+Ten krok powtarza się **dla każdego nowego klienta**. Zmienia się w nim tylko
+nazwa — reszta jest identyczna, bo rola wynika z hosta, a nie z polityki.
+
+**Nakład: dwie aplikacje Access i dwa wklejenia AUD-a. Około 15 minut.**
+
+### 10.0. Kolejność — to jest reguła, nie preferencja
+
+Host w `wrangler.toml` i host w Access zmienia się **razem**, a jeśli osobno —
+to **najpierw kod i trasy**. Odwrotna kolejność zostawia aplikację Access
+wskazującą na host, którego Worker nie obsługuje.
+
+Trasy są już w `wrangler.toml` (24.08.2026), a `ACCESS_AUD_KANCELARIA*` są puste.
+To jest stan bezpieczny: hosty pracowniczy i właścicielski oddają **503 z nazwą
+brakującej zmiennej**, nie interfejs bez ochrony.
+
+### 10.1. Wdróż trasy i sprawdź fail-closed
+
+```
+wrangler deploy
+curl -si "https://kancelaria.know-base.app/?cb=$RANDOM"             | head -1   # 200
+curl -si "https://kancelaria-pracownik.know-base.app/?cb=$RANDOM"   | head -1   # 503
+curl -si "https://kancelaria-wlasciciel.know-base.app/?cb=$RANDOM"  | head -1   # 503
+```
+
+Gdyby któryś z dwóch ostatnich oddał **200 z interfejsem** — przerwij. To znaczy,
+że AUD nie jest pusty i host stoi bez ochrony.
+
+`?cb=$RANDOM` jest obowiązkowe: Cloudflare buforuje na brzegu i sonda potrafi
+pokazać stan sprzed wdrożenia. Kosztowało to już dwa fałszywe alarmy.
+
+### 10.2. Aplikacja Access nr 1 — tryb pracowniczy
+
+Zero Trust → Access → Applications → **Add an application** → **Self-hosted**.
+
+| Pole | Wartość |
+|---|---|
+| Application name | `Kancelaria — tryb wewnętrzny` |
+| Session Duration | `24 hours` |
+| Subdomain / Domain | `kancelaria-pracownik` / `know-base.app` |
+| Path | **pusty** — aplikacja obejmuje cały host |
+| Identity providers | One-time PIN (dopóki kroki 2–3 nie są zrobione) |
+
+Polityka: name `Zespół kancelarii`, Action **Allow**, Include →
+**Emails ending in** → `@zaremba.przyklad.pl`.
+
+> **Uwaga na demo:** ta domena jest fikcyjna. Na potrzeby prezentacji wpisz
+> zamiast niej Include → **Emails** → swój adres, inaczej nie zalogujesz się
+> do własnego dema.
+
+Po zapisaniu: Overview → skopiuj **Application Audience (AUD) Tag**.
+
+### 10.3. Aplikacja Access nr 2 — panel właściciela
+
+| Pole | Wartość |
+|---|---|
+| Application name | `Kancelaria — panel właściciela` |
+| Subdomain / Domain | `kancelaria-wlasciciel` / `know-base.app` |
+| Path | **pusty** |
+
+Polityka: Action **Allow**, Include → **Emails** → **jeden dokładny adres**.
+
+> **Nie `Emails ending in`.** To ta sama pomyłka, którą rozdzielenie hostów
+> usunęło 21.08.2026: polityka na całą domenę wpuściłaby każdego pracownika
+> do analityki właściciela.
+
+Skopiuj drugi AUD.
+
+### 10.4. Wklej AUD-y i wdróż
+
+W `wrangler.toml`, w `[vars]` — nazwy muszą być dokładnie takie, bo są wpisane
+w `audVars` w `klienci.js`:
+
+```toml
+ACCESS_AUD_KANCELARIA = "…"        # aplikacja "Kancelaria — tryb wewnętrzny"
+ACCESS_AUD_KANCELARIA_PANEL = "…"  # aplikacja "Kancelaria — panel właściciela"
+```
+
+Potem `wrangler deploy`.
+
+### 10.5. Sprawdź, że działa
+
+1. Host pracowniczy bez sesji → **302** na ekran logowania (odpowiada Access,
+   nie Worker).
+2. Po zalogowaniu → interfejs kancelarii: jasny, szeryfowy, bez siatki.
+3. **Najważniejsze:** token z hosta pracowniczego **nie może** otworzyć panelu
+   właściciela. Worker wybiera oczekiwany AUD po hoście, więc ma oddać 401.
+   Pilnuje tego sekcja 5 w `test-access.mjs`, ale na żywo warto zobaczyć raz.
+
+Dopiero po tym kroku przełącznik demo prowadzi pod adresy, które istnieją.

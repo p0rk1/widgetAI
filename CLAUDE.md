@@ -140,6 +140,7 @@ wystarcza do testów i jednego użytkownika, nie wystarcza dla zespołu klienta.
 | `test-eskalacja-prawna.mjs` | Test słownika eskalacji kancelarii (`node test-eskalacja-prawna.mjs`) | repo |
 | `test-obietnice-prawne.mjs` | Wrogi test warstwy obietnic kancelarii | repo |
 | `sonda-klienta.mjs` | Zbiorczy przebieg diagnostyczny klienta (`node sonda-klienta.mjs <sekret> <klient> [zakres]`) — odtwarza ścieżkę produkcyjną, osobno liczy eskalacje i ramki bezpieczeństwa | repo, wyniki do katalogu tymczasowego |
+| `sonda-powtorka.mjs` | To samo pytanie N razy — odróżnia wahanie modelu od skutku zmiany (`node sonda-powtorka.mjs <sekret> <klient> <space> <N> "pytanie"`) | repo |
 
 **Treść jest w osobnych plikach od 19.08.2026** — stanowiła ponad połowę wagi
 `worker.js`, a zadanie dotyczące logiki nigdy jej nie potrzebuje. Bundler
@@ -747,6 +748,15 @@ Sposób postępowania do powtórzenia, wypracowany na przypadku elewacji.
 5. **Weryfikacja przez `/debug`** — nowy fragment powinien odskoczyć od reszty
    **o co najmniej 0.1**. Elewacje po poprawce: 0.577 vs 0.482 (pytanie jednowyrazowe)
    i 0.739 vs 0.533 (pełne pytanie), odpowiedzi w obu wariantach identyczne merytorycznie.
+
+**Długość fragmentu NIE jest kryterium — zmierzone 23.08.2026 i obalone.**
+Hipoteza „fragment znacznie dłuższy od mediany przyciąga pytania ościenne"
+nie potwierdziła się na 25 fragmentach i 20 pytaniach: korelacja rangowa
+długości z liczbą wejść do `TOP_K` wynosi **−0.07**, a ze średnim wynikiem na
+pytaniach nie swoich **−0.09**. Najszerzej wchodzą fragmenty **krótkie**
+(„Jak umówić konsultację", 572 znaki, 14 wejść na 20 pytań). Tym, co poszerza
+zasięg, jest **ogólność i graniczność tematu, nie objętość** — więc górnej
+granicy długości się nie wprowadza i nie dzieli fragmentów „na zapas".
 
 **Kryterium odskoku ≥ 0.1 stosuje się do LUK TEMATYCZNYCH — nie do fragmentów
 o granicy kompetencji** (uzupełnienie z 22.08.2026). Fragment opisujący to,

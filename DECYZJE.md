@@ -2421,6 +2421,56 @@ nie zmiana progów.
   Granica z rozdziału wyżej zostaje w mocy
 
 
+## Długość fragmentu a zasięg wyszukiwania — hipoteza obalona (23.08.2026)
+
+Po dodaniu `k25` (1730 znaków przy medianie 676) nasunęło się podejrzenie, że
+fragment znacznie dłuższy od mediany ma embedding bliski centroidowi dokumentacji
+i przez to **przyciąga pytania ościenne**. Gdyby to była prawda, byłaby to reguła
+do zapisania w zasadach pisania treści dla wszystkich kolejnych klientów — górna
+granica długości fragmentu. Dlatego zmierzone, zanim zapisane.
+
+**Materiał:** 25 fragmentów publicznych kancelarii × 20 pytań sondy, zestawy
+`TOP_K` z `/debug`. Dwie miary zasięgu: liczba pytań, w których fragment wchodzi
+do zestawu, oraz jego średni wynik na pytaniach **nie swoich** (z pominięciem
+najwyższego trafienia, czyli pytania, do którego fragment należy).
+
+| Miara | Korelacja rangowa z długością |
+|---|---|
+| Liczba wejść do `TOP_K` (n = 25) | **−0.07** |
+| Średni wynik na pytaniach nie swoich (n = 24) | **−0.09** |
+
+**Obie zerowe, obie z lekkim znakiem ujemnym.** Długość nie przewiduje ani
+szerokości trafień, ani zawyżenia wyniku na pytaniach obcych. `k25` — fragment
+najdłuższy w tablicy — wszedł do **6 zestawów na 20**, poniżej średniej 6.4, a
+jego średni wynik na pytaniach nie swoich (0.477) jest w środku stawki, niżej niż
+u czterech fragmentów o połowę krótszych.
+
+**Co naprawdę poszerza zasięg: ogólność i graniczność tematu.** Najszerzej
+wchodzą „Jak umówić konsultację" (572 znaki, **14/20**), „Dlaczego kancelaria nie
+ocenia szans sprawy" (1068 znaków, 13/20) i „Pełnomocnictwo i upoważnienie do
+obrony" (604 znaki, 12/20). Dwa z tych trzech są krótkie, a wszystkie trzy
+dotyczą rzeczy, o którą zahacza połowa pytań. To ten sam mechanizm, który już
+opisano przy `k18`: fragment o **granicy kompetencji** konkuruje z całą
+dokumentacją z definicji.
+
+**Wniosek: górnej granicy długości fragmentu NIE wprowadzamy** i nie dzielimy
+fragmentów „na zapas". Dzielić warto wtedy, gdy fragment odpowiada na dwa różne
+pytania, a nie wtedy, gdy jest długi.
+
+### Skutek uboczny pomiaru: retrieval jest w pełni deterministyczny
+
+Przy okazji potwierdzone, bo było potrzebne do rozstrzygnięcia p17. Porównanie
+zestawów sprzed i po reindeksie pokazuje wyniki identyczne co do trzeciego
+miejsca po przecinku wszędzie, gdzie treść się nie zmieniła. **Cała różnica
+w 20 zestawach tłumaczy się dwiema zmianami**, które faktycznie zrobiliśmy:
+wejściem `k25` oraz wzrostem `k23` (0.427 → 0.435 przy p17, 0.510 → 0.515 przy
+p06) po dopisaniu do niego odsyłacza zwrotnego. Nic nie „dryfuje" po dodaniu
+wektora do indeksu.
+
+To zawęża pytanie o p17 do jednego miejsca: **skoro zestaw fragmentów jest stały,
+rozrzut wyniku może pochodzić wyłącznie z generacji.** Stąd `sonda-powtorka.mjs`.
+
+
 ## Podsumowanie drugiej branży — co uniwersalne, co branżowe, ile kosztuje klient
 
 ### Werdykt o warstwach po pełnym cyklu

@@ -140,6 +140,37 @@ PRZYPADKI.push(
   // pilne wygrywa z niepilnym, choć niepilne ma dwa sygnały z definicji
   ["Dzwoni strona przeciwna i prosi o ustalenia, a klientce grozi mąż", "zagrozenie_osoby", WEW],
 );
+// --- FORMY OSOBOWE I RDZENIE URWANE ZA PÓŹNO (24.08.2026) ---
+//
+// Ten sam defekt co w słowniku budowlanym, znaleziony przy jego naprawie —
+// tylko LUSTRZANY: tu wzorzec znał wyłącznie PIERWSZĄ osobę („zostawilem
+// w pociagu"), więc „aplikantka zostawiła teczkę w pociągu" nie wyzwalało nic.
+// Przy okazji dwa defekty tej samej rodziny: rdzeń urwany za późno
+// („prokurator" nie pokrywa „prokuratury") i zrośnięte sąsiedztwo
+// („postawili KLIENTOWI zarzuty" ma między nimi celownik).
+PRZYPADKI.push(
+  ["Aplikantka zostawiła teczkę z aktami w pociągu", "naruszenie_danych", WEW],
+  ["Zostawiono laptopa z aktami w taksówce", "naruszenie_danych", WEW],
+  ["Zostawiliśmy segregator w autobusie", "naruszenie_danych", WEW],
+  ["Sekretarka pomyłkowo wysłała pismo do złego adresata", "naruszenie_danych", WEW],
+  ["Prokuratura wezwała naszego klienta na jutro", "zatrzymanie", WEW],
+  ["Postawiono mu zarzuty w prokuraturze", "zatrzymanie", WEW],
+  ["Klient zgłasza, że żona go biła i grozi dziecku", "zagrozenie_osoby", WEW],
+  ["Termin na apelację minęła nam w zeszłym tygodniu", "termin_procesowy", WEW],
+
+  // NEGATYWNE — te same rdzenie bez swojego dopełnienia
+  ["Zostawiłem wiadomość w sekretariacie dla adwokata", null, WEW],
+  ["Zostawiliśmy sprawę do decyzji wspólnika", null, WEW],
+  ["Wysłałem klientowi zaproszenie na spotkanie", null, WEW],
+  ["Zabrała głos na rozprawie w imieniu klienta", null, WEW],
+  ["Wezwaliśmy klienta na podpisanie umowy", null, WEW],
+  ["Jaki jest bilans kancelarii za ostatni kwartał", null, WEW],
+  ["Kupiłem bilet na pociąg na rozprawę w Krakowie", null, WEW],
+  ["Zatrzymaj wypłatę honorarium do czasu wyjaśnienia", null, WEW],
+  ["Klient postawił sprawę jasno na spotkaniu", null, WEW],
+  ["Ukradziono nam pomysł na kampanię", null, WEW],
+);
+
 
 let zdane = 0;
 const oblane = [];

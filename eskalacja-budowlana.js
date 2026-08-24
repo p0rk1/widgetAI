@@ -9,6 +9,20 @@
 // drugiego klienta — i jest zarazem odpowiedzią na pytanie, ile z tej warstwy
 // było protezą pod budowlankę: proteza to ten plik, reszta została.
 //
+// KOŃCÓWKA OSOBOWA — reguła z 24.08.2026, łamana najłatwiej ze wszystkich.
+// Polski czas przeszły to RDZEŃ + „ł" + końcówka osoby: spadł, spadła, spadło,
+// spadłem, spadli. Po zdjęciu ogonków „ł" jest zwykłym „l", więc rdzeń zapisany
+// do samego „l" (`zlama`, `doznal`, `przygniot`) pokrywa CAŁY paradygmat —
+// pierwszą osobę i formę bezosobową także. Wzorzec psuje się dopiero wtedy, gdy
+// PO tym „l" doklei się cokolwiek na sztywno: spację, przyimek albo „sie".
+// `spadl z` znało wyłącznie trzecią osobę, więc „spadlem z rusztowania" nie
+// wyzwalało niczego — a to właśnie tak pisze ten, komu się stało.
+//
+// REGUŁA: nigdy nie doklejaj niczego bezpośrednio za „l" czasu przeszłego.
+// Wstaw między nie `[a-z]{0,4}` — tyle liczy najdłuższa końcówka osobowa
+// („spadliśmy" to rdzeń + „ismy", „jebnąłem" to rdzeń + „alem").
+// Zmierzone 24.08.2026: eskalacja wyzwalała się na 5 z 12 realnych zgłoszeń.
+//
 // Wszystkie wzorce są zapisane BEZ OGONKÓW i małymi literami — porównywane
 // z pytaniem przepuszczonym przez bezOgonkow(). Powód: pracownik pisze z telefonu
 // na budowie („zlamal noge", „grozi sadem"). Granicy wyrazu pilnuje
@@ -18,9 +32,24 @@
 // wypadków wyliczyć się nie da, części ciała i wysokości owszem. Rozstrzyga
 // DOPEŁNIENIE — czym jest to, co zostało złamane, potrącone albo z czego ktoś
 // spadł. Dlatego każdy rdzeń ma własny warunek, a nie wspólną listę.
-const CIALO = /(?<![a-z0-9])(nog[aeię]|rek[aeęi]|reka|dlon|palec|palca|palce|glow[aęy]|stop[aeęy]|kregoslup|zebro|zebra|obojczyk|kostk|kolano|bark|nadgarstek|kark|klatk|oko|oczy|plecy|czaszk|krwi|krew|ran[aęy]|opatrun|szpital|karetk|pogotowi|bol[iu]|zwichn|siniak)/;
-const OFIARA = /(?<![a-z0-9])(pracownik|pracownic|koleg|brygadzist|majstr|majster|monter|murarz|ciesl|elektryk|dekarz|operator|mlod|czlowiek|osob|poszkodowan|kogos|ktos)/;
+// Rejestr POTOCZNY jest częścią tej listy od 24.08.2026 i to nie jest ozdobnik.
+// Zmierzone: „pekla mi dupa" nie dostawało ramki ani odpowiedzi, bo słownik znał
+// wyłącznie nazwy z orzeczenia lekarskiego. Człowiek z urwanym palcem nie pisze
+// „doznałem urazu kończyny górnej". Lista części ciała jest skończona — lista
+// sposobów ich nazwania w rejestrze potocznym też, i dlatego wolno ją wyliczyć.
+const CIALO = /(?<![a-z0-9])(nog[aei]|rek[aei]|reka|dlon|palec|palca|palce|kciuk|glow[aey]|leb(?![a-z])|lba|lbie|stop[aey]|kregoslup|zebro|zebra|obojczyk|kostk|kolano|bark|ramie|ramien|nadgarstek|lokie|lokc|kark|klatk|oko|oczy|ucho|plecy|czaszk|biodr|lydk|udo(?![a-z])|golen|pieta|piet[ey]|brzuch|dup[aeoy]|grab[ay]|kulas|kutas|krwi|krew|ran[aey]|opatrun|szpital|karetk|pogotowi|bol[iu]|zwichn|siniak)/;
+// Uwaga na CELOWNIK OSOBY („urwało MI palec"). Kusi, żeby dopisać tu „mi|mu|nam",
+// bo to on niesie informację, KOMU się stało — ale nie niesie informacji, CZY się
+// stało: „potrącą mi z wypłaty" ma ten sam celownik co „urwało mi palec".
+// Celownik odpowiada na pytanie KTO, a rozstrzygać ma CZY — i to robi część ciała.
+// Dlatego konstrukcje bezosobowe z celownikiem obsługuje dopełnienie CIALO,
+// a nie zaimek. Sprawdzone na zestawie negatywnym 24.08.2026.
+const OFIARA = /(?<![a-z0-9])(pracownik|pracownic|koleg|koledz|brygadzist|majstr|majster|monter|murarz|ciesl|elektryk|dekarz|operator|mlod|czlowiek|osob|poszkodowan|kogos|ktos)/;
 const WYSOKOSC = /(?<![a-z0-9])(rusztowani|drabin|dach|stropu|stropie|wysokosc|pietr|schod|podest|wykop|pomost)/;
+// Upadek z wysokości i uderzenie ciała to ta sama klasa zdarzeń opisywana raz
+// przez miejsce, raz przez skutek — stąd jedno dopełnienie złożone z obu.
+const CIALO_LUB_WYSOKOSC = new RegExp(`${CIALO.source}|${WYSOKOSC.source}`);
+
 const PODMIOT_KONSTRUKCJA = /(?<![a-z0-9])(scian|strop|wykop|skarp|rusztowani|budynek|budynku|budynkiem|dach|mur|nasyp|szalunek|szalunk|konstrukcj|belk|nadproz)/;
 
 const KATEGORIE_ESKALACJI_BUDOWLANE = [
@@ -45,7 +74,7 @@ const KATEGORIE_ESKALACJI_BUDOWLANE = [
     // rzeczownik wystarcza, bo poza dwoma idiomami nie znaczy nic innego.
     // Oba idiomy są wyłączone jawnie i zmierzone: „zachowaj zimną krew"
     // (rozmowa z klientem) oraz „krew z nosa" (byle na jutro).
-    zdarzenie: /(?<![a-z0-9])(wypad(ek|ku|kiem|ki)|poszkodowan|uraz(?![ae])|doznal|ranny|zrani|skalecz|przygniot|poparz|oparzen|krwaw|krwotok|(?<!zimna )(krew|krwi)(?! z nosa)|ran[aey]|rozcie(c|t)|obrazen|opatrun|nadzia|nieprzytomn|stracil przytomnosc|zaslab|zemdla|karetk|pogotowi)/,
+    zdarzenie: /(?<![a-z0-9])(wypad(ek|ku|kiem|ki)|poszkodowan|uraz(?![ae])|doznal|ranny|zrani|skalecz|przygniot|poparz|oparzen|krwaw|krwotok|(?<!zimna )(krew|krwi)(?! z nosa)|ran[aey]|rozcie(c|t)|obrazen|opatrun|nadzia|nieprzytomn|stracil[a-z]{0,4} przytomnosc|zaslab|zemdla|karetk|pogotowi)/,
     // Rdzenie DWUZNACZNE — te same litery znaczą na budowie coś innego:
     // „potrącimy z faktury", „złamał procedurę", „ma do mnie urazę", „koszt
     // spadł z 40 zł". Zmierzone 21.08.2026: siedem na dziesięć zwykłych zdań
@@ -55,14 +84,36 @@ const KATEGORIE_ESKALACJI_BUDOWLANE = [
     dwuznaczne: [
       { wzorzec: /(?<![a-z0-9])zlama/, kontekst: () => CIALO },
       { wzorzec: /(?<![a-z0-9])potrac/, kontekst: () => OFIARA },
-      { wzorzec: /(?<![a-z0-9])(spadl z|upadl z|spadl ze|upadl ze)/, kontekst: () => WYSOKOSC },
+      // PRZYIMEK ZOSTAJE, KOŃCÓWKA SIĘ OTWIERA. „z/ze" niesie tu znaczenie —
+      // odróżnia upadek Z wysokości od „spadła wydajność NA rusztowaniu"
+      // i od „koszt spadł z 40 zł" (tam wetuje brak dopełnienia WYSOKOSC).
+      // Otwiera się to, co niosło wyłącznie osobę: końcówka po „l".
+      { wzorzec: /(?<![a-z0-9])((s|u)padl|zlecial|runal)[a-z]{0,4} ze?(?![a-z])/, kontekst: () => WYSOKOSC },
+      // Drugie czytanie tego samego czasownika: nie „ktoś spadł Z czegoś", tylko
+      // „coś spadło NA kogoś" — „spadł mi młotek na nogę". Przyimka nie ma czym
+      // związać, więc rozstrzyga wyłącznie część ciała.
+      { wzorzec: /(?<![a-z0-9])(s|u)padl[a-z]{0,4}(?![a-z])/, kontekst: () => CIALO },
+      // KLASA CZASOWNIKÓW USZKODZENIA — konstrukcje bezosobowe z celownikiem
+      // („urwało mi palec", „pękła mi ręka") i pierwszoosobowe („przyciąłem
+      // sobie palec"). Sprawcy w zdaniu nie ma, poszkodowany jest — i to część
+      // ciała, nie zaimek, rozstrzyga, czy mowa o urazie. Bez tego warunku
+      // „urwało mi się połączenie" i „pękła mi opona" dostawałyby ramkę PILNE.
+      // `urwa(?!nie)` rozbraja idiom „urwanie głowy" morfologicznie — tak samo
+      // jak `uraz(?![ae])` rozbraja „urazę".
+      { wzorzec: /(?<![a-z0-9])(urwa(?!nie)|pek|przycia|przytrzasn|zmiazdz|zgniot|uderzy|rozwali|skrec|przebi)/, kontekst: () => CIALO },
+      // Ten sam kształt w rejestrze wulgarnym. To nie jest lista wyzwisk, tylko
+      // klasa czasowników uderzenia i upadku — warunek jest ten sam co wyżej.
+      // `zajeb(?!i)` odcina „zajebiście", które na budowie znaczy „dobrze".
+      { wzorzec: /(?<![a-z0-9])(jebn|pierdoln|zajeb(?!i)|walna|przywali|rabn|huknal|gruchn)/, kontekst: () => CIALO },
+      // …a przy upadku dopełnieniem jest miejsce, z którego się spadło.
+      { wzorzec: /(?<![a-z0-9])(jebn|pierdoln|zajeb(?!i)|walna|rabn|gruchn)[a-z]{0,4} (sie )?ze?(?![a-z])/, kontekst: () => CIALO_LUB_WYSOKOSC },
     ],
     tekst: `NAJPIERW POWIADOM: przy urazie zagrażającym życiu dzwoń pod 112, zaraz potem do kierownika budowy — zanim wykonasz cokolwiek z poniższego. Wypadku nie rozliczasz sam: o zgłoszeniach i terminach decyduje kierownik budowy.`,
   },
   {
     id: "zagrozenie_zycia",
     pilne: true,
-    zdarzenie: /(?<![a-z0-9])(zagrozenie zycia|zagraza zyciu|nie oddycha|reanimac|pozar|pali sie|ulatnia sie|(czuc|zapach|wyciek|ulatnia).{0,20}gaz|porazeni|porazi|iskrzy|grozi zawaleniem|osuna|osune|osunal|zerwal sie|urwal sie|uwiezion|przysypa|zasypa)/,
+    zdarzenie: /(?<![a-z0-9])(zagrozenie zycia|zagraza zyciu|nie oddycha|reanimac|pozar|pali sie|ulatnia sie|(czuc|zapach|wyciek|ulatnia).{0,20}gaz|porazeni|porazi|iskrzy|grozi zawaleniem|osun|(ze|u)rwal[a-z]{0,4} sie|uwiezion|przysypa|zasypa)/,
     // „zawalił termin" i „ekipa zawaliła robotę" to najczęstsze zdania na
     // budowie, a nie katastrofa budowlana. Samo „grozi zawaleniem" zostaje
     // wyżej jako jednoznaczne.

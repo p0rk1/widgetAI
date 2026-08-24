@@ -3042,11 +3042,12 @@ osoby, ale nie pierwszą i nie mowę potoczną:
 | „pierdolnalem sie w leb o belke" | brak | brak rdzenia potocznego |
 
 **Pierwsza osoba jest tu ważniejsza niż trzecia** — zgłasza najczęściej ten,
-komu się stało. Naprawa jest tania (formy pierwszoosobowe i potoczne dopisane
-do rdzeni, z zachowaniem reguły o dopełnieniu) i mieści się w dotychczasowej
-konstrukcji słownika. **Nie została wykonana w tej sesji — wykracza poza
-zlecony zakres i wymaga własnego przebiegu na zestawie negatywnym**, żeby nie
-powtórzyć błędu „7 na 10 zwykłych zdań dostaje ramkę PILNE" z 21.08.2026.
+komu się stało.
+
+> **NAPRAWIONE tego samego dnia, w osobnym przebiegu z własnym zestawem
+> negatywnym** — patrz „Pierwsza osoba w eskalacji — reguła morfologiczna".
+> Pomiar na żywo po naprawie: ramka **5/12 → 12/12**, numer 112 **8/12 → 12/12**,
+> zestaw kontrolny „frustracja bez urazu" bez zmian (0/5).
 
 ## Dyktowanie głosowe — usunięte (24.08.2026)
 
@@ -3124,3 +3125,141 @@ się do narzędzia, które kupił od nas, i to jest spójne, a nie „surowe".
 kroku „Multi-tenant" — i jest to argument, którego wcześniej w tym kroku nie
 było: multi-tenant to nie tylko D1 i przestrzenie w Vectorize, ale też
 **granica organizacji Zero Trust**.
+
+## Pierwsza osoba w eskalacji — reguła morfologiczna, nie lista form (24.08.2026)
+
+Defekt znaleziony przy odrzucaniu filtra wulgaryzmów, naprawiony osobno.
+**Eskalacja wyzwalała się na 5 z 12 realnych zgłoszeń urazu** pisanych tak, jak
+pisze je człowiek na budowie. Słownik znał trzecią osobę i nie znał pierwszej —
+a zgłasza najczęściej ten, komu się stało.
+
+### Diagnoza: nie brakowało słów, tylko końcówek
+
+Polski czas przeszły to **rdzeń + „ł" + końcówka osoby**. Po `bezOgonkow()` „ł"
+jest zwykłym „l", więc rdzeń urwany na „l" (`zlama`, `doznal`, `przygniot`)
+pokrywa **cały paradygmat** — pierwszą osobę, liczbę mnogą i formę bezosobową
+także. `zlama` łapało „złamałem" od zawsze i nikt tego nie zaprojektował: tak
+wyszło z morfologii.
+
+Wzorzec psuje się dopiero wtedy, gdy **PO tym „l" doklei się coś na sztywno**:
+
+| Wzorzec | Znał | Nie znał |
+|---|---|---|
+| `spadl z` | „spadł z rusztowania" | „spadł**em** z rusztowania" |
+| `urwal sie` | „urwał się" | „urwa**ło** się" |
+| `stracil przytomnosc` | trzecią osobę | „stracił**em** przytomność" |
+| `zostawilem w (pociagu…)` (kancelaria) | **pierwszą** osobę | „zostawi**ła** w pociągu" |
+
+Ostatni wiersz jest lustrzany i to on rozstrzyga, że **nie chodzi o „dopisanie
+pierwszej osoby"**, tylko o zrośnięcie wzorca z jedną formą — obojętne którą.
+
+**REGUŁA, która została wpisana do obu słowników:** nigdy nie doklejaj niczego
+bezpośrednio za „l" czasu przeszłego; wstaw między nie `[a-z]{0,4}`. Cztery,
+nie trzy — najdłuższe końcówki to „spadl**ismy**" i „jebn**alem**".
+
+### Konstrukcje bezosobowe z celownikiem — co jest tu warunkiem
+
+„Urwało **mi** palec", „pękła **mi** ręka", „spadł **mi** młotek na nogę".
+Sprawcy w zdaniu nie ma, poszkodowany jest — w celowniku.
+
+Kusiło, żeby dopisać `mi|mu|nam` do dopełnienia OFIARA. **Odrzucone i to jest
+najważniejsza decyzja tej naprawy:** celownik niesie informację, **KOMU** się
+stało, ale **nie niesie informacji, CZY** się stało. „Potrącą **mi** z wypłaty"
+ma ten sam celownik co „urwało **mi** palec" — a to jest dokładnie zdanie, pod
+które budowana była poprawka z 21.08.2026. Zaimek jest w tej roli tym, czym
+„człowiek" na budowie i „sprawa" w kancelarii.
+
+**Rozstrzyga CZĘŚĆ CIAŁA.** Konstrukcje bezosobowe obsługuje więc dopełnienie
+`CIALO`, a klasa czasowników uszkodzenia (`urwa`, `pek`, `przycia`,
+`przytrzasn`, `zmiazdz`, `zgniot`, `uderzy`, `rozwali`, `skrec`, `przebi`)
+wyzwala **wyłącznie z nim**. To ten sam kształt, co „rdzeń dwuznaczny wyzwala
+ze swoim dopełnieniem" — nowa jest tylko klasa czasowników.
+
+### Trzy rozbrojenia morfologiczne, bez warunku kontekstowego
+
+W duchu `uraz(?![ae])` z 21.08.2026:
+
+- **`urwa(?!nie)`** — „mam urwanie głowy z tym terminem" zawiera część ciała
+  i wyzwalałoby ramkę PILNE. Idiom odcięty morfologicznie, nie listą.
+- **`zajeb(?!i)`** — „zajebiście nam idzie robota **na rusztowaniu**" ma
+  wysokość i wyzwalałoby upadek. „Zajebiście" na budowie znaczy „dobrze".
+- **`bil[aeioy]?(?![a-z])`** (kancelaria) — poprzednie `bil ` ze spacją znało
+  wyłącznie formę męską, a `bil` bez guardu łapałby „bilans" i „bilet".
+
+### Dwa czytania tego samego czasownika
+
+„Spadł" opisuje dwa różne zdarzenia i każde ma inne dopełnienie:
+
+- **ktoś spadł Z czegoś** → przyimek `ze?` **zostaje w wzorcu**, bo niesie
+  znaczenie, a dopełnieniem jest `WYSOKOSC`. To on odróżnia upadek od „spadła
+  wydajność **na** rusztowaniu" i od „koszt spadł z 40 zł" (tam wetuje brak
+  wysokości).
+- **coś spadło NA kogoś** → przyimka nie ma czym związać, więc rozstrzyga
+  wyłącznie `CIALO`: „spadł mi młotek na nogę".
+
+Otwiera się końcówka po „l", a nie przyimek. Przyimek jest warunkiem, nie
+pozostałością.
+
+### Rejestr potoczny w nazwach części ciała
+
+`CIALO` znało wyłącznie nazwy z orzeczenia lekarskiego. Człowiek z urwanym
+palcem nie pisze „doznałem urazu kończyny górnej" — stąd `leb`, `dupa`, `graba`,
+`kulas`, `kutas`, `kciuk`, `lydk`, `biodr`, `golen`, `brzuch`, `lokc`.
+Wyliczenie jest tu **dopuszczalne z tego samego powodu, co przy częściach
+ciała w ogóle**: lista jest skończona. Lista sposobów zrobienia sobie krzywdy
+nie jest — i dlatego czasowniki mają warunek, a nie wyliczenie.
+
+### Przy okazji: martwe ogonki we wzorcach
+
+Trzy klasy znaków zawierały litery, których **nie da się dopasować nigdy**, bo
+tekst wchodzi po `bezOgonkow()`: `glow[aęy]` nie łapało „głowę" → „glowe”.
+Tak samo `nog[aeię]`, `rek[aeęi]`, `stop[aeęy]`, `ran[aęy]` oraz — u kancelarii
+— `zon[aeęy]` i `niebiesk[aą]?`. Nagłówek pliku mówił o tym od początku
+(„wzorce zapisane BEZ OGONKÓW"), reguła po prostu nie była egzekwowana.
+
+**I rdzeń urwany za późno:** `prokurator` **nie** pokrywa „prokuratury" —
+instytucja to nie „prokurator + końcówka", tylko inny rdzeń (`prokurat`).
+Przez to „prokuratura wezwała klienta" nie wyzwalało zatrzymania. Ten sam błąd
+co końcówka osobowa, tylko po drugiej stronie rdzenia.
+
+### Pomiar
+
+**Zestaw negatywny powstał PRZED wdrożeniem** — warunek konieczny, bo
+21.08.2026 rozszerzenie wzorców dało 7 fałszywych alarmów na 10 zwykłych zdań.
+36 zdań negatywnych, w tym trzy wskazane wprost („spadłem z roweru w weekend",
+„urwało mi się połączenie", „pękła mi opona w drodze na budowę") oraz komplet
+regresyjny z 21.08.2026.
+
+| | Przed | Po |
+|---|---|---|
+| Zestaw negatywny budowlany (36 zdań) | — | **0 fałszywych alarmów** |
+| Zestaw pozytywny budowlany (22 zdania) | — | **22/22** |
+| Stały test `test-eskalacja.mjs` | 79/79 | **110/110** |
+| Stały test `test-eskalacja-prawna.mjs` | 80/80 | **98/98** |
+
+**Pomiar na żywo, te same 12 zgłoszeń co przy odrzuceniu filtra:**
+
+| | Przed | Po |
+|---|---|---|
+| Ramka eskalacyjna | 5/12 | **12/12** |
+| Numer 112 w odpowiedzi | 8/12 | **12/12** |
+| Zestaw kontrolny „frustracja bez urazu" | 0/5 | **0/5** |
+
+„Pekla mi dupa" pozostaje **luką dokumentacyjną** — treści na to nie ma i nie
+o to chodziło. Dostaje jednak ramkę z numerem 112, zgodnie z zasadą, że
+eskalacja działa także wtedy, gdy dokumentacja nie ma odpowiedzi. Wtedy jest
+potrzebna bardziej, nie mniej.
+
+### Znalezione, NIE naprawione — kolizja „zarzutów"
+
+„Postawili klientowi zarzuty **dziś** rano" trafia do `termin_procesowy`, nie do
+`zatrzymania`. Powód: „zarzut" jest w kancelarii homonimem (zarzuty karne kontra
+zarzuty od nakazu zapłaty), leży w `CZYNNOSC_PROCESOWA` i w zdarzeniu kategorii
+terminowej, więc ze słowem „dziś" zbiera **dwa sygnały** przeciwko jednemu.
+
+**Sprawdzone na kopii sprzed zmiany: kolizja jest wcześniejsza niż ta naprawa**
+(przed nią to samo zdanie też szło do `termin_procesowy`, a „postawiono mu
+zarzuty w prokuraturze" nie szło nigdzie). Naprawa wymaga rozstrzygnięcia,
+czym jest „zarzut" w tej branży, a nie poprawki formy — czyli własnego pomiaru.
+Obie ramki są pilne i obie kierują do adwokata prowadzącego, więc koszt jest
+w treści komunikatu, nie w bezpieczeństwie.

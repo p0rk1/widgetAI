@@ -55,6 +55,7 @@ każdej sesji, a historia decyzji jest potrzebna kilka razy w miesiącu.
 | 23.08 | **Ton: granica, nie naprawa** — rewriter form odrzucony; `k25` (przemoc domowa) napisany bezosobowo, sonda w repo | `DECYZJE.md` → Poprawianie form adresatywnych, Fragment `k25` |
 | 24.08 | **Motyw jako pole klienta** + treść interfejsu wyprowadzona z plików, trasy i AUD-y kancelarii | `DECYZJE.md` → Motyw jako pole klienta |
 | 24.08 | **Dyktowanie usunięte**, przycisk „PANEL" usunięty z aplikacji pracowniczej | `DECYZJE.md` → Dyktowanie głosowe — usunięte |
+| 24.08 | **Pierwsza osoba w eskalacji naprawiona** — reguła końcówki osobowej, ramka 5/12 → 12/12 | `DECYZJE.md` → Pierwsza osoba w eskalacji |
 | 24.08 | **Filtr wejściowy: NIE BUDOWAĆ** — wulgaryzmy i pytania spoza dziedziny, rozstrzygnięte pomiarem | `DECYZJE.md` → Filtr wejściowy |
 | 24.08 | **Długość odpowiedzi pracowniczych zmierzona — diagnoza niepotwierdzona**, prompt nietknięty | `DECYZJE.md` → Długość odpowiedzi |
 
@@ -142,7 +143,7 @@ wystarcza do testów i jednego użytkownika, nie wystarcza dla zespołu klienta.
 | `test-weryfikacja.mjs` | Test deduplikacji, progów i cytatu dosłownego | repo |
 | `test-stats-internal.mjs`| Test statystyk wewnętrznych i zliczania eskalacji | repo |
 | `test-klienci.mjs` | Test wymiaru klienta: host, przestrzenie, obowiązkowość klienta, szablony | repo |
-| `test-eskalacja-prawna.mjs` | Test słownika eskalacji kancelarii (`node test-eskalacja-prawna.mjs`) | repo |
+| `test-eskalacja-prawna.mjs` | Test słownika eskalacji kancelarii — **98 przypadków** (`node test-eskalacja-prawna.mjs`) | repo |
 | `test-obietnice-prawne.mjs` | Wrogi test warstwy obietnic kancelarii | repo |
 | `test-motyw.mjs` | Test motywu i treści interfejsu: brak surowych `{{pól}}`, brak słownictwa cudzej branży, różność motywów | repo |
 | `sonda-klienta.mjs` | Zbiorczy przebieg diagnostyczny klienta (`node sonda-klienta.mjs <sekret> <klient> [zakres]`) — odtwarza ścieżkę produkcyjną, osobno liczy eskalacje i ramki bezpieczeństwa | repo, wyniki do katalogu tymczasowego |
@@ -447,6 +448,30 @@ w `numbersAreGrounded()` została **odrzucona** — patrz „Ślepe uliczki".
   wypadku i zagrożeniu życia wyzwalamy szeroko i weto ramy informacyjnej
   **nie działa**. Przy sporze, kontroli i finansach wymagamy dwóch niezależnych
   sygnałów, bo tam fałszywy alarm to szum, który nauczy ignorować ramkę.
+- **KOŃCÓWKA OSOBOWA — nie doklejaj niczego za „l" czasu przeszłego.**
+  Polski czas przeszły to rdzeń + „ł" + końcówka osoby, więc rdzeń urwany na „l"
+  (`zlama`, `doznal`) pokrywa **cały paradygmat** — pierwszą osobę i formę
+  bezosobową także. Wzorzec psuje się dopiero, gdy PO tym „l" doklei się coś na
+  sztywno: `spadl z` nie znało „spadl**em** z", a u kancelarii
+  `zostawilem w…` nie znało trzeciej osoby (defekt **lustrzany** — obojętne,
+  która forma jest zrośnięta). Między rdzeń a to, co doklejone, wstawia się
+  `[a-z]{0,4}` — cztery, bo „spadl**ismy**" i „jebn**alem**".
+  Zmierzone 24.08.2026: ramka na realnych zgłoszeniach **5/12 → 12/12**
+- **CELOWNIK OSOBY NIE JEST DOPEŁNIENIEM.** „Urwało **mi** palec" kusi, żeby
+  dopisać `mi|mu|nam` do `OFIARA`. **Nie wolno:** celownik mówi, KOMU się
+  stało, ale nie mówi, CZY — „potrącą **mi** z wypłaty" ma ten sam zaimek.
+  Konstrukcje bezosobowe rozstrzyga **część ciała**, i to ona jest warunkiem
+  klasy czasowników uszkodzenia (`urwa`, `pek`, `przycia`, `zmiazdz`…)
+- **Rejestr potoczny należy do listy części ciała.** `leb`, `dupa`, `graba`,
+  `kulas`, `kutas` — człowiek z urwanym palcem nie pisze „doznałem urazu
+  kończyny górnej". Wyliczać wolno **części ciała**, bo ich lista jest skończona;
+  **czasowników uszkodzenia wyliczać nie wolno** — one dostają warunek
+- **Rdzeń urwany za późno gubi wyraz pokrewny.** `prokurator` nie pokrywa
+  „prokuratury" — to inny rdzeń, nie inna końcówka. Ten sam błąd co wyżej,
+  tylko po drugiej stronie rdzenia
+- **We wzorcach nie ma ogonków — także w klasach znaków.** `glow[aęy]` nie
+  łapało „głowę", bo tekst wchodzi po `bezOgonkow()` jako „glowe". Sześć takich
+  martwych liter znaleziono 24.08.2026 w obu słownikach
 - **Pytanie jest normalizowane — małe litery i zdjęte ogonki.** Pracownik pisze
   z telefonu „grozi sadem", „zlamal noge". Wzorce są zapisane bez ogonków i tak
   mają zostać. **`\b` w JavaScripcie zna wyłącznie ASCII** — `\bmarż\b` nie
@@ -462,7 +487,7 @@ w `numbersAreGrounded()` została **odrzucona** — patrz „Ślepe uliczki".
 - Eskalacja działa też, gdy **dokumentacja nie ma odpowiedzi**. Wtedy jest
   potrzebna bardziej, nie mniej.
 
-**Test:** `node test-eskalacja.mjs` — **79 przypadków** na słowniku budowlanym, w tym 26 negatywnych
+**Test:** `node test-eskalacja.mjs` — **110 przypadków** na słowniku budowlanym, w tym 43 negatywne
 (pytania tematycznie bliskie, które wyzwolić nie mogą), zestaw bez ogonków
 i sprawdzenie pozycji ramki. Warstwa jest deterministyczna, więc testuje się ją
 lokalnie, bez wywoływania modelu.
@@ -929,6 +954,13 @@ też poprawne parafrazy.
   słabym wskaźnikiem dla fragmentu o GRANICY KOMPETENCJI** — taki fragment
   z definicji konkuruje z całą resztą dokumentacji. Liczy się, czy wszedł do
   zestawu, nie czy odskoczył
+- **Kolizja „zarzutów" w kancelarii — znaleziona 24.08.2026, nienaprawiona.**
+  „Postawili klientowi zarzuty dziś rano" trafia do `termin_procesowy`, nie do
+  `zatrzymania`: „zarzut" jest homonimem (zarzuty karne kontra zarzuty od nakazu
+  zapłaty), leży w `CZYNNOSC_PROCESOWA`, więc ze słowem „dziś" zbiera dwa sygnały
+  przeciwko jednemu. **Kolizja jest wcześniejsza niż naprawa form osobowych** —
+  sprawdzone na kopii sprzed zmiany. Obie ramki są pilne i obie kierują do
+  adwokata, więc koszt jest w treści komunikatu, nie w bezpieczeństwie
 - **Żadna warstwa nie pilnuje FORMY podania liczby, tylko jej pochodzenia** —
   zmierzone 22.08.2026: „przedawniają się w okresie od 3 do 6 lat" przeszło,
   bo obie liczby są w dokumentacji, choć prompt zakazuje mówienia „od X do Y"

@@ -36,18 +36,29 @@
 // w kancelarii najczęściej „termin spotkania" albo „termin płatności".
 const CZYNNOSC_PROCESOWA = /(?<![a-z0-9])(apelacj|zazalen|sprzeciw|zarzut|odwolani|kasacj|skarg|uzasadnieni|pozew|pozwu|odpowiedz na pozew|wniosk|pism[aoieu]|sad|sadu|sadem|sadzie|prokuratur|rozpraw|nakaz|wyrok|postanowieni|doreczen)/;
 
+// KOŃCÓWKA OSOBOWA — ta sama reguła co w `eskalacja-budowlana.js` i ten sam
+// defekt, znaleziony 24.08.2026 przy naprawie tamtego: rdzeń zapisany do „l"
+// czasu przeszłego pokrywa cały paradygmat, ale doklejenie czegokolwiek za tym
+// „l" zamyka wzorzec na jedną osobę. W kancelarii defekt był LUSTRZANY —
+// `zostawilem w (pociagu…)` znało wyłącznie PIERWSZĄ osobę, więc „aplikantka
+// zostawiła teczkę w pociągu" nie wyzwalało niczego. Między rdzeń a to, co po
+// nim doklejone, wstawia się `[a-z]{0,4}`.
+
 // Bliskość albo naruszenie terminu. To jest właściwy wyzwalacz tej kategorii.
 // Świadomie NIE ma tu samego „uplywa" ani „konczy sie": „kiedy upływa termin
 // na apelację" to pytanie o regułę, nie o sprawę, która się pali.
-const PILNOSC_TERMINU = /(?<![a-z0-9])(dzis|dzisiaj|jutro|wczoraj|ostatni dzien|zostal[oy]? (jeden|dwa|trzy|\d+) dni|zostal jeden dzien|za (jeden|dwa|trzy|\d+) dni|minal|minelo|po terminie|przekroczy|przekroczyl|przegapi|przeoczy|nie zdazy|zdazymy|za pozno|uchybi|przywrocenie terminu|w ostatniej chwili)/;
+const PILNOSC_TERMINU = /(?<![a-z0-9])(dzis|dzisiaj|jutro|wczoraj|ostatni dzien|zostal[oy]? (jeden|dwa|trzy|\d+) dni|zostal jeden dzien|za (jeden|dwa|trzy|\d+) dni|minal|minel|minelo|po terminie|przekroczy|przekroczyl|przegapi|przeoczy|nie zdazy|zdazymy|za pozno|uchybi|przywrocenie terminu|w ostatniej chwili)/;
 
+// `prokurat`, nie `prokurator`: instytucja to „prokuratura", a nie „prokurator
+// + końcówka" — rdzeń urwany za późno gubił zdanie „prokuratura wezwała klienta".
+// Ten sam błąd co końcówka osobowa, tylko po drugiej stronie rdzenia.
 // Organ, który zatrzymuje. „Zatrzymać" bez niego znaczy w kancelarii
 // „zatrzymać fakturę", „zatrzymaj wypłatę", „zatrzymajmy się na tym".
-const ORGAN_SCIGANIA = /(?<![a-z0-9])(policj|prokurator|cba(?![a-z])|abw(?![a-z])|kas[ay] skarbow|straz granicz|komisariat|areszt|izb[ay] zatrzyman|konwoj)/;
+const ORGAN_SCIGANIA = /(?<![a-z0-9])(policj|prokurat|cba(?![a-z])|abw(?![a-z])|kas[ay] skarbow|straz granicz|komisariat|areszt|izb[ay] zatrzyman|konwoj)/;
 
 // Osoba, wobec której coś się dzieje. Świadomie węższa niż budowlana OFIARA:
 // w kancelarii „klient" występuje w każdym zdaniu, więc sam nie wystarcza.
-const OSOBA_ZAGROZONA = /(?<![a-z0-9])(zon[aeęy]|mez|meza|mezem|maz|partner|konkubent|ojciec|ojca|matk|dziecko|dziecka|dzieci|corka|corki|syn[aeu]?(?![a-z])|rodzin|bylym?|byla zona|sasiad|tesc|brat|siostr)/;
+const OSOBA_ZAGROZONA = /(?<![a-z0-9])(zon[aey]|mez|meza|mezem|maz|partner|konkubent|ojciec|ojca|matk|dziecko|dziecka|dzieci|corka|corki|syn[aeu]?(?![a-z])|rodzin|bylym?|byla zona|sasiad|tesc|brat|siostr)/;
 
 // Nośnik albo dokument, którego utrata jest naruszeniem ochrony danych.
 // „Zgubiłem" i „skradziono" same nie wystarczają: w kancelarii gubi się też
@@ -77,23 +88,23 @@ const KATEGORIE_ESKALACJI_PRAWNE = [
     id: "zatrzymanie",
     pilne: true,
     // Jednoznaczne: w kancelarii nie znaczą nic innego.
-    zdarzenie: /(?<![a-z0-9])(aresztowan|tymczasowe aresztowanie|doprowadzeni do sadu|przeszukani|postawiono zarzuty|postawili zarzuty|w charakterze podejrzanego|48 godzin|na dolku|izbie zatrzyman|nakaz doprowadzenia|list gonczy|poszukiwan listem)/,
+    zdarzenie: /(?<![a-z0-9])(aresztowan|tymczasowe aresztowanie|doprowadzeni do sadu|przeszukani|postawi[a-z]{0,5} ([a-z]+ ){0,2}zarzut|w charakterze podejrzanego|48 godzin|na dolku|izbie zatrzyman|nakaz doprowadzenia|list gonczy|poszukiwan listem)/,
     dwuznaczne: [
       { wzorzec: /(?<![a-z0-9])zatrzyma/, kontekst: () => ORGAN_SCIGANIA },
-      { wzorzec: /(?<![a-z0-9])(zabrala|zabrali|wezwal[ai]?)/, kontekst: () => ORGAN_SCIGANIA },
+      { wzorzec: /(?<![a-z0-9])(zabral[a-z]{0,4}|wezwal[a-z]{0,4}|wezwano)/, kontekst: () => ORGAN_SCIGANIA },
     ],
     tekst: `NAJPIERW POWIADOM: dzwoń do adwokata prowadzącego natychmiast, o każdej porze — przy zatrzymaniu terminy liczy się w godzinach, nie w dniach. Zapisz godzinę zatrzymania i jednostkę, w której osoba przebywa. Nie ustalaj niczego z organem samodzielnie i nie przekazuj informacji rodzinie bez zgody adwokata.`,
   },
   {
     id: "zagrozenie_osoby",
     pilne: true,
-    zdarzenie: /(?<![a-z0-9])(przemoc domow|niebiesk[aą]? kart|pobil|pobicie|dusil|udusi|nekan|neka(?![a-z])|nekaj|stalking|gwalt|zgwalc|molestowan|samobojcz|odebrac sobie zycie|boi sie o zycie|boi sie wrocic|ucieka z domu|nakaz opuszczenia|zakaz zblizania|schronisk|osrodek interwencji)/,
+    zdarzenie: /(?<![a-z0-9])(przemoc domow|niebieska? kart|pobil|pobicie|dusil|udusi|nekan|neka(?![a-z])|nekaj|stalking|gwalt|zgwalc|molestowan|samobojcz|odebrac sobie zycie|boi sie o zycie|boi sie wrocic|ucieka z domu|nakaz opuszczenia|zakaz zblizania|schronisk|osrodek interwencji)/,
     // „Grozi" jest dwuznaczne w sposób szczególnie mylący w tej branży:
     // „grozi mu kara pozbawienia wolności" to opis sytuacji procesowej, nie
     // zagrożenie osoby. Dopełnieniem jest CZŁOWIEK, nie sankcja.
     dwuznaczne: [
       { wzorzec: /(?<![a-z0-9])(grozi|grozb|grozil)/, kontekst: () => OSOBA_ZAGROZONA },
-      { wzorzec: /(?<![a-z0-9])(bije|bil |pobi)/, kontekst: () => OSOBA_ZAGROZONA },
+      { wzorzec: /(?<![a-z0-9])(bije|bil[aeioy]?(?![a-z])|pobi)/, kontekst: () => OSOBA_ZAGROZONA },
     ],
     // TEKST DLA KLIENTA, nie dla zespołu — jedyna kategoria z ramką publiczną.
     // Powód jest zmierzony: 22.08.2026 osoba pytająca „mąż mi grozi, boję się
@@ -113,9 +124,9 @@ const KATEGORIE_ESKALACJI_PRAWNE = [
     // Dochodzi drugi powód, którego nie ma przy innych kategoriach: przy utracie
     // akt w grę wchodzi tajemnica adwokacka, czyli obowiązek bezterminowy.
     pilne: true,
-    zdarzenie: /(?<![a-z0-9])(wyciek danych|wyciekly dane|naruszenie ochrony danych|do zlego adresata|do niewlasciwego adresata|nie do tego adresata|pomylkowo (wyslal|wyslalem|wyslano|wysylajac)|wyslalem (nie )?do|72 godzin|zostawilem w (pociagu|taksowce|autobusie|restauracji)|wlamanie|zaszyfrowal|ransomware|phishing)/,
+    zdarzenie: /(?<![a-z0-9])(wyciek danych|wyciekly dane|naruszenie ochrony danych|do zlego adresata|do niewlasciwego adresata|nie do tego adresata|pomylkowo (wyslal[a-z]{0,4}|wyslano|wysylajac)|wyslal[a-z]{0,4} (nie )?do|72 godzin|zostawil[a-z]{0,4} w (pociagu|taksowce|autobusie|restauracji)|zostawiono w (pociagu|taksowce|autobusie|restauracji)|wlamanie|zaszyfrowal|ransomware|phishing)/,
     dwuznaczne: [
-      { wzorzec: /(?<![a-z0-9])(zgubi|zagubi|zostawilem|zostawila)/, kontekst: () => NOSNIK_DANYCH },
+      { wzorzec: /(?<![a-z0-9])(zgubi|zagubi|zostawil[a-z]{0,4}|zostawiono)/, kontekst: () => NOSNIK_DANYCH },
       { wzorzec: /(?<![a-z0-9])(skradzion|kradziez|ukradl|ukradziono)/, kontekst: () => NOSNIK_DANYCH },
     ],
     tekst: `NAJPIERW POWIADOM: zgłoś zdarzenie adwokatowi prowadzącemu i wspólnikowi zarządzającemu jeszcze dzisiaj — na zgłoszenie naruszenia ochrony danych są 72 godziny liczone od jego stwierdzenia, a przy aktach sprawy w grę wchodzi też tajemnica adwokacka. Nie kasuj korespondencji, nie poprawiaj wpisów i nie kontaktuj się samodzielnie z adresatem ani z klientem — treść zawiadomienia ustala wspólnik zarządzający.`,

@@ -123,6 +123,57 @@ PRZYPADKI.push(
   ["Pracownika ukasila zmija, doznal urazu", "wypadek", WEW],
   ["grozi zawaleniem sie wykop przy fundamencie", "zagrozenie_zycia", WEW],
 );
+// --- PIERWSZA OSOBA I FORMY BEZOSOBOWE (24.08.2026) ---
+//
+// Zmierzone przed poprawką: eskalacja wyzwalała się na 5 z 12 realnych zgłoszeń
+// urazu pisanych potocznie. Zgłasza najczęściej TEN, KOMU SIĘ STAŁO, a słownik
+// znał wyłącznie trzecią osobę: `spadl z` nie dopasowywało się do „spadlem z".
+//
+// Reguła jest morfologiczna, nie leksykalna: czas przeszły to rdzeń + „l" +
+// końcówka osoby, więc rdzeń urwany na „l" pokrywa cały paradygmat, a wzorzec
+// psuje się dopiero wtedy, gdy PO tym „l" doklei się coś na sztywno.
+// Konstrukcje bezosobowe z celownikiem („urwało mi palec") rozstrzyga CZĘŚĆ
+// CIAŁA, nie zaimek — celownik mówi KOMU, ale nie mówi CZY.
+PRZYPADKI.push(
+  // pierwsza osoba
+  ["spadlem z rusztowania i nie moge wstac", "wypadek", WEW],
+  ["zlecialem ze stropu, boli mnie kregoslup", "wypadek", WEW],
+  ["przycialem sobie palec", "wypadek", WEW],
+  ["walnalem sie w leb o belke", "wypadek", WEW],
+  ["jebnalem sie z drabiny", "wypadek", WEW],
+  ["stracilem przytomnosc na chwile po upadku", "wypadek", WEW],
+  // formy bezosobowe z celownikiem
+  ["urwalo mi palec pila tarczowa", "wypadek", WEW],
+  ["pekla mi dupa", "wypadek", WEW],
+  ["spadl mi mlotek na noge", "wypadek", WEW],
+  ["zmiazdzylo mi stope paleta", "wypadek", WEW],
+  ["urwalo sie rusztowanie przy scianie", "zagrozenie_zycia", WEW],
+  ["osunela sie skarpa wykopu na ludzi", "zagrozenie_zycia", WEW],
+  // rejestr potoczny w nazwie czesci ciala
+  ["uderzylem sie w glowe o rusztowanie", "wypadek", WEW],
+  ["kolega sie zajebal z dachu, nie rusza sie", "wypadek", WEW],
+
+  // NEGATYWNE — te same nowe rdzenie BEZ swojego dopełnienia.
+  // To one pilnują, żeby nie wrócił stan z 21.08.2026.
+  ["spadlem z roweru w weekend", null, WEW],
+  ["urwalo mi sie polaczenie", null, WEW],
+  ["pekla mi opona w drodze na budowe", null, WEW],
+  ["spadla nam wydajnosc na rusztowaniu", null, WEW],
+  ["cena spadla ze 100 do 80 zlotych", null, WEW],
+  ["mam urwanie glowy z tym terminem", null, WEW],
+  ["peknieta rura w lazience u klienta", null, WEW],
+  ["przycialem deske na wymiar", null, WEW],
+  ["skrecilismy rusztowanie zgodnie z instrukcja", null, WEW],
+  ["walnalem w stol z nerwow na naradzie", null, WEW],
+  ["zajebiscie nam idzie robota na rusztowaniu", null, WEW],
+  ["jebnal deszcz i przerwalismy prace na dachu", null, WEW],
+  ["uderzenie w cene materialu po negocjacjach", null, WEW],
+  ["rozwalilismy stary mur mlotem", null, WEW],
+  ["przywalilo nas robota przed odbiorem", null, WEW],
+  ["biodrowka i szelki - gdzie je pobrac", null, WEW],
+  ["grabie i taczki sa w kontenerze", null, WEW],
+);
+
 
 // --- ROZSTRZYGANIE PRZY WIELU TRAFIENIACH ---
 //

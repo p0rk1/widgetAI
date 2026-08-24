@@ -2694,6 +2694,47 @@ ani w warstwach weryfikacji.
 szablonu zamknął literał, `node --check` przeszedł, `import` się wywalił. Od tej
 pory pilnuje tego sekcja 9 w `test-motyw.mjs` — strażnik zamiast pamięci.
 
+### Tekst na powierzchniach barwnych — druga część wyprowadzenia (24.08.2026)
+
+Jasny motyw obnażył błąd, którego ciemny nie mógł pokazać: **kolory tekstu
+w ramkach eskalacyjnych były dobrane pod grafit i nie wyszły do motywu.**
+Zmierzone wobec rzeczywistego tła ramki:
+
+| | Przed | Po |
+|---|---|---|
+| Kancelaria, ramka PILNE | **1.14** | **9.95** |
+| Kancelaria, ramka PROCEDURA | **1.03** | 7.41 |
+| Kancelaria, tag eskalacji zwykły | 4.18 | 6.41 |
+| BudMax, tag eskalacji pilny | 4.33 | 7.37 |
+| BudMax, numer kafla | 4.66 | 6.14 |
+| BudMax, ramka PILNE | 8.00 | **10.80** |
+
+**Nic w ciemnym motywie się nie pogorszyło — dwie najsłabsze pozycje BudMaksu
+poprawiły się przy okazji**, bo ten sam token służy obu.
+
+### Dlaczego to przetrwało pierwsze wyprowadzenie
+
+Podmiana kolorów na tokeny szła po **ręcznie napisanej liście** wzorców: wszystkie
+`rgba()` z trójką RGB plus słownik siedmiu hexów. Trzy kolory nie były w słowniku
+i przeszły — dwa teksty ramek (`#FFBDBD`, `#FFE0B2`) i tekst przycisku wysyłania
+(`#0A0D11`, który na granacie kancelarii dawał kontrast 1.99).
+
+**Wniosek metodologiczny:** lista podmian nie jest kontrolą, tylko narzędziem.
+Kontrolą jest **strażnik na wyniku** — sekcja 11 w `test-motyw.mjs` żąda, żeby
+w plikach interfejsu nie było ŻADNEJ wartości barwnej. To ten sam wzorzec, co
+przy strażniku odwróconych apostrofów: zamiast pamiętać o liście, sprawdzamy stan.
+
+### Nowe tokeny
+
+`pilneTekst`, `procTekst`, `podstawaTekst`, `etykietaNr`, `tagPilnyTekst`,
+`tagZwyklyTekst`, `naAkcencie` — siedem wartości na klienta, wyliczonych wobec
+złożonego tła, nie wobec tła strony.
+
+**Próg ramki pilnej jest osobny i najwyższy:** ≥ 7 **oraz mocniejszy od każdej
+innej powierzchni barwnej na ekranie**. Pierwsze podejście dało BudMaksowi 9.25
+przy 9.65 na ramce proceduralnej — formalnie dobrze, ale komunikat ratunkowy był
+słabszy od informacyjnego. Test to wyłapał i wartość poszła w górę do 10.80.
+
 ### Czego nie ruszono
 
 Zero zmian w logice, treści dokumentacji, warstwach weryfikacji, eskalacji,

@@ -38,7 +38,7 @@ body::before{
 .gate p{color:var(--dim);font-size:13px;line-height:1.6;margin:0 0 22px}
 .gate input{width:100%;background:color-mix(in srgb, var(--chalk) 2.5%, transparent);border:1px solid var(--line);color:var(--chalk);padding:12px 14px;font-family:var(--font-mono);font-size:13px;transition:border-color .25s,background .25s}
 .gate input:focus{outline:none;border-color:var(--hi);background:color-mix(in srgb, var(--hi) 4%, transparent)}
-.gate button{width:100%;margin-top:11px;background:var(--hi);color:var(--void);border:none;padding:12px;font-family:var(--font-naglowek);font-weight:700;font-size:12px;letter-spacing:.07em;text-transform:uppercase;cursor:pointer;transition:transform .18s var(--sp),box-shadow .25s}
+.gate button{width:100%;margin-top:11px;background:var(--hi);color:var(--na-akcencie);border:none;padding:12px;font-family:var(--font-naglowek);font-weight:700;font-size:12px;letter-spacing:.07em;text-transform:uppercase;cursor:pointer;transition:transform .18s var(--sp),box-shadow .25s}
 .gate button:hover{transform:translateY(-2px);box-shadow:var(--cien)}
 .gate .err{color:var(--warn);font-size:12px;margin-top:12px;display:none;font-family:var(--font-mono)}
 

@@ -194,6 +194,15 @@ Zanim odpowiesz, sprawdź, czy fragment, z którego korzystasz, dotyczy DOKŁADN
         line: "#34383D", lineSoft: "#26292D",
         chalk: "#E8E6E3", mute: "#A2A5A8", dim: "#8A8F94",
         hi: "#E2662C", blue: "#7BA3B8", ok: "#6FA987", warn: "#D2A24C", danger: "#D96A5F",
+        // TEKST NA POWIERZCHNIACH BARWNYCH. Liczony wobec złożonego tła ramki,
+        // nie wobec tła strony — to dwa różne kolory i stąd brał się błąd.
+        // Ramka pilna ma najwyższy kontrast na ekranie: to komunikat ratunkowy.
+        // Tekst NA wypelnieniu akcentem (przycisk wyslania). Byl wpisany
+        // na sztywno jako prawie czarny — na granacie kancelarii znikal.
+        naAkcencie: "#0A0D11",
+        pilneTekst: "#FFE8E5", procTekst: "#FFE0B2",
+        podstawaTekst: "#7BA3B8", etykietaNr: "#A2A5A8",
+        tagPilnyTekst: "#F0A49E", tagZwyklyTekst: "#D2A24C",
         cien: "0 18px 48px -20px rgba(0,0,0,.55)",
       },
     },
@@ -360,6 +369,12 @@ Zanim odpowiedzisz, sprawdź, czy fragment, z którego korzystasz, dotyczy DOKŁ
         line: "#CFCAC0", lineSoft: "#DEDAD2",
         chalk: "#1B1E22", mute: "#55595F", dim: "#6B6F75",
         hi: "#26456B", blue: "#4A6B84", ok: "#3E6B52", warn: "#7E5C1C", danger: "#8B2F28",
+        // Odpowiedniki dla jasnego tła. Wartości z ciemnego motywu (blade róż
+        // i blady bursztyn) dawały tu kontrast 1.14 i 1.03 — tekst niewidoczny.
+        naAkcencie: "#F4F3EF",
+        pilneTekst: "#521A15", procTekst: "#5C3F0F",
+        podstawaTekst: "#3E5C74", etykietaNr: "#54595F",
+        tagPilnyTekst: "#7A2620", tagZwyklyTekst: "#5C4211",
         cien: "0 8px 24px -12px rgba(27,30,34,.16)",
       },
     },

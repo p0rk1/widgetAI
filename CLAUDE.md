@@ -335,10 +335,21 @@ i kroju, **nie edycja plików interfejsu**.
   „WEWNĘTRZNY". To wspólny kształt w trzech plikach, więc reguła stoi
   w **`motywCss()`** — jedynym arkuszu, który te pliki dzielą — a nie przy
   pojedynczej klasie
+- **Kontrast liczy się wobec RZECZYWISTEGO tła, nie tła strony.** Tło ramki
+  eskalacyjnej to `color-mix(akcent X%, transparent)` położony na powierzchni
+  pod spodem — inny kolor niż tło strony. Liczenie wobec strony przepuściło
+  24.08.2026 tekst o kontraście **1.14**. Progi: ramka **pilna ≥ 7 i mocniejsza
+  od każdej innej powierzchni barwnej** (to komunikat ratunkowy), reszta ≥ 4.5,
+  obwódki ≥ 3. Pilnuje tego sekcja 10 w `test-motyw.mjs`
+- **W plikach interfejsu nie ma ŻADNEJ wartości barwnej.** Nie „mało", tylko
+  zero: każdy kolor przychodzi z `motywCss()`. Ręcznie pisana lista podmian
+  przepuściła 24.08.2026 trzy kolory, więc zastąpiła ją sekcja 11
+  w `test-motyw.mjs`. Jedyny wyjątek to `#000` w `mask-image` — punkt maski,
+  nie kolor
 - **`--dim` ma mieć kontrast ≥ 4:1** wobec `--void`. Sprawdzone 24.08.2026:
   było 3.55 (ciemny) i 2.92 (jasny) przy 9,5-pikselowych etykietach.
 
-**Test:** `node test-motyw.mjs` — 114 przypadków. Uruchamiać po każdej zmianie
+**Test:** `node test-motyw.mjs` — 135 przypadków. Uruchamiać po każdej zmianie
 w motywie, w `ui` i w plikach interfejsu.
 
 ## Separacja przestrzeni wiedzy

@@ -143,5 +143,65 @@ for (const [nazwa, szablon] of SZABLONY) {
     zle.length === 0, zle.join(" | ").slice(0, 120));
 }
 
+console.log("=== 10. Kontrast tekstu wobec RZECZYWISTEGO tła ===");
+// Tło ramki eskalacyjnej to nie tło strony: to `color-mix(akcent X%, transparent)`
+// położony na powierzchni pod spodem. Liczenie kontrastu wobec tła strony
+// przepuściło 24.08.2026 tekst o kontraście 1.14 — praktycznie niewidoczny.
+const doRgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+const jasnosc = (rgb) => {
+  const c = rgb.map((v) => v / 255).map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+  return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+};
+const kontrast = (a, b) => {
+  const [l1, l2] = [jasnosc(doRgb(a)), jasnosc(doRgb(b))];
+  return +((Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05)).toFixed(2);
+};
+// Odpowiednik `color-mix(in srgb, akcent P%, transparent)` na powierzchni `pod`.
+const zloz = (akcent, procent, pod) => {
+  const [a, p, f] = [doRgb(akcent), doRgb(pod), procent / 100];
+  return "#" + a.map((v, i) => Math.round(v * f + p[i] * (1 - f)))
+    .map((v) => v.toString(16).padStart(2, "0")).join("");
+};
+
+for (const klient of Object.values(KLIENCI)) {
+  const k = klient.motyw.kolory;
+  const przypadki = [
+    // [opis, kolor tekstu, tło rzeczywiste, próg]
+    // Ramka pilna ma najwyższy próg na ekranie — to komunikat ratunkowy.
+    ["ramka PILNE", k.pilneTekst, zloz(k.danger, 14, k.panel), 7],
+    ["ramka PROCEDURA", k.procTekst, zloz(k.warn, 12, k.panel), 4.5],
+    ["linia Podstawa:", k.podstawaTekst, k.panel, 4.5],
+    ["numer kafla", k.etykietaNr, k.panel, 4.5],
+    ["tag eskalacji pilny", k.tagPilnyTekst, zloz(k.danger, 15, k.void), 4.5],
+    ["tag eskalacji zwykły", k.tagZwyklyTekst, zloz(k.warn, 12, k.void), 4.5],
+    ["tekst na akcencie", k.naAkcencie, k.hi, 4.5],
+    ["obwódka ramki pilnej", k.danger, zloz(k.danger, 14, k.panel), 3],
+  ];
+  for (const [opis, kolor, tlo, prog] of przypadki) {
+    const w = kontrast(kolor, tlo);
+    sprawdz(`${klient.id}: ${opis} — kontrast ${w} ≥ ${prog}`, w >= prog, `${kolor} na ${tlo}`);
+  }
+  // Ramka pilna musi być najmocniejsza spośród tekstów na powierzchniach barwnych.
+  const pilny = kontrast(k.pilneTekst, zloz(k.danger, 14, k.panel));
+  const proc = kontrast(k.procTekst, zloz(k.warn, 12, k.panel));
+  sprawdz(`${klient.id}: ramka pilna mocniejsza od proceduralnej`, pilny >= proc, `${pilny} vs ${proc}`);
+}
+
+console.log("=== 11. Żadnego koloru poza motywem ===");
+// 24.08.2026 dwa kolory tekstu ramek i jeden kolor tekstu przycisku przetrwały
+// wyprowadzanie motywu, bo lista podmian była pisana ręcznie. Ten strażnik
+// zastępuje listę: w plikach interfejsu nie ma prawa być ŻADNEJ wartości
+// barwnej — wszystko przychodzi z `motywCss()`.
+const { readFileSync } = await import("node:fs");
+for (const f of ["app-internal.js", "panel-internal.js", "panel.js"]) {
+  const zrodlo = readFileSync(f, "utf8");
+  const hexy = [...zrodlo.matchAll(/#[0-9a-fA-F]{3,8}\b/g)].map((m) => m[0])
+    // #000 w `mask-image` to punkt maski, nie kolor interfejsu.
+    .filter((h) => h !== "#000");
+  const rgby = [...zrodlo.matchAll(/rgba?\(\s*\d+\s*,/g)].map((m) => m[0]);
+  sprawdz(`${f}: brak wpisanych kolorów`, hexy.length === 0 && rgby.length === 0,
+    [...hexy, ...rgby].join(" "));
+}
+
 console.log(`\n---\nzdane: ${zdane}, oblane: ${oblane}`);
 process.exit(oblane ? 1 : 0);

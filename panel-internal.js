@@ -69,8 +69,8 @@ body::before{
 .q .txt{flex:1;line-height:1.5;color:var(--chalk)}
 .q .meta{font-family:var(--font-mono);font-size:9.5px;color:var(--dim);margin-top:4px;letter-spacing:.05em;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .tag-esc{padding:2px 6px;font-size:8.5px;text-transform:uppercase;letter-spacing:.06em}
-.tag-esc.pilne{background:color-mix(in srgb, var(--danger) 15%, transparent);border:1px solid var(--danger);color:var(--danger)}
-.tag-esc.standard{background:color-mix(in srgb, var(--warn) 12%, transparent);border:1px solid var(--warn);color:var(--warn)}
+.tag-esc.pilne{background:color-mix(in srgb, var(--danger) 15%, transparent);border:1px solid var(--danger);color:var(--tag-pilny-tekst)}
+.tag-esc.standard{background:color-mix(in srgb, var(--warn) 12%, transparent);border:1px solid var(--warn);color:var(--tag-zwykly-tekst)}
 
 /* grid cards for escalations */
 .grid-esc{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;padding:12px 0 6px}

@@ -68,8 +68,8 @@ body::before{
   cursor:pointer;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;
   transition:all .2s var(--sp);
 }
-.chip-nr{font-family:var(--font-mono);font-size:9px;color:var(--dim);margin-right:7px;letter-spacing:.06em}
-.chip:hover .chip-nr,.chip.danger-chip .chip-nr{color:inherit;opacity:.7}
+.chip-nr{font-family:var(--font-mono);font-size:9px;color:var(--etykieta-nr);margin-right:7px;letter-spacing:.06em}
+.chip:hover .chip-nr,.chip.danger-chip .chip-nr{color:inherit}
 .chip:active{transform:scale(.97)}
 .chip:hover{border-color:var(--hi);background:color-mix(in srgb, var(--hi) 6%, transparent)}
 .chip.danger-chip{border-color:color-mix(in srgb, var(--danger) 35%, transparent);color:var(--danger)}
@@ -100,10 +100,10 @@ body::before{
   font-family:var(--font-mono);font-size:11.5px;letter-spacing:.02em;
 }
 .alert-box.pilne{
-  background:color-mix(in srgb, var(--danger) 14%, transparent);border:1px solid var(--danger);color:#FFBDBD;
+  background:color-mix(in srgb, var(--danger) 14%, transparent);border:1px solid var(--danger);color:var(--pilne-tekst);
 }
 .alert-box.standard{
-  background:color-mix(in srgb, var(--warn) 12%, transparent);border:1px solid var(--warn);color:#FFE0B2;
+  background:color-mix(in srgb, var(--warn) 12%, transparent);border:1px solid var(--warn);color:var(--proc-tekst);
 }
 .alert-box .icon{font-weight:bold;font-size:13px}
 
@@ -117,7 +117,7 @@ body::before{
 }
 .msg.bot .podstawa{
   margin-top:12px;padding-top:8px;border-top:1px dashed var(--line);
-  font-family:var(--font-mono);font-size:10px;color:var(--blue);letter-spacing:.04em;
+  font-family:var(--font-mono);font-size:10px;color:var(--podstawa-tekst);letter-spacing:.04em;
 }
 
 /* meta time */
@@ -169,7 +169,7 @@ textarea::placeholder{color:var(--dim)}
 
 .btn-send{
   width:38px;height:38px;display:grid;place-items:center;
-  background:var(--hi);color:#0A0D11;border:none;cursor:pointer;
+  background:var(--hi);color:var(--na-akcencie);border:none;cursor:pointer;
   flex-shrink:0;transition:all .2s var(--sp);
 }
 .btn-send:hover{background:color-mix(in srgb, var(--hi) 84%, var(--chalk));transform:translateY(-1px)}

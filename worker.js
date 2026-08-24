@@ -401,6 +401,10 @@ function motywCss(klient) {
   --chalk:${k.chalk};--mute:${k.mute};--dim:${k.dim};
   --hi:${k.hi};--blue:${k.blue};--ok:${k.ok};--warn:${k.warn};--danger:${k.danger};
   --cien:${k.cien};
+  --na-akcencie:${k.naAkcencie};
+  --pilne-tekst:${k.pilneTekst};--proc-tekst:${k.procTekst};
+  --podstawa-tekst:${k.podstawaTekst};--etykieta-nr:${k.etykietaNr};
+  --tag-pilny-tekst:${k.tagPilnyTekst};--tag-zwykly-tekst:${k.tagZwyklyTekst};
   --promien:${m.promien};
   --trop:${m.tropNaglowka};
   --font-naglowek:${m.fontNaglowek};

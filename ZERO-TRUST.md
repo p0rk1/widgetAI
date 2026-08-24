@@ -646,7 +646,7 @@ dla jednego wpisu, ale nie da się jej ominąć przy drugim.
 
 ---
 
-## Krok 10. Drugi klient — kancelaria ⬜ do zrobienia
+## Krok 10. Drugi klient — kancelaria ✅ zrobione 24.08.2026
 
 Ten krok powtarza się **dla każdego nowego klienta**. Zmienia się w nim tylko
 nazwa — reszta jest identyczna, bo rola wynika z hosta, a nie z polityki.
@@ -737,3 +737,28 @@ Potem `wrangler deploy`.
    Pilnuje tego sekcja 5 w `test-access.mjs`, ale na żywo warto zobaczyć raz.
 
 Dopiero po tym kroku przełącznik demo prowadzi pod adresy, które istnieją.
+
+### 10.6. Wynik — zmierzone 24.08.2026
+
+Obie aplikacje Access istnieją, AUD-y wpisane, wdrożone.
+
+| Host | Kod | Znaczenie |
+|---|---|---|
+| `kancelaria.know-base.app` | 405 | poprawnie — host publiczny przyjmuje tylko `POST /` |
+| `kancelaria-pracownik` | **302** | Access przechwytuje przed Workerem |
+| `kancelaria-wlasciciel` | **302** | jw., osobna aplikacja |
+
+Rozdzielność AUD-ów potwierdzona **sekcją 6 w `test-access.mjs`** (7 przypadków):
+token pracownika kancelarii nie otwiera jej panelu właściciela, token panelowy
+nie otwiera hostu pracowniczego, a **żaden token BudMaksu nie otwiera hostu
+kancelarii** ani odwrotnie. Do 24.08.2026 rozdzielność między klientami nie była
+sprawdzana wcale — istniał tylko jeden klient z hostami.
+
+**Czego ten pomiar NIE obejmuje:** sprawdzenia na żywym tokenie z logowania.
+Sekcja 6 podstawia własne klucze, więc dowodzi mechanizmu, nie konfiguracji
+polityk w dashboardzie. Żywą ścieżkę sprawdza się tak, jak opisano w kroku 8
+(sposób A — ciasteczko z przeglądarki).
+
+**Zostaje jedna rzecz po stronie właściciela:** upewnić się, że polityka
+aplikacji `Kancelaria — panel właściciela` dopuszcza **jeden adres e-mail**,
+a nie całą domenę. To ten sam warunek, który wisi przy panelu BudMaksu.

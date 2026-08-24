@@ -147,5 +147,38 @@ await sprawdz("brak ACCESS_AUD_PANEL = 503 na hoscie panelowym, nie ciche 403",
 await sprawdz("brak ACCESS_AUD_PANEL nie psuje hostu wewnetrznego",
   naWewnetrznym(await zrobToken({ aud: AUD })), ENV_BEZ_PANELU, { ok: true });
 
+console.log("\n=== 6. ROZDZIELENIE AUD U DRUGIEGO KLIENTA (kancelaria) ===");
+// Sekcja 5 sprawdza mechanizm na BudMaksie. Ta powtarza go na kancelarii,
+// bo od 24.08.2026 to nie jest juz teoria: oba hosty kancelarii stoja za
+// wlasnymi aplikacjami Access, a `audVars` wskazuje im inne zmienne.
+// Gdyby Worker sprawdzal "ktorykolwiek ze znanych AUD-ow", token pracownika
+// kancelarii otwieralby panel wlasciciela kancelarii — i to bez sladu.
+const AUD_K = "aud-kancelaria-pracownik-1111";
+const AUD_K_PANEL = "aud-kancelaria-panel-2222";
+const ENV_K = {
+  ACCESS_TEAM_DOMAIN: TEAM,
+  ACCESS_AUD: AUD, ACCESS_AUD_PANEL: AUD_PANEL,
+  ACCESS_AUD_KANCELARIA: AUD_K, ACCESS_AUD_KANCELARIA_PANEL: AUD_K_PANEL,
+};
+const kPanel = (token) => zadanie(token, { url: "https://kancelaria-wlasciciel.know-base.app/stats" });
+const kWewn = (token) => zadanie(token, { url: "https://kancelaria-pracownik.know-base.app/internal" });
+
+await sprawdz("kancelaria: token panelowy otwiera panel",
+  kPanel(await zrobToken({ aud: AUD_K_PANEL })), ENV_K, { ok: true });
+await sprawdz("kancelaria: token PRACOWNIKA nie otwiera panelu wlasciciela",
+  kPanel(await zrobToken({ aud: AUD_K })), ENV_K, { ok: false, status: 401 });
+await sprawdz("kancelaria: token panelowy nie otwiera hostu pracowniczego",
+  kWewn(await zrobToken({ aud: AUD_K_PANEL })), ENV_K, { ok: false, status: 401 });
+await sprawdz("kancelaria: token pracownika otwiera host pracowniczy",
+  kWewn(await zrobToken({ aud: AUD_K })), ENV_K, { ok: true });
+
+// Rozdzielnosc MIEDZY KLIENTAMI — token BudMaksu nie ma wstepu do kancelarii.
+await sprawdz("token pracownika BudMaksu nie otwiera hostu kancelarii",
+  kWewn(await zrobToken({ aud: AUD })), ENV_K, { ok: false, status: 401 });
+await sprawdz("token panelowy BudMaksu nie otwiera panelu kancelarii",
+  kPanel(await zrobToken({ aud: AUD_PANEL })), ENV_K, { ok: false, status: 401 });
+await sprawdz("token kancelarii nie otwiera hostu BudMaksu",
+  naWewnetrznym(await zrobToken({ aud: AUD_K })), ENV_K, { ok: false, status: 401 });
+
 console.log(`\n---\nzdane: ${zdane}, oblane: ${oblane}\n`);
 process.exit(oblane ? 1 : 0);

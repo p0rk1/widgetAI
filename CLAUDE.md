@@ -32,9 +32,9 @@ każdej sesji, a historia decyzji jest potrzebna kilka razy w miesiącu.
   i nazwy w interfejsach są zależne od klienta. Nieznany host dostaje 404
 - **Drugi klient: kancelaria** — 26 fragmentów publicznych, 25 wewnętrznych,
   9 kategorii eskalacji, obie przestrzenie zaindeksowane. **Trzy trasy w `wrangler.toml` są od 24.08.2026**, ale
-  `ACCESS_AUD_KANCELARIA*` są puste — host publiczny odpowiada, a pracowniczy
-  i właścicielski oddają **503 z nazwą brakującej zmiennej** (fail-closed).
-  Dwie aplikacje Access do utworzenia: `ZERO-TRUST.md`, krok 10
+  **obie aplikacje Access istnieją, AUD-y wpisane (24.08.2026)** — wszystkie
+  trzy hosty odpowiadają jak u BudMaksu: publiczny 405 na GET, pracowniczy
+  i właścicielski 302 na ekran logowania
 
 **Ostatnie sesje, w skrócie:**
 
@@ -247,7 +247,7 @@ narzędzia wdrożeniowe, do których klient nie ma mieć dostępu nawet zalogowa
   Zmierzone 21.08.2026: zanim aplikacja Access powstała, host właściciela serwował
   panel każdemu — host i trasa istnieją wcześniej niż ochrona.
 
-**Test:** `node test-access.mjs` — 14 przypadków, podstawia własne klucze,
+**Test:** `node test-access.mjs` — 27 przypadków, podstawia własne klucze,
 więc sprawdza także przypadek pozytywny. Uruchamiać po każdej zmianie
 w weryfikacji tokenu.
 

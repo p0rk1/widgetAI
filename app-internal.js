@@ -43,14 +43,6 @@ body::before{
   border:1px solid var(--blue);color:var(--blue);background:color-mix(in srgb, var(--blue) 8%, transparent);
   text-transform:uppercase;letter-spacing:.06em;
 }
-.nav-links{margin-left:auto;display:flex;gap:8px}
-.btn-nav{
-  background:transparent;border:1px solid var(--line);color:var(--mute);
-  padding:6px 11px;font-family:var(--font-mono);font-size:10px;letter-spacing:.06em;
-  text-decoration:none;display:inline-flex;align-items:center;gap:5px;
-  transition:all .2s var(--sp);
-}
-.btn-nav:hover{border-color:var(--hi);color:var(--hi)}
 
 /* main layout */
 .main{
@@ -147,11 +139,6 @@ body::before{
   transition:border-color .2s;
 }
 .input-wrap:focus-within{border-color:var(--hi)}
-.mic-stan{
-  max-width:760px;margin:0 auto 6px;font-family:var(--font-mono);font-size:10px;
-  letter-spacing:.05em;color:var(--etykieta-nr);min-height:13px;
-}
-.mic-stan.blad{color:var(--tag-pilny-tekst)}
 
 textarea{
   flex:1;background:transparent;border:none;color:var(--chalk);
@@ -160,17 +147,6 @@ textarea{
 }
 textarea::placeholder{color:var(--dim)}
 
-.btn-icon{
-  width:38px;height:38px;display:grid;place-items:center;
-  background:transparent;border:1px solid transparent;color:var(--mute);
-  cursor:pointer;flex-shrink:0;transition:all .2s var(--sp);
-}
-.btn-icon:hover{color:var(--chalk);border-color:var(--line)}
-.btn-icon.active-rec{
-  color:var(--danger);border-color:var(--danger);background:color-mix(in srgb, var(--danger) 15%, transparent);
-  animation:pulse 1.2s infinite;
-}
-@keyframes pulse{0%{opacity:1}50%{opacity:.5}100%{opacity:1}}
 
 .btn-send{
   width:38px;height:38px;display:grid;place-items:center;
@@ -202,12 +178,6 @@ textarea::placeholder{color:var(--dim)}
     <span class="mark"></span>
     <span class="brand">{{marka}}</span>
     <span class="znacznik tag-int">baza procedur</span>
-    <div class="nav-links">
-      <a href="/panel" class="btn-nav" title="Panel kierownictwa">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>
-        PANEL
-      </a>
-    </div>
   </div>
 </div>
 
@@ -227,12 +197,8 @@ textarea::placeholder{color:var(--dim)}
 </div>
 
 <div class="bottom-dock">
-  <div class="mic-stan" id="mic-stan" role="status" aria-live="polite"></div>
   <div class="input-wrap">
-    <textarea id="inp" rows="1" placeholder="Zadaj pytanie lub podyktuj..."></textarea>
-    <button class="btn-icon" id="mic" title="Dyktowanie głosowe">
-      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
-    </button>
+    <textarea id="inp" rows="1" placeholder="Zadaj pytanie..."></textarea>
     <button class="btn-send" id="send" title="Wyślij">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
     </button>
@@ -267,98 +233,6 @@ $('inp').addEventListener('keydown', e => {
   }
 });
 
-// DYKTOWANIE (Web Speech API)
-//
-// Ograniczenie, o którym trzeba wiedzieć, zanim się tu cokolwiek "naprawi":
-// rozpoznawanie robi PRZEGLĄDARKA po swojej stronie, a API nie ma żadnego
-// pokrętła na hałas, mikrofon ani model. "lang" to jedyny parametr jakościowy,
-// jaki mamy — i jest ustawiony na "pl-PL". Jeżeli w hałasie wychodzi tekst
-// bez związku z wypowiedzią, to NIE jest defekt tego kodu i nie da się go tu
-// naprawić. Możemy tylko sprawić, żeby błąd był WIDOCZNY, zanim pytanie
-// pojedzie do modelu — stąd wyniki częściowe na żywo i linia stanu.
-const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
-let recognition = null;
-
-const BLEDY_MOWY = {
-  'no-speech': 'Nic nie usłyszałem — spróbuj bliżej mikrofonu.',
-  'audio-capture': 'Brak dostępu do mikrofonu w tym urządzeniu.',
-  'not-allowed': 'Przeglądarka zablokowała mikrofon. Zezwól na dostęp w ustawieniach strony.',
-  'service-not-allowed': 'Przeglądarka zablokowała usługę rozpoznawania mowy.',
-  'network': 'Rozpoznawanie mowy wymaga połączenia — sprawdź zasięg.',
-  'aborted': '',
-};
-
-function stanMikrofonu(tekst, blad){
-  const el = $('mic-stan');
-  el.textContent = tekst || '';
-  el.classList.toggle('blad', !!blad);
-}
-
-if(SpeechRec){
-  recognition = new SpeechRec();
-  recognition.lang = 'pl-PL';
-  // Wypowiedź w terenie bywa dłuższa niż jeden oddech, więc
-  // nagrywanie nie kończy się samo na pierwszej pauzie — kończy je przycisk.
-  recognition.continuous = true;
-  // Wyniki częściowe są tu po to, żeby użytkownik ZOBACZYŁ przekłamanie
-  // w trakcie mówienia, a nie dopiero po wysłaniu pytania.
-  recognition.interimResults = true;
-
-  // Tekst wpisany RęCZNIE jest nietykalny: dyktowanie dopisuje się za nim
-  // i nigdy go nie nadpisuje. "zebrane" trzyma zatwierdzone fragmenty tej sesji,
-  // żeby wynik częściowy mógł być podmieniany bez gubienia reszty.
-  let bazaTekstu = '';
-  let zebrane = '';
-
-  const zloz = (czesciowe) => [bazaTekstu, zebrane, czesciowe]
-    .map((x) => (x || '').trim()).filter(Boolean).join(' ');
-
-  recognition.onstart = () => {
-    bazaTekstu = $('inp').value;
-    zebrane = '';
-    $('mic').classList.add('active-rec');
-    stanMikrofonu('słucham… dotknij mikrofonu, żeby zakończyć');
-  };
-
-  recognition.onresult = (e) => {
-    let czesciowe = '';
-    for(let i = e.resultIndex; i < e.results.length; i++){
-      const wynik = e.results[i];
-      if(wynik.isFinal) zebrane += (zebrane ? ' ' : '') + wynik[0].transcript.trim();
-      else czesciowe += wynik[0].transcript;
-    }
-    $('inp').value = zloz(czesciowe);
-    $('inp').dispatchEvent(new Event('input'));
-  };
-
-  recognition.onerror = (e) => {
-    $('mic').classList.remove('active-rec');
-    const opis = BLEDY_MOWY[e.error];
-    stanMikrofonu(opis !== undefined ? opis : 'Rozpoznawanie mowy nie zadziałało.', true);
-  };
-
-  recognition.onend = () => {
-    $('mic').classList.remove('active-rec');
-    // Wynik częściowy nie jest zatwierdzony — zostaje tylko to, co finalne.
-    $('inp').value = zloz('');
-    $('inp').dispatchEvent(new Event('input'));
-    if(!$('mic-stan').classList.contains('blad')){
-      stanMikrofonu(zebrane ? 'sprawdź tekst przed wysłaniem' : '');
-    }
-  };
-
-  $('mic').onclick = () => {
-    if($('mic').classList.contains('active-rec')){
-      recognition.stop();
-    } else {
-      stanMikrofonu('');
-      try { recognition.start(); }
-      catch(err){ stanMikrofonu('Nie udało się uruchomić mikrofonu.', true); }
-    }
-  };
-} else {
-  $('mic').style.display = 'none';
-}
 
 function timeNow(){
   const d = new Date();

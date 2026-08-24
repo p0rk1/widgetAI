@@ -2755,6 +2755,12 @@ porządkowaniu.
 
 ## Dyktowanie głosowe — co jest nasze, a co przeglądarki (24.08.2026)
 
+> **NIEAKTUALNE W CZĘŚCI WDROŻENIOWEJ od 24.08.2026 (późniejsza decyzja tego
+> samego dnia):** funkcja została **usunięta** — patrz „Dyktowanie głosowe —
+> usunięte". Diagnoza poniżej **zostaje w mocy** i jest powodem usunięcia,
+> a nie zapisem stanu obecnego. Wyników częściowych i linii stanu opisanych
+> niżej **nie ma już w kodzie**.
+
 ### Hipoteza o języku: obalona
 
 Podejrzenie brzmiało, że `lang` jest domyślny albo angielski. **Nie jest** —
@@ -2898,3 +2904,223 @@ Znane wystąpienia:
 - **Tarasy** — brak fragmentu, złapane wcześniej, zabezpieczone regułą w prompcie
   („nie zakładaj, że jest oferowany"). Fragmentu nadal nie ma.
 - **Elewacje i docieplenia** — 17.08.2026, luka załatana fragmentem `c53`.
+
+## Długość odpowiedzi w trybie pracowniczym — pomiar przed zmianą promptu (24.08.2026)
+
+Zadanie brzmiało: „bot wypuszcza ścianę tekstu z tą samą formułką niezależnie od
+pytania, ma dopasowywać długość do zapytania". **Pomiar tej diagnozy nie
+potwierdził i prompt został nietknięty.**
+
+### Czy reguła kiedyś była i została usunięta
+
+Nie. Zdanie **„Dopasuj długość odpowiedzi do pytania" stoi w pierwszym akapicie
+OBU promptów** — publicznego i wewnętrznego — i stało tam przez cały czas.
+Przeszukanie `DECYZJE.md` nie znalazło ani jednej decyzji o jego usunięciu.
+Przywracać nie ma czego.
+
+### Pomiar: 30 pytań, tryb wewnętrzny, ścieżka `space=obie`
+
+Zdania liczone razem z linią `Podstawa:` i tekstem ramki eskalacyjnej.
+
+| Typ pytania | n | śr. zdań | śr. znaków |
+|---|---|---|---|
+| FAKT (jedna wartość) | 5 | **2.0** | 179 |
+| TAK/NIE | 5 | 3.8 | 316 |
+| PROCEDURA (kroki) | 5 | 6.2 | 691 |
+| WIELOCZĘŚCIOWE | 5 | 4.2 | 399 |
+| KRÓTKIE, pisane z telefonu | 5 | **3.0** | 246 |
+| URAZOWE | 5 | 7.2 | 701 |
+
+Odpowiedź na „szelki od ilu metrow" ma **dwa zdania, z czego jedno to
+`Podstawa:`** — czyli jedno zdanie treści na pytanie o jedną wartość. Długość
+rośnie tam, gdzie rosnąć powinna: przy procedurze i przy urazie.
+
+### Powtarzalne formułki — ile ich naprawdę jest
+
+Na 81 zdaniach pierwszego zestawu **żadne zdanie nie powtórzyło się w trzech
+odpowiedziach**. Jedyna formułka dopisywana zawsze to **linia `Podstawa:` —
+20 zdań na 81 (25%)**, wymagana przez prompt wewnętrzny i będąca jego sensem
+(pracownik musi móc sprawdzić podstawę w dokumencie).
+
+Powtórzenia pojawiają się **wyłącznie w klasie urazowej** i mają dwa źródła,
+oba zamierzone:
+
+1. **Ramka eskalacyjna** — stała w kodzie, 2 zdania, **26–29% długości**
+   odpowiedzi. Z definicji identyczna przy każdym wyzwoleniu tej kategorii.
+2. **Fragment `i04`** (procedura powypadkowa) jest liderem retrievalu dla
+   większości pytań urazowych, więc model przepisuje te same 3–5 kroków.
+
+To jest **to, co użytkownik zobaczył** — i to jest zachowanie poprawne. Przy
+wypadku ta sama formułka niezależnie od sformułowania pytania jest funkcją
+warstwy, nie jej defektem.
+
+### Wniosek
+
+Prompt zostaje bez zmian. Dopisanie kolejnego zdania o zwięzłości do promptu
+wewnętrznego byłoby **łataniem objawu, którego pomiar nie pokazał**, i wprost
+łamałoby zasadę „nie dodawać warstw bez zmierzenia problemu". Gdyby wskaźnik
+kiedyś się pogorszył, mierzy się go w podziale na typ pytania — bo średnia po
+wszystkich pytaniach miesza pytanie o jedną liczbę z procedurą powypadkową
+i niczego nie mówi.
+
+**Zauważone przy okazji, nienaprawione:** w trybie wewnętrznym model potrafi
+wpisać do treści odsyłacz w formie „postępuj zgodnie z procedurą opisaną
+w fragmencie: …". `leaksInstructions()` wycina odwołania do dokumentacji
+**tylko publicznie** i to jest decyzja z 19.08.2026 — pracownik o dokumentacji
+wie. Kształt jest kosmetyczny, nie mierzony szerzej.
+
+## Filtr wejściowy — wulgaryzmy i pytania spoza dziedziny: NIE BUDOWAĆ (24.08.2026)
+
+Rozstrzygnięcie przed budową, na wzór R1 i rewritera form adresatywnych.
+Oba pomysły odrzucone **pomiarem**, każdy z innego powodu.
+
+### Co dziś wykrywa wulgaryzmy
+
+**Nic.** Przeszukanie całego repozytorium nie znajduje ani jednej listy
+wulgaryzmów, ani jednego wzorca obscenicznego. Wyróżniona ramka, którą widać
+na zrzucie, to **ramka eskalacyjna** — `.alert-box.pilne` z `ramkaEskalacji()`
+w `app-internal.js`, zapalana polem `eskalacja.pilne` z odpowiedzi Workera,
+czyli kategorią `wypadek` ze słownika budowlanego. Zapalił ją **uraz, nie
+wulgaryzm**. Warstwa zadziałała dokładnie tak, jak zaprojektowano.
+
+### Pomiar 1: czy filtr wulgaryzmów zablokowałby zgłoszenia urazu
+
+Zestaw: 12 pytań łączących wulgaryzm z **realnym urazem** (tak, jak pisze
+człowiek, któremu coś się stało) plus 5 kontrolnych z samą frustracją.
+Filtr kandydacki: zwykła lista rdzeni — taka, jaka realnie powstałaby przy
+budowie tej warstwy.
+
+| Miara | Wynik |
+|---|---|
+| Zablokowane zgłoszenia urazu | **11 z 12** |
+| Z tego takie, które **dziś dostają poprawną odpowiedź** | **10** |
+| Z tego z numerem **112** w odpowiedzi | **7** |
+| Z tego z ramką eskalacyjną | **4** |
+| Zablokowane zdania z samą frustracją (kontrola) | 5 z 5 |
+
+Filtr trafia w **oba zbiory tak samo**, bo wulgaryzm **nie niesie żadnej
+informacji o tym, czy doszło do urazu**. To ten sam kształt błędu co „sprawa"
+w kancelarii i „człowiek" na budowie — z tą różnicą, że tam fałszywy alarm
+kosztował szum, a tu kosztowałby **odebranie numeru alarmowego osobie, która
+się wykrwawia**. Koszt jest asymetryczny i leży po najgorszej stronie.
+
+**Nie budować. Nie wracać bez zmiany, która odróżni wulgaryzm-frustrację od
+wulgaryzmu-bólu — a takiej zmiany nie ma, bo to ten sam wyraz.**
+
+### Pomiar 2: czy pytania spoza dziedziny wymagają filtra
+
+Podejrzenie było trafne. 10 pytań spoza dziedziny (stolica Australii, przepis
+na rosół, równanie, prośba o prompt systemowy, porada lekarska) przez
+**ścieżkę produkcyjną `POST /`** na hoście publicznym:
+
+- **9 z 10 kończy się fallbackiem** „Nie mam takich informacji…" (`gap: true`).
+- Jedyny przeciek to **prośba generatywna** („napisz wiersz"), i jest to
+  **wahanie modelu, nie kształt trwały**: powtórka 5 pytań generatywnych razy 4
+  przebiegi dała **21 fallbacków na 24**, a przeciekła treść była nieszkodliwa
+  (linijka wiersza o jesieni, zdanie odsyłające do biura).
+
+Filtr byłby **drugą warstwą robiącą to samo, co retrieval i weryfikacja robią
+dziś**. Jedynym zyskiem jest oszczędność jednego wywołania modelu — a nie
+bezpieczeństwo. Przy limicie 30 zapytań na godzinę z adresu i planie darmowym
+to nie jest powód do dokładania warstwy na powierzchni klienckiej.
+
+**Nie budować.** Gdyby kiedyś wrócić: powodem musi być **koszt zmierzony
+w rachunku**, nie przypuszczenie o bezpieczeństwie.
+
+### Znalezione przy okazji — defekt, którego nikt nie zamawiał
+
+Ten sam przebieg pokazał, że **eskalacja wyzwala się na 5 z 12 realnych
+zgłoszeń urazu pisanych potocznie**. Słownik budowlany zna formę trzeciej
+osoby, ale nie pierwszą i nie mowę potoczną:
+
+| Zgłoszenie | Ramka | Dlaczego nie |
+|---|---|---|
+| „spadlem z rusztowania i nie moge wstac" | brak | wzorzec to `spadl z`, forma `spadlem z` się nie dopasowuje |
+| „urwalo mi palec pila tarczowa" | brak | `urwal sie` nie pokrywa formy `urwalo` |
+| „kolega sie zajebal z dachu, nie rusza sie" | brak | brak rdzenia potocznego |
+| „pekla mi dupa" | brak (i LUKA) | brak jakiegokolwiek rdzenia |
+| „pierdolnalem sie w leb o belke" | brak | brak rdzenia potocznego |
+
+**Pierwsza osoba jest tu ważniejsza niż trzecia** — zgłasza najczęściej ten,
+komu się stało. Naprawa jest tania (formy pierwszoosobowe i potoczne dopisane
+do rdzeni, z zachowaniem reguły o dopełnieniu) i mieści się w dotychczasowej
+konstrukcji słownika. **Nie została wykonana w tej sesji — wykracza poza
+zlecony zakres i wymaga własnego przebiegu na zestawie negatywnym**, żeby nie
+powtórzyć błędu „7 na 10 zwykłych zdań dostaje ramkę PILNE" z 21.08.2026.
+
+## Dyktowanie głosowe — usunięte (24.08.2026)
+
+Funkcja usunięta z `app-internal.js` i z kopii `app-internal.html`: przycisk
+mikrofonu, linia stanu `mic-stan`, cała obsługa Web Speech API, style
+`.btn-icon`, `.active-rec` i `@keyframes pulse` (używane wyłącznie przez
+mikrofon) oraz słowo „podyktuj" z podpowiedzi w polu pytania.
+
+**Powód.** Rozpoznawanie zwracało tekst niezwiązany z wypowiedzią mimo
+`lang = "pl-PL"`. Diagnoza z 24.08.2026 (sekcja „Dyktowanie głosowe — co jest
+nasze, a co przeglądarki") stoi w mocy: **rozpoznawanie robi przeglądarka,
+API nie ma pokrętła na hałas, mikrofon ani model, a `lang` był ustawiony
+poprawnie od początku.** Wyniki częściowe na żywo miały uczynić błąd widocznym
+przed wysłaniem i to zrobiły — ale funkcja, która wymaga od użytkownika
+poprawiania każdego zdania, jest wolniejsza od pisania.
+
+**To nie jest zamknięte na zawsze.** Kontekst użycia — budowa, rękawice,
+telefon, ręce zajęte — jest dla dyktowania **najlepszy z możliwych**, i to jest
+argument produktowy, który się nie zmienił. Wraca się do tego **przy przejściu
+na dostawcę z własnym rozpoznawaniem mowy** (model STT po stronie serwera,
+gdzie mamy wpływ na język, słownik i próg pewności). Wtedy warto wrócić
+**od razu**, nie „kiedyś": to jedyna funkcja, która w tym kontekście zmienia
+sposób korzystania z narzędzia, a nie tylko jego wygląd.
+
+Czego **nie** robić przy powrocie: nie przywracać Web Speech API „bo teraz
+przeglądarki są lepsze" bez pomiaru na hałasie budowy. Ograniczenie leży
+w API, nie w wersji przeglądarki.
+
+## Przycisk „PANEL" na stronach pracowniczych — usunięty (24.08.2026)
+
+Nagłówek aplikacji pracowniczej miał link do `/panel`. **Prowadził donikąd:**
+`/panel` jest serwowany **wyłącznie na hoście właściciela** od 21.08.2026,
+a pracownik nie ma tam wstępu — jego token ma inny `aud`, więc nawet po
+zalogowaniu polityka aplikacji właściciela go nie wpuści. Przycisk obiecywał
+uprawnienie, którego z założenia nie ma.
+
+Usunięty razem ze stylami `.nav-links` i `.btn-nav`, których nic innego nie
+używało. To pozostałość po stanie sprzed rozdzielenia hostów, kiedy panel stał
+pod tym samym adresem co aplikacja.
+
+## Ekran logowania Cloudflare Access — co się da, a czego nie (24.08.2026)
+
+Sprawdzone w dokumentacji Cloudflare, nie z pamięci. **Ścieżka w panelu jest
+inna, niż była:** dziś to **Zero Trust → Reusable components → Custom pages**,
+nie „Settings → Custom Pages".
+
+### Co da się ustawić na planie darmowym
+
+Jedna pozycja: **Access login page** → `Manage`. Cztery pola — **nazwa
+organizacji, logo, nagłówek i stopka, kolor tła**. Zmiany widać na żywo
+w karcie `Preview` przed zapisem.
+
+### Czego się nie da
+
+- **Per aplikacja — nie.** Dokumentacja mówi wprost: „The login page is now
+  updated for **all** of your Access applications". Ustawienie obejmuje całą
+  organizację Zero Trust, czyli domenę zespołu `knowbase.cloudflareaccess.com`.
+  **Dwie branże nie dostaną dwóch palet.**
+- **App Launcher customization** (kolor nagłówka, kolor tła, przycisk logowania,
+  własna stopka z linkami) — **tylko Pay-as-you-go i Enterprise**.
+- **Custom Page Template** dla stron blokady, czyli własny HTML — **też tylko
+  na planach płatnych**. Na darmowym zostaje strona domyślna albo przekierowanie
+  na własny URL. Strona blokady **jest** ustawiana per aplikacja, więc gdyby
+  kiedyś doszedł plan płatny, **to jest jedyne miejsce, w którym branże da się
+  rozdzielić wizualnie** — nie ekran logowania.
+
+### Wniosek produktowy
+
+Skoro ekran logowania jest wspólny dla wszystkich klientów, **nie może nosić
+barw żadnego z nich**. Ma nosić barwy **produktu** — KnowBase. Klient loguje
+się do narzędzia, które kupił od nas, i to jest spójne, a nie „surowe".
+
+**Rozdzielenie marek na ekranie logowania wymaga osobnego konta Cloudflare
+(osobnej domeny zespołu) na klienta.** To decyzja do podjęcia dopiero przy
+kroku „Multi-tenant" — i jest to argument, którego wcześniej w tym kroku nie
+było: multi-tenant to nie tylko D1 i przestrzenie w Vectorize, ale też
+**granica organizacji Zero Trust**.

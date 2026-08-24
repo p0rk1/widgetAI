@@ -54,6 +54,9 @@ każdej sesji, a historia decyzji jest potrzebna kilka razy w miesiącu.
 | 22.08 | **Naprawy 1–4 z mapy**: ramka bezpieczeństwa, liczebniki słowne, odmowa z uzasadnieniem, treść `k18`–`k20` | `DECYZJE.md` → Naprawy po mapie kancelarii |
 | 23.08 | **Ton: granica, nie naprawa** — rewriter form odrzucony; `k25` (przemoc domowa) napisany bezosobowo, sonda w repo | `DECYZJE.md` → Poprawianie form adresatywnych, Fragment `k25` |
 | 24.08 | **Motyw jako pole klienta** + treść interfejsu wyprowadzona z plików, trasy i AUD-y kancelarii | `DECYZJE.md` → Motyw jako pole klienta |
+| 24.08 | **Dyktowanie usunięte**, przycisk „PANEL" usunięty z aplikacji pracowniczej | `DECYZJE.md` → Dyktowanie głosowe — usunięte |
+| 24.08 | **Filtr wejściowy: NIE BUDOWAĆ** — wulgaryzmy i pytania spoza dziedziny, rozstrzygnięte pomiarem | `DECYZJE.md` → Filtr wejściowy |
+| 24.08 | **Długość odpowiedzi pracowniczych zmierzona — diagnoza niepotwierdzona**, prompt nietknięty | `DECYZJE.md` → Długość odpowiedzi |
 
 **Gdzie jesteśmy:** treści nie brakuje nigdzie, a z pięciu problemów z pomiaru
 **trzy są naprawione** (próg zależny od długości zdania z cytatem dosłownym,
@@ -130,7 +133,7 @@ wystarcza do testów i jednego użytkownika, nie wystarcza dla zespołu klienta.
 | `panel.js` | `PANEL_HTML` — panel właściciela, serwowany na hoście właściciela pod `GET /` | importowane przez `worker.js` |
 | `panel.html` | **Już nie panel** — wskazówka z nowym adresem, bo ze statycznej strony nie da się uwierzytelnić przez Access | GitHub Pages |
 | `panel-internal.html` | Panel analityczny procedur i szkoleń (bot wewnętrzny) | repo / serwowane przez Worker |
-| `app-internal.html` | Aplikacja webowa asystenta budowy (mobile-first, dyktowanie) | repo / serwowane przez Worker |
+| `app-internal.html` | Aplikacja webowa asystenta budowy (mobile-first). **Kopia w repo — Worker serwuje `app-internal.js`**; zmiany robi się w OBU, żeby nie rozjechały się po cichu | repo |
 | `wrangler.toml` | Konfiguracja deployu — bindingi, zmienne Access, data kompatybilności | repo |
 | `DECYZJE.md` | Uzasadnienia, wyniki pomiarów, ślepe uliczki | repo, czytane na żądanie |
 | `ZERO-TRUST.md` | Instrukcja konfiguracji logowania do trybu wewnętrznego | repo |
@@ -583,7 +586,7 @@ Uprawnienia są **rozdzielone na dwa niezależne mechanizmy** — patrz sekcja
 - `POST /internal` — bot dla pracowników, przeszukuje `public` + `internal`.
   **Wyłącznie na tożsamości z Cloudflare Access** — `REINDEX_SECRET` tu nie działa
 - `GET /` lub `GET /app` — aplikacja webowa asystenta budowy (Etap 5)
-  zoptymalizowana na telefon, z dyktowaniem głosowym i kaflami szybkiego startu.
+  zoptymalizowana na telefon, z kaflami szybkiego startu.
   **Wyłącznie na hoście pracowniczym** (`hostPracownika()`) — gdzie indziej ścieżka
   nie istnieje
 - `GET /panel` — panel analityczny procedur i szkoleń (Etap 6). **Przeniesiony
@@ -753,6 +756,16 @@ Lista jest tutaj, bo zniknięty zapis wraca jako ten sam błąd za trzy sesje.
   przypadek tej samej pomyłki w projekcie. **Przed pomiarem sprawdź, czy metryka
   mierzy to, co chcesz wiedzieć, a nie to, co łatwo policzyć**: przeczytaj kilka
   odpowiedzi w całości i sprawdź, czy licznik zgadza się z Twoją oceną
+- **Filtr wulgaryzmów na wejściu** — odrzucony pomiarem 24.08.2026: kandydacka
+  lista rdzeni blokuje **11 z 12 realnych zgłoszeń urazu**, w tym 10 takich,
+  które dziś dostają poprawną odpowiedź, i 7 z numerem 112. Wulgaryzm nie niesie
+  informacji o tym, czy doszło do urazu
+- **Filtr pytań spoza dziedziny** — odrzucony pomiarem 24.08.2026: 9 z 10 pytań
+  spoza dziedziny kończy się dziś fallbackiem na ścieżce `POST /`, więc filtr
+  byłby drugą warstwą robiącą to samo. Zysk jest w rachunku, nie w bezpieczeństwie
+- **Powrót do Web Speech API „bo przeglądarki są lepsze"** — ograniczenie leży
+  w API, nie w wersji przeglądarki. Powrót wyłącznie z własnym STT po stronie
+  serwera i po pomiarze na hałasie budowy
 - **Biała lista numerów alarmowych w `numbersAreGrounded()`** — odrzucona
   22.08.2026. Uziemiałaby numer w KAŻDYM zdaniu, więc „cena wynosi 997 zł"
   przechodziłoby jako liczba pokryta. Numer alarmowy podaje **ramka
@@ -846,15 +859,15 @@ też poprawne parafrazy.
 
 ## Znane ograniczenia
 
-- **Dyktowanie głosowe jest tak dobre, jak przeglądarka — i nie da się tego
-  poprawić z naszej strony.** Web Speech API rozpoznaje mowę po stronie
-  przeglądarki i **nie ma żadnego parametru na hałas, mikrofon ani model**.
-  `lang = "pl-PL"` to jedyne pokrętło jakościowe, jakie mamy, i jest ustawione
-  **poprawnie od początku** — sprawdzone 24.08.2026. Przekłamania w hałasie nie
-  są defektem tego kodu. Co zrobiliśmy: **wyniki częściowe na żywo**, żeby błąd
-  był widoczny PRZED wysłaniem, oraz linia stanu z czytelnym powodem odmowy.
-  **Decyzja o utrzymaniu tej funkcji jest produktowa, nie techniczna** — patrz
-  `DECYZJE.md` → „Dyktowanie głosowe"
+- ~~**Dyktowanie głosowe jest tak dobre, jak przeglądarka**~~ — **funkcja
+  USUNIĘTA 24.08.2026.** Diagnoza zostaje w mocy i jest powodem usunięcia:
+  Web Speech API rozpoznaje mowę po stronie przeglądarki i **nie ma żadnego
+  parametru na hałas, mikrofon ani model**, a `lang = "pl-PL"` był ustawiony
+  **poprawnie od początku**. Rozpoznawanie mimo to zwracało tekst niezwiązany
+  z wypowiedzią. **Wraca się do tego przy dostawcy z własnym rozpoznawaniem
+  mowy (STT po stronie serwera), nie wcześniej** — kontekst użycia (budowa,
+  rękawice, telefon) jest dla dyktowania najlepszy z możliwych, więc to nie
+  jest zamknięte na zawsze. `DECYZJE.md` → „Dyktowanie głosowe — usunięte"
 
 - ~~Model 8B generuje literówki po polsku ("z przyjemieniem")~~ — **nieaktualne
   od 16.08.2026**, zniknęło wraz z przejściem na 70B
@@ -1057,6 +1070,14 @@ Kolejność jest celowa — uzasadnienie jest częścią decyzji, nie ozdobnikie
    Czego brakuje: mapy `host → klient`, mapy `host → AUD` (dziś jedna wartość
    `ACCESS_AUD`), i odmowy dla nieznanego hosta. Do tego czasu **żadnego
    wildcardu w trasach** — Worker jest jednodzierżawny.
+
+   **Dochodzi granica organizacji Zero Trust — ustalone 24.08.2026.** Ekran
+   logowania Access (nazwa organizacji, logo, kolor tła, nagłówek i stopka)
+   jest ustawieniem **na całą domenę zespołu**, nie na aplikację: jedna paleta
+   dla wszystkich klientów. Rozdzielenie marek na ekranie logowania wymaga
+   **osobnego konta Cloudflare na klienta**, a nie kolejnej aplikacji Access.
+   Do tego czasu ekran logowania nosi barwy **produktu (KnowBase)**, nie żadnej
+   z branż. `DECYZJE.md` → „Ekran logowania Cloudflare Access".
 
 ## Zasady pracy nad tym projektem
 

@@ -2753,6 +2753,64 @@ grzecznościowa. Odnotowane, żeby nikt tego nie „naprawił" przy najbliższym
 porządkowaniu.
 
 
+## Dyktowanie głosowe — co jest nasze, a co przeglądarki (24.08.2026)
+
+### Hipoteza o języku: obalona
+
+Podejrzenie brzmiało, że `lang` jest domyślny albo angielski. **Nie jest** —
+`recognition.lang = "pl-PL"` stoi tam od początku. Objaw wygląda identycznie
+przy złym języku i przy złym rozpoznaniu, ale przyczyna jest inna.
+
+### Co faktycznie było źle w konfiguracji
+
+| Ustawienie | Było | Jest | Dlaczego |
+|---|---|---|---|
+| `lang` | `pl-PL` | bez zmian | było poprawne |
+| `interimResults` | `false` | **`true`** | tekst pojawiał się dopiero na końcu, więc przekłamanie widać było po fakcie |
+| `continuous` | `false` | **`true`** | nagrywanie kończyło się na pierwszej pauzie |
+| `onresult` | `e.results[0][0]` | pętla od `e.resultIndex` | pierwsza forma przy `continuous` dopisywałaby w kółko ten sam fragment |
+| `onerror` | zdejmował klasę i milczał | **komunikat po polsku** | `no-speech`, `not-allowed`, `network` były nie do odróżnienia od ciszy |
+
+**Nadpisywania tekstu nie było** — i nadal nie ma. Dyktowanie dopisuje się za
+tym, co użytkownik wpisał ręcznie. Nowa wersja trzyma to jawnie w `bazaTekstu`,
+bo przy wynikach częściowych pole jest przepisywane przy każdej zmianie i bez
+tego ręczny tekst by zniknął.
+
+**Wynik częściowy nie jest zatwierdzany** — przy zakończeniu nagrywania zostaje
+tylko to, co przeglądarka oznaczyła jako finalne.
+
+### Czego NIE da się naprawić
+
+Web Speech API **nie ma żadnego parametru na hałas, mikrofon ani model**.
+Rozpoznawanie robi przeglądarka po swojej stronie. `lang` to jedyne pokrętło
+jakościowe i jest ustawione poprawnie. Przekłamania w hałasie **nie są defektem
+tego kodu i nie da się ich stąd naprawić.**
+
+Rozważone i **odrzucone**: bramka na `confidence`. Chrome zwraca tam często zero
+albo nic, więc próg albo nie robiłby nic, albo wycinałby poprawne wypowiedzi —
+a to warstwa bez zmierzonej potrzeby, dokładnie ta klasa, której projekt unika.
+
+### Co z tego wynika dla produktu
+
+Zrobiliśmy jedyną rzecz, jaka była w naszym zasięgu: **błąd jest teraz widoczny
+przed wysłaniem, a nie po**. Tekst tworzy się na oczach mówiącego, więc widać
+przekłamanie i można je poprawić palcem, zanim pytanie pojedzie do modelu.
+
+**To nie czyni funkcji użyteczną w hałasie — czyni ją nieszkodliwą.** Decyzja,
+czy zostawić mikrofon na budowie, jest produktowa i należy do właściciela.
+Trzy warianty:
+1. **Zostawić jak jest** — pomaga w cichym miejscu (biuro budowy, kancelaria),
+   w hałasie jest widocznie bezużyteczna i nikogo nie wprowadza w błąd.
+2. **Ukryć na hoście, gdzie nie ma sensu** — pole klienta `ui.dyktowanie`,
+   jedna flaga; kancelaria zostawia, budowa wyłącza.
+3. **Usunąć** — najprostsze, ale traci się jedyną drogę wprowadzania tekstu
+   w rękawicach.
+
+Zalecenie: **wariant 1 do czasu pierwszego prawdziwego użycia na budowie.**
+Dopiero pomiar na miejscu powie, czy da się w ogóle dyktować w tym hałasie —
+zgadywanie tego zza biurka byłoby czwartym przypadkiem mierzenia nie tego,
+co trzeba.
+
 ## Podsumowanie drugiej branży — co uniwersalne, co branżowe, ile kosztuje klient
 
 ### Werdykt o warstwach po pełnym cyklu

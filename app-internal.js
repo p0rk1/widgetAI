@@ -147,6 +147,11 @@ body::before{
   transition:border-color .2s;
 }
 .input-wrap:focus-within{border-color:var(--hi)}
+.mic-stan{
+  max-width:760px;margin:0 auto 6px;font-family:var(--font-mono);font-size:10px;
+  letter-spacing:.05em;color:var(--etykieta-nr);min-height:13px;
+}
+.mic-stan.blad{color:var(--tag-pilny-tekst)}
 
 textarea{
   flex:1;background:transparent;border:none;color:var(--chalk);
@@ -222,6 +227,7 @@ textarea::placeholder{color:var(--dim)}
 </div>
 
 <div class="bottom-dock">
+  <div class="mic-stan" id="mic-stan" role="status" aria-live="polite"></div>
   <div class="input-wrap">
     <textarea id="inp" rows="1" placeholder="Zadaj pytanie lub podyktuj..."></textarea>
     <button class="btn-icon" id="mic" title="Dyktowanie głosowe">
@@ -261,35 +267,93 @@ $('inp').addEventListener('keydown', e => {
   }
 });
 
-// Speech Recognition (Dyktowanie)
+// DYKTOWANIE (Web Speech API)
+//
+// Ograniczenie, o którym trzeba wiedzieć, zanim się tu cokolwiek "naprawi":
+// rozpoznawanie robi PRZEGLĄDARKA po swojej stronie, a API nie ma żadnego
+// pokrętła na hałas, mikrofon ani model. "lang" to jedyny parametr jakościowy,
+// jaki mamy — i jest ustawiony na "pl-PL". Jeżeli w hałasie wychodzi tekst
+// bez związku z wypowiedzią, to NIE jest defekt tego kodu i nie da się go tu
+// naprawić. Możemy tylko sprawić, żeby błąd był WIDOCZNY, zanim pytanie
+// pojedzie do modelu — stąd wyniki częściowe na żywo i linia stanu.
 const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
 let recognition = null;
+
+const BLEDY_MOWY = {
+  'no-speech': 'Nic nie usłyszałem — spróbuj bliżej mikrofonu.',
+  'audio-capture': 'Brak dostępu do mikrofonu w tym urządzeniu.',
+  'not-allowed': 'Przeglądarka zablokowała mikrofon. Zezwól na dostęp w ustawieniach strony.',
+  'service-not-allowed': 'Przeglądarka zablokowała usługę rozpoznawania mowy.',
+  'network': 'Rozpoznawanie mowy wymaga połączenia — sprawdź zasięg.',
+  'aborted': '',
+};
+
+function stanMikrofonu(tekst, blad){
+  const el = $('mic-stan');
+  el.textContent = tekst || '';
+  el.classList.toggle('blad', !!blad);
+}
+
 if(SpeechRec){
   recognition = new SpeechRec();
   recognition.lang = 'pl-PL';
-  recognition.continuous = false;
-  recognition.interimResults = false;
+  // Wypowiedź w terenie bywa dłuższa niż jeden oddech, więc
+  // nagrywanie nie kończy się samo na pierwszej pauzie — kończy je przycisk.
+  recognition.continuous = true;
+  // Wyniki częściowe są tu po to, żeby użytkownik ZOBACZYŁ przekłamanie
+  // w trakcie mówienia, a nie dopiero po wysłaniu pytania.
+  recognition.interimResults = true;
+
+  // Tekst wpisany RęCZNIE jest nietykalny: dyktowanie dopisuje się za nim
+  // i nigdy go nie nadpisuje. "zebrane" trzyma zatwierdzone fragmenty tej sesji,
+  // żeby wynik częściowy mógł być podmieniany bez gubienia reszty.
+  let bazaTekstu = '';
+  let zebrane = '';
+
+  const zloz = (czesciowe) => [bazaTekstu, zebrane, czesciowe]
+    .map((x) => (x || '').trim()).filter(Boolean).join(' ');
 
   recognition.onstart = () => {
+    bazaTekstu = $('inp').value;
+    zebrane = '';
     $('mic').classList.add('active-rec');
+    stanMikrofonu('słucham… dotknij mikrofonu, żeby zakończyć');
   };
-  recognition.onend = () => {
-    $('mic').classList.remove('active-rec');
-  };
+
   recognition.onresult = (e) => {
-    const transcript = e.results[0][0].transcript;
-    $('inp').value = ($('inp').value ? $('inp').value + ' ' : '') + transcript;
+    let czesciowe = '';
+    for(let i = e.resultIndex; i < e.results.length; i++){
+      const wynik = e.results[i];
+      if(wynik.isFinal) zebrane += (zebrane ? ' ' : '') + wynik[0].transcript.trim();
+      else czesciowe += wynik[0].transcript;
+    }
+    $('inp').value = zloz(czesciowe);
     $('inp').dispatchEvent(new Event('input'));
   };
-  recognition.onerror = () => {
+
+  recognition.onerror = (e) => {
     $('mic').classList.remove('active-rec');
+    const opis = BLEDY_MOWY[e.error];
+    stanMikrofonu(opis !== undefined ? opis : 'Rozpoznawanie mowy nie zadziałało.', true);
+  };
+
+  recognition.onend = () => {
+    $('mic').classList.remove('active-rec');
+    // Wynik częściowy nie jest zatwierdzony — zostaje tylko to, co finalne.
+    $('inp').value = zloz('');
+    $('inp').dispatchEvent(new Event('input'));
+    if(!$('mic-stan').classList.contains('blad')){
+      stanMikrofonu(zebrane ? 'sprawdź tekst przed wysłaniem' : '');
+    }
   };
 
   $('mic').onclick = () => {
     if($('mic').classList.contains('active-rec')){
       recognition.stop();
     } else {
-      try { recognition.start(); } catch(e){}
+      stanMikrofonu('');
+      try { recognition.start(); }
+      catch(err){ stanMikrofonu('Nie udało się uruchomić mikrofonu.', true); }
     }
   };
 } else {

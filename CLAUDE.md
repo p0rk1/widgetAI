@@ -846,6 +846,16 @@ też poprawne parafrazy.
 
 ## Znane ograniczenia
 
+- **Dyktowanie głosowe jest tak dobre, jak przeglądarka — i nie da się tego
+  poprawić z naszej strony.** Web Speech API rozpoznaje mowę po stronie
+  przeglądarki i **nie ma żadnego parametru na hałas, mikrofon ani model**.
+  `lang = "pl-PL"` to jedyne pokrętło jakościowe, jakie mamy, i jest ustawione
+  **poprawnie od początku** — sprawdzone 24.08.2026. Przekłamania w hałasie nie
+  są defektem tego kodu. Co zrobiliśmy: **wyniki częściowe na żywo**, żeby błąd
+  był widoczny PRZED wysłaniem, oraz linia stanu z czytelnym powodem odmowy.
+  **Decyzja o utrzymaniu tej funkcji jest produktowa, nie techniczna** — patrz
+  `DECYZJE.md` → „Dyktowanie głosowe"
+
 - ~~Model 8B generuje literówki po polsku ("z przyjemieniem")~~ — **nieaktualne
   od 16.08.2026**, zniknęło wraz z przejściem na 70B
 - Wyniki wahają się między uruchomieniami przy tym samym pytaniu

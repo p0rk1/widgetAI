@@ -127,9 +127,17 @@ body::before{
 }
 .msg.user .msg-meta{text-align:right}
 
+/* kursor animacji wypisywania — ten sam język co na stronie publicznej */
+.pisze::after{
+  content:"";display:inline-block;width:6px;height:14px;background:var(--hi);
+  margin-left:3px;vertical-align:-2px;animation:mruga .85s step-end infinite;
+}
+@keyframes mruga{50%{opacity:0}}
+@media(prefers-reduced-motion:reduce){.pisze::after{animation:none}}
+
 /* input bar */
 .bottom-dock{
-  position:sticky;bottom:0;background:color-mix(in srgb, var(--void) 95%, transparent);
+  position:sticky;bottom:var(--pasek-demo);background:color-mix(in srgb, var(--void) 95%, transparent);
   backdrop-filter:blur(var(--rozmycie));border-top:1px solid var(--line);
   padding:12px 16px env(safe-area-inset-bottom, 12px);z-index:50;
 }
@@ -301,27 +309,53 @@ function appendUserMsg(text){
   window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
 }
 
-function formatBotAnswer(ans, eskalacja){
-  let escBox = '';
-  if(eskalacja){
-    const pilne = eskalacja.pilne;
-    escBox = \`<div class="alert-box \${pilne?'pilne':'standard'}">
+function ramkaEskalacji(eskalacja){
+  if(!eskalacja) return '';
+  const pilne = eskalacja.pilne;
+  return \`<div class="alert-box \${pilne?'pilne':'standard'}">
       <span class="icon">\${pilne?'⚠️ PILNE:':'ℹ️ PROCEDURA:'}</span>
       <span>\${pilne ? '{{przelozonyPilne}}' : '{{przelozonyStandard}}'}</span>
     </div>\`;
-  }
+}
 
-  // Format steps & Podstawa
-  const lines = ans.split('\\n').filter(Boolean);
-  let html = escBox;
-  for(const line of lines){
-    if(line.startsWith('Podstawa:')){
-      html += \`<div class="podstawa">\${esc(line)}</div>\`;
-    } else {
-      html += \`<div>\${esc(line)}</div>\`;
-    }
+// Wypisywanie znak po znaku. DWA WYJĄTKI, oba świadome:
+//
+// 1. prefers-reduced-motion — tekst pojawia się od razu. Animacja jest
+//    ozdobą, a dla części osób ruch na ekranie to nie ozdoba, tylko problem.
+//
+// 2. RAMKA ESKALACYJNA NIE CZEKA NA ANIMACJĘ. Przy eskalacji pilnej
+//    zlozZEskalacja() stawia tekst ramki na POCZATKU odpowiedzi, wiec
+//    pierwszy blok wypisuje się natychmiast, razem z pudełkiem alertu.
+//    Sekunda zwłoki w komunikacie „dzwoń pod 112" to zła cena za efekt.
+//    Przy eskalacji niepilnej ramka jest na końcu i animuje się normalnie.
+const bezRuchu = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+function wypisz(el, txt){
+  return new Promise(res=>{
+    el.classList.add('pisze');
+    let i = 0;
+    const krok = () => {
+      i += Math.random() < .3 ? 2 : 1;
+      el.textContent = txt.slice(0, i);
+      window.scrollTo({ top: document.body.scrollHeight });
+      if(i < txt.length) setTimeout(krok, 9);
+      else { el.classList.remove('pisze'); res(); }
+    };
+    krok();
+  });
+}
+
+async function wypiszOdpowiedz(bubble, ans, eskalacja){
+  bubble.innerHTML = ramkaEskalacji(eskalacja);
+  const linie = (ans || '').split('\\n').filter(Boolean);
+  const natychmiast = (eskalacja && eskalacja.pilne) ? 1 : 0;
+  for(let i = 0; i < linie.length; i++){
+    const d = document.createElement('div');
+    if(linie[i].startsWith('Podstawa:')) d.className = 'podstawa';
+    bubble.appendChild(d);
+    if(i < natychmiast || bezRuchu){ d.textContent = linie[i]; continue; }
+    await wypisz(d, linie[i]);
   }
-  return html;
 }
 
 async function submit(){
@@ -355,9 +389,8 @@ async function submit(){
     }
 
     const d = await r.json();
-    const formatted = formatBotAnswer(d.answer || "Brak odpowiedzi.", d.eskalacja);
-    botDiv.querySelector('.bubble').innerHTML = formatted;
     botDiv.querySelector('.msg-meta').textContent = timeNow();
+    await wypiszOdpowiedz(botDiv.querySelector('.bubble'), d.answer || "Brak odpowiedzi.", d.eskalacja);
 
     history.push({ role: 'user', content: q });
     history.push({ role: 'assistant', content: d.answer });

@@ -411,7 +411,17 @@ function motywCss(klient) {
   --ramka-akcentu:${m.akcentRamki ? "1" : "0"};
   --rozmycie:${m.rozmycie};
   --sp:cubic-bezier(.22,1,.36,1);
+  /* Wysokość paska demo. Zero, dopóki paska nie ma — a jest tylko przy DEMO=1,
+     i wtedy sam podnosi tę wartość własnym <style>. Dzięki temu interfejsy
+     rezerwują na niego miejsce, zamiast dawać mu się położyć na treści. */
+  --pasek-demo:0px;
 }
+
+/* Miejsce pod pasek demo — raz dla wszystkich trzech interfejsów.
+   Element o stałej pozycji nie zajmuje miejsca w układzie, więc bez tego
+   zasłania to, co jest na dole strony. Zmierzone 24.08.2026: pasek leżał
+   na polu wpisywania pytania w aplikacji pracowniczej. */
+body{padding-bottom:var(--pasek-demo)}
 
 /* ZNACZNIK — etykieta w obramowaniu.
    Pionowy padding i obramowanie elementu INLINE nie powiększają wiersza,
@@ -499,8 +509,14 @@ function przelacznikDemo(env, klient, rola) {
   const linki = inni
     .map((k) => `<a href="https://${k.hosty[rola]}/" style="color:inherit">${k.ui.etykietaPrzelacznika}</a>`)
     .join(" · ");
-  return `<div style="position:fixed;left:0;right:0;bottom:0;padding:4px 10px;font:11px/1.4 ui-monospace,monospace;` +
-    `color:#8a8a8a;background:rgba(0,0,0,.55);text-align:center;letter-spacing:.04em;z-index:9999">` +
+  // Wysokość jest STAŁA i ogłaszana w `--pasek-demo`, żeby interfejsy miały
+  // co zarezerwować. Kolory idą z motywu — czarny półprzezroczysty pasek
+  // wyglądał jak pomyłka na jasnym motywie kancelarii.
+  return `<style>:root{--pasek-demo:26px}</style>` +
+    `<div style="position:fixed;left:0;right:0;bottom:0;height:var(--pasek-demo);box-sizing:border-box;` +
+    `display:flex;align-items:center;justify-content:center;gap:6px;` +
+    `font-family:var(--font-mono);font-size:11px;letter-spacing:.04em;` +
+    `color:var(--mute);background:var(--deck);border-top:1px solid var(--line);z-index:9999">` +
     `demo · ${klient.ui.nazwaKrotka} · przełącz na ${linki}</div>`;
 }
 

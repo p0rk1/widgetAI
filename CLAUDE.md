@@ -321,6 +321,14 @@ i kroju, **nie edycja plików interfejsu**.
   uznał za pilne.
 - **Kafle nie mają emoji** — numer w monospace jest tym samym językiem, którego
   używają nagłówki bloków, i działa w każdej branży bez rysowania ikon.
+- **Element przyklejony do dołu musi liczyć się z paskiem demo.** Pasek ma
+  stałą pozycję, więc nie zajmuje miejsca w układzie. Jego wysokość ogłasza
+  `--pasek-demo` (0, gdy paska nie ma), `body` rezerwuje na nią miejsce
+  w `motywCss()`, a dok wpisywania stoi na `bottom:var(--pasek-demo)`.
+  Bez tego pasek kładł się na polu pytania — zmierzone 24.08.2026
+- **W treści szablonu nie ma odwróconych apostrofów, także w komentarzach.**
+  Zamykają literał, a `node --check` tego nie widzi. **Trzy przypadki**
+  w projekcie; od 24.08.2026 pilnuje tego sekcja 9 w `test-motyw.mjs`
 - **Etykieta w obramowaniu musi mieć klasę `znacznik`.** Pionowy padding
   i obramowanie elementu **inline** nie powiększają wiersza, więc pudełko
   maluje się poza nim i nachodzi na tekst poniżej. Zmierzone 24.08.2026 na
@@ -330,7 +338,7 @@ i kroju, **nie edycja plików interfejsu**.
 - **`--dim` ma mieć kontrast ≥ 4:1** wobec `--void`. Sprawdzone 24.08.2026:
   było 3.55 (ciemny) i 2.92 (jasny) przy 9,5-pikselowych etykietach.
 
-**Test:** `node test-motyw.mjs` — 81 przypadków. Uruchamiać po każdej zmianie
+**Test:** `node test-motyw.mjs` — 114 przypadków. Uruchamiać po każdej zmianie
 w motywie, w `ui` i w plikach interfejsu.
 
 ## Separacja przestrzeni wiedzy

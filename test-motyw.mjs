@@ -105,5 +105,43 @@ for (const klient of Object.values(KLIENCI)) {
   sprawdz(`${klient.id}: bez DEMO paska nie ma w HTML-u`, !bezDemo.includes("przełącz na"));
 }
 
+console.log("=== 7. Pasek demo nie kładzie się na treści ===");
+for (const klient of Object.values(KLIENCI)) {
+  for (const [nazwa, szablon, rola] of SZABLONY) {
+    const zDemo = renderHtml(szablon, klient, { DEMO: "1" }, rola);
+    const bez = renderHtml(szablon, klient, {}, rola);
+    sprawdz(`${klient.id}/${nazwa}: pasek ogłasza swoją wysokość`, /--pasek-demo:\s*\d+px/.test(zDemo));
+    sprawdz(`${klient.id}/${nazwa}: układ rezerwuje na niego miejsce`,
+      /body\{padding-bottom:var\(--pasek-demo\)\}/.test(zDemo));
+    sprawdz(`${klient.id}/${nazwa}: bez DEMO wysokość zostaje zerowa`,
+      /--pasek-demo:0px/.test(bez) && !/--pasek-demo:\s*[1-9]/.test(bez));
+    sprawdz(`${klient.id}/${nazwa}: pasek nie ma własnych kolorów`, !/background:rgba\(0,0,0/.test(zDemo));
+  }
+}
+// Dok wpisywania jest przyklejony do dołu, więc musi trzymać się NAD paskiem.
+sprawdz("app-internal: dok wpisywania stoi nad paskiem",
+  /position:sticky;bottom:var\(--pasek-demo\)/.test(APP_INTERNAL_HTML));
+
+console.log("=== 8. Animacja wypisywania i jej dwa wyjątki ===");
+sprawdz("app-internal: animacja istnieje", /async function wypiszOdpowiedz/.test(APP_INTERNAL_HTML));
+sprawdz("app-internal: prefers-reduced-motion ją wyłącza",
+  /matchMedia\('\(prefers-reduced-motion: reduce\)'\)/.test(APP_INTERNAL_HTML));
+sprawdz("app-internal: ramka pilna nie czeka na animację",
+  /natychmiast\s*=\s*\(eskalacja && eskalacja\.pilne\)\s*\?\s*1\s*:\s*0/.test(APP_INTERNAL_HTML));
+sprawdz("app-internal: ramka wstawiana przed pisaniem",
+  APP_INTERNAL_HTML.indexOf("bubble.innerHTML = ramkaEskalacji") <
+  APP_INTERNAL_HTML.indexOf("await wypisz(d, linie[i])"));
+sprawdz("app-internal: kursor gaśnie przy reduced-motion",
+  /@media\(prefers-reduced-motion:reduce\)\{\.pisze::after\{animation:none\}\}/.test(APP_INTERNAL_HTML));
+
+console.log("=== 9. Strażnik szablonów ===");
+// Trzeci raz w projekcie: odwrócony apostrof w komentarzu ZAMYKA szablon,
+// a `node --check` tego nie widzi, bo czyta plik jako skrypt, nie moduł.
+for (const [nazwa, szablon] of SZABLONY) {
+  const zle = [...szablon.matchAll(/\/\/[^\n]*/g)].map((m) => m[0]).filter((c) => c.includes("`"));
+  sprawdz(`${nazwa}: żaden komentarz w szablonie nie ma odwróconego apostrofu`,
+    zle.length === 0, zle.join(" | ").slice(0, 120));
+}
+
 console.log(`\n---\nzdane: ${zdane}, oblane: ${oblane}`);
 process.exit(oblane ? 1 : 0);

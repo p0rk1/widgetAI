@@ -2664,6 +2664,36 @@ szablonu w backtickach **zamknął literał** — `node --check` przeszedł, a `
 wywalił się na `Unexpected identifier`. To drugi udokumentowany przypadek tej
 pułapki. W treści szablonu nie ma odwróconych apostrofów, także w komentarzach.
 
+### Pasek demo i animacja wypisywania (24.08.2026)
+
+**Pasek demo kładł się na polu pytania.** Ma stałą pozycję, więc nie zajmuje
+miejsca w układzie, a dok wpisywania w aplikacji pracowniczej jest przyklejony
+do dołu — obie rzeczy walczyły o ten sam pas ekranu. Poprawka jest wspólna, nie
+punktowa: pasek **ogłasza swoją wysokość** w `--pasek-demo`, `motywCss()`
+rezerwuje na nią miejsce przez `body{padding-bottom}`, a dok stoi na
+`bottom:var(--pasek-demo)`. Bez paska zmienna wynosi `0px`, więc nic się nie
+zmienia u klienta. Przy okazji pasek dostał kolory z motywu — czarne
+półprzezroczyste tło wyglądało na jasnej kancelarii jak pomyłka.
+
+**Animacji wypisywania w aplikacji pracowniczej nigdy nie było.** Sprawdzone:
+`formatBotAnswer()` wstawiał gotowy `innerHTML` jednym ruchem. Mechanizm ze
+strony publicznej (`type()` w `index.html`) został przeniesiony jako
+`wypiszOdpowiedz()`, z dwoma wyjątkami:
+
+1. **`prefers-reduced-motion`** — tekst pojawia się od razu, kursor nie mruga.
+2. **Ramka eskalacyjna nie czeka na animację.** Przy eskalacji pilnej
+   `zlozZEskalacja()` stawia tekst ramki na POCZĄTKU odpowiedzi, więc pierwszy
+   blok wypisuje się natychmiast, razem z pudełkiem alertu. Sekunda zwłoki
+   w komunikacie „dzwoń pod 112" to zła cena za efekt wizualny. Przy eskalacji
+   niepilnej ramka jest na końcu i animuje się normalnie.
+
+Warunek jest **wyliczany z `d.eskalacja.pilne`**, więc nie wymagał zmiany w API
+ani w warstwach weryfikacji.
+
+**Trzeci przypadek tej samej pułapki:** odwrócony apostrof w komentarzu wewnątrz
+szablonu zamknął literał, `node --check` przeszedł, `import` się wywalił. Od tej
+pory pilnuje tego sekcja 9 w `test-motyw.mjs` — strażnik zamiast pamięci.
+
 ### Czego nie ruszono
 
 Zero zmian w logice, treści dokumentacji, warstwach weryfikacji, eskalacji,

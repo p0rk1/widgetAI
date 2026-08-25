@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-6 -6 108 108" width="108" height="108" role="img" aria-labelledby="tytul">
+  <title id="tytul">KnowBase</title>
+  <!-- Znak: trzy zaokraglone kwadraty (bok 62, rx 14) w ukladzie trojkatnym.
+       Szklistosc powstaje z nakladania sie przezroczystosci, nie z filtra ani
+       gradientu - dzieki temu dziala w malym rozmiarze i na dowolnym tle.
+       Krycia 0.48 / 0.67 zamiast 0.30 / 0.42 (proporcja 1.4 zachowana):
+       przy pierwotnych wartosciach najjasniejsze pole mialo kontrast 1.71:1
+       wobec bieli karty logowania, czyli czytalo sie jak znak wodny.
+       Dzis drabina kryc na bieli: 2.49 / 3.93 / 4.59 / 6.01 / 7.59. -->
+  <g fill="#26456B">
+    <rect x="0"  y="34" width="62" height="62" rx="14" opacity="0.48"/>
+    <rect x="34" y="34" width="62" height="62" rx="14" opacity="0.48"/>
+    <rect x="17" y="0"  width="62" height="62" rx="14" opacity="0.67"/>
+  </g>
+</svg>

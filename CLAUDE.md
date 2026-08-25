@@ -135,6 +135,7 @@ wystarcza do testów i jednego użytkownika, nie wystarcza dla zespołu klienta.
 | `panel.html` | **Już nie panel** — wskazówka z nowym adresem, bo ze statycznej strony nie da się uwierzytelnić przez Access | GitHub Pages |
 | `panel-internal.html` | Panel analityczny procedur i szkoleń (bot wewnętrzny) | repo / serwowane przez Worker |
 | `app-internal.html` | Aplikacja webowa asystenta budowy (mobile-first). **Kopia w repo — Worker serwuje `app-internal.js`**; zmiany robi się w OBU, żeby nie rozjechały się po cichu | repo |
+| `assets/logo-knowbase.svg` | Logo KnowBase — trzy nakładające się kwadraty. Zasób produktu; serwowane przez Pages pod `https://p0rk1.github.io/widgetAI/assets/logo-knowbase.svg`, wpisane w Access → Custom pages → Logo URL | repo / GitHub Pages |
 | `wrangler.toml` | Konfiguracja deployu — bindingi, zmienne Access, data kompatybilności | repo |
 | `DECYZJE.md` | Uzasadnienia, wyniki pomiarów, ślepe uliczki | repo, czytane na żądanie |
 | `ZERO-TRUST.md` | Instrukcja konfiguracji logowania do trybu wewnętrznego | repo |

@@ -762,3 +762,59 @@ polityk w dashboardzie. Żywą ścieżkę sprawdza się tak, jak opisano w kroku
 **Zostaje jedna rzecz po stronie właściciela:** upewnić się, że polityka
 aplikacji `Kancelaria — panel właściciela` dopuszcza **jeden adres e-mail**,
 a nie całą domenę. To ten sam warunek, który wisi przy panelu BudMaksu.
+
+## Krok 11. Logo na ekranie logowania — ✅ plik gotowy 25.08.2026
+
+Zero Trust → **Settings** → **Custom Pages** (w nowszym interfejsie:
+**Reusable components** → **Custom pages**) → **Access login page** → **Logo URL**.
+
+Adres do wklejenia:
+
+```
+https://p0rk1.github.io/widgetAI/assets/logo-knowbase.svg
+```
+
+Plik żyje w repo jako `assets/logo-knowbase.svg` i jest **zasobem projektu**,
+nie tylko obrazkiem dla Access — użyje go też strona produktu i materiały
+sprzedażowe. Zmiana logo to edycja tego pliku i `git push`; adres zostaje ten sam.
+
+**GitHub Pages serwuje go z `Content-Type: image/svg+xml`** — sprawdzone
+pomiarem 25.08.2026, więc obawa o podanie SVG jako `text/plain` nie potwierdziła
+się. Gdyby to się kiedyś zmieniło (albo gdyby Access odrzucił adres z innego
+powodu), kolejność zapasowych dróg jest taka:
+
+1. **Worker** — `GET /logo.svg` z ustawionym nagłówkiem, dostępne na każdym
+   z hostów `know-base.app`. Kosztuje kilka linii w routingu i wiąże logo
+   z produkcyjnym Workerem, więc nie jest pierwszym wyborem
+2. **R2 z publicznym dostępem** — poprawny typ zawartości z metadanych obiektu,
+   ale to nowy zasób infrastruktury dla jednego pliku
+3. **PNG zamiast SVG** — ostateczność. Access przyjmuje rastr, ale logo traci
+   ostrość na ekranach o dużej gęstości
+
+**Ekran logowania jest jeden na całą organizację Zero Trust** — patrz
+`CLAUDE.md` → „Następne kroki", punkt 4. Dlatego stoi tam logo **produktu
+(KnowBase)**, a nie BudMaksu ani kancelarii.
+
+### Dlaczego krycia nie są takie, jak w pierwszym szkicu
+
+Znak to trzy zaokrąglone kwadraty (bok 62, `rx="14"`) w układzie trójkątnym,
+a wrażenie szkła bierze się z **nakładania się przezroczystości**, nie z filtra
+ani gradientu — dzięki temu działa w małym rozmiarze i na dowolnym tle.
+
+Pierwotne krycia 0.30 (dolne) i 0.42 (górny) dawały na **białej karcie
+logowania** kontrast **1.71:1** w największym, pojedynczym polu — to poziom
+znaku wodnego, nie logo. Krycia podniesiono do **0.48 / 0.67**, czyli
+**z zachowaną proporcją 1.4** między warstwami. Drabina kontrastów na bieli:
+
+| Pole | Krycie wypadkowe | Kontrast wobec bieli |
+|---|---|---|
+| pojedynczy dolny | 0.480 | 2.49 |
+| pojedynczy górny | 0.670 | 3.93 |
+| dolny + dolny | 0.730 | 4.59 |
+| górny + dolny | 0.828 | 6.01 |
+| wszystkie trzy | 0.911 | 7.59 |
+
+Wariant jeszcze mocniejszy (0.55 / 0.77) **odrzucono**: trzy najciemniejsze pola
+zbiegają się tam do 5.51 / 7.29 / 8.58, a potrójne przecięcie jest praktycznie
+nieodróżnialne od jednolitego `#26456B` — czyli znika dokładnie to, co ten znak
+ma pokazywać.

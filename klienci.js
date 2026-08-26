@@ -56,9 +56,23 @@ export const KLIENCI = {
       wlasciciel: "budmax-wlasciciel.know-base.app",
     },
     stare: {
-      // Odwołują się do niego na sztywno index.html i panel.html (WORKER_URL).
+      // Odwołuje się do niego na sztywno panel.html (WORKER_URL). `index.html`
+      // od 27.08.2026 już NIE — używa snippetu i rozmawia z hostem publicznym.
       "knowbase-budmax.rezi7608.workers.dev": "publiczny",
     },
+
+    // WITRYNY — origins, z których wolno wywołać widget tego klienta.
+    // To jest ten jeden wpis, który trzeba dopisać przy każdym wdrożeniu.
+    // ORIGIN, nie adres strony: schemat + host, bez ścieżki i bez ukośnika.
+    // `https://firma.pl` i `https://www.firma.pl` to DWA różne originy i oba
+    // trzeba wpisać, jeśli strona odpowiada pod oboma.
+    //
+    // GitHub Pages jest tu jako pełnoprawna witryna klienta demonstracyjnego —
+    // `index.html` osadza widget dokładnie tym samym snippetem, co prawdziwy
+    // klient, więc przechodzi tą samą ścieżką CORS.
+    witryny: [
+      "https://p0rk1.github.io",
+    ],
 
     // Nazwy zmiennych z [vars], nie ich wartości. AUD zależy od HOSTA: gdyby
     // Worker sprawdzał „którykolwiek ze znanych AUD-ów", token pracownika
@@ -134,6 +148,33 @@ Zanim odpowiesz, sprawdź, czy fragment, z którego korzystasz, dotyczy DOKŁADN
       tytulPanel: "BudMax — panel asystenta",
       tytulPanelWew: "BudMax — panel procedur i szkoleń",
       domenaLogowania: "@budmax.pl",
+
+      // WIDGET OSADZANY — teksty widoczne na stronie KLIENTA, u jego klientów.
+      // Trafiają do skryptu, który leci na cudzą witrynę, więc rejestr jest tu
+      // sprzedażowy, nie instruktażowy: to nie jest ten sam rozmówca, co
+      // w aplikacji pracowniczej.
+      widget: {
+        tytul: "Asystent BudMax",
+        podtytul: "Odpowiada z naszej dokumentacji",
+        etykietaDymka: "Zapytaj o cokolwiek",
+        powitanie: "Dzień dobry. Odpowiadam na pytania o zakres prac, przebieg budowy i formalności — wyłącznie na podstawie dokumentacji firmy.",
+        placeholder: "Napisz pytanie…",
+        stopka: "ODPOWIEDZI WERYFIKOWANE ŹRÓDŁOWO",
+        etykietaZrodla: "◈",
+        etykietaLuki: "△ brak w dokumentacji",
+        etykietaPominiec: "✂ pominięto",
+        bladSieci: "Brak połączenia z asystentem. Proszę spróbować za chwilę.",
+        bladOgolny: "Coś poszło nie tak. Proszę spróbować ponownie.",
+        // Te same pytania, które do 27.08.2026 były wpisane na sztywno
+        // w `index.html` jako stała CHIPS.
+        pytania: [
+          "Ile trwa budowa domu?",
+          "Czym różni się stan surowy od deweloperskiego?",
+          "Jak wygląda płatność?",
+          "Rękojmia a gwarancja?",
+          "Montujecie fotowoltaikę?",
+        ],
+      },
 
       // TRESC INTERFEJSU — branżowa, tak jak słownik eskalacji. Do 24.08.2026
       // była wpisana na sztywno w `app-internal.js` i `panel-internal.js`,
@@ -235,6 +276,10 @@ Zanim odpowiesz, sprawdź, czy fragment, z którego korzystasz, dotyczy DOKŁADN
       pracownik: "kancelaria-pracownik.know-base.app",
       wlasciciel: "kancelaria-wlasciciel.know-base.app",
     },
+
+    // Firma fikcyjna, własnej strony nie ma. Pusta lista jest poprawnym stanem:
+    // widget odpowiada wtedy wyłącznie na własnych hostach klienta.
+    witryny: [],
 
     audVars: {
       pracownik: "ACCESS_AUD_KANCELARIA",
@@ -343,6 +388,30 @@ Zanim odpowiedzisz, sprawdź, czy fragment, z którego korzystasz, dotyczy DOKŁ
       tytulPanel: "Zaremba — panel kancelarii",
       tytulPanelWew: "Zaremba — panel spraw i terminów",
       domenaLogowania: "@zaremba.przyklad.pl",
+
+      // WIDGET OSADZANY. Rejestr jest ostrożniejszy niż u BudMaksu i to jest
+      // celowe: powitanie mówi wprost, czego bot NIE robi, bo w tej branży
+      // najgroźniejszym błędem nie jest zmyślona cena, tylko porada prawna.
+      widget: {
+        tytul: "Asystent kancelarii",
+        podtytul: "Informacja, nie porada prawna",
+        etykietaDymka: "Zadaj pytanie",
+        powitanie: "Dzień dobry. Udzielam informacji o zakresie usług kancelarii, kosztach i przebiegu współpracy. Nie oceniam szans sprawy ani nie udzielam porad prawnych — to zawsze należy do adwokata na konsultacji.",
+        placeholder: "Napisz pytanie…",
+        stopka: "ODPOWIEDZI WYŁĄCZNIE Z DOKUMENTACJI KANCELARII",
+        etykietaZrodla: "◈",
+        etykietaLuki: "△ brak w dokumentacji",
+        etykietaPominiec: "✂ pominięto",
+        bladSieci: "Brak połączenia z asystentem. Proszę spróbować za chwilę.",
+        bladOgolny: "Coś poszło nie tak. Proszę spróbować ponownie.",
+        pytania: [
+          "Jak umówić konsultację?",
+          "Ile kosztuje prowadzenie sprawy?",
+          "Jakimi sprawami się zajmujecie?",
+          "Co zabrać na pierwsze spotkanie?",
+          "Czy prowadzicie sprawy w całej Polsce?",
+        ],
+      },
 
       etykietaPrzelacznika: "kancelarię",
       opisTytul: "Asystent kancelarii",

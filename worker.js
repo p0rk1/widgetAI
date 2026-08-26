@@ -31,6 +31,7 @@ import { KLIENCI, HOSTY_INDEX } from "./klienci.js";
 import { PANEL_INTERNAL_HTML } from "./panel-internal.js";
 import { PANEL_HTML } from "./panel.js";
 import { APP_INTERNAL_HTML } from "./app-internal.js";
+import { WIDGET_EMBED_JS } from "./widget-embed.js";
 
 const TOP_K = 8; // podniesione z 6 — krótkie, ogólne pytania miały za mało kandydatów
 const MIN_CHUNKS = 2;
@@ -66,10 +67,13 @@ const LOG_RETENTION_DAYS = 90; // po tylu dniach wpisy w logu wygasają automaty
 // na SUROWYM tekście modelu, więc zdanie odmowne KAŻDEGO klienta musi tę frazę
 // zawierać. Sprawdzamy to przy starcie modułu, żeby błąd konfiguracji nowego
 // klienta wyszedł przy `wrangler deploy --dry-run`, a nie u niego na stronie.
+const ORIGIN_POPRAWNY = /^https:\/\/[^/?#]+$/;
 const FRAZA_ODMOWY = /nie mam takich informacji/i;
 for (const k of Object.values(KLIENCI)) {
   if (!FRAZA_ODMOWY.test(k.prompt.fallback)) {
     throw new Error(`Klient ${k.id}: zdanie odmowne musi zawierać frazę „nie mam takich informacji".`);
+  }
+
   // Nazwy kategorii w panelu muszą pokrywać słownik branżowy. Bez tej asercji
   // dodanie kategorii do słownika daje w panelu kartę z surowym `id`, a literówka
   // w kluczu — kartę, która nigdy się nie zapala. Oba błędy są ciche.
@@ -79,6 +83,26 @@ for (const k of Object.values(KLIENCI)) {
     throw new Error(`Klient ${k.id}: ui.nazwyEskalacji nie pokrywa się ze słownikiem eskalacji.\n` +
       `  słownik: ${zeSlownika}\n  nazwy:   ${zNazw}`);
   }
+
+  // WIDGET OSADZANY. Brakujący tekst nie wywala skryptu — wychodzi jako
+  // „undefined" na stronie KLIENTA, u jego klientów. Dlatego sprawdzamy to
+  // przy starcie modułu, tak samo jak zdanie odmowne.
+  const wymaganeWidget = [
+    "tytul", "podtytul", "etykietaDymka", "powitanie", "placeholder", "stopka",
+    "etykietaZrodla", "etykietaLuki", "etykietaPominiec", "bladSieci", "bladOgolny",
+  ];
+  const brakiWidget = wymaganeWidget.filter((pole) => !k.ui?.widget?.[pole]);
+  if (brakiWidget.length) {
+    throw new Error(`Klient ${k.id}: ui.widget nie ma pol: ${brakiWidget.join(", ")}.`);
+  }
+
+  // WITRYNY to ORIGINY, nie adresy stron. Ukosnik na koncu albo sciezka daje
+  // wpis, ktory NIGDY nie zrowna sie z naglowkiem `Origin` — a objawia sie
+  // dopiero jako milczaco zablokowane zadanie na stronie klienta.
+  for (const w of k.witryny || []) {
+    if (!ORIGIN_POPRAWNY.test(w)) {
+      throw new Error(`Klient ${k.id}: "${w}" nie jest originem. Oczekiwano "https://host" bez sciezki i bez ukosnika na koncu.`);
+    }
   }
 }
 
@@ -327,11 +351,24 @@ function rolaHosta(url) {
   return t ? t.rola : null;
 }
 
+// WITRYNY KLIENTA — adresy, spod których wolno wywołać jego widget.
+// Od 27.08.2026 to jest krok wdrożeniowy powtarzany przy każdym kliencie:
+// dopóki domena klienta nie jest w polu `witryny`, przeglądarka odrzuci
+// odpowiedź na jego własnej stronie. Adres podaje się jako ORIGIN — schemat
+// i host, bez ścieżki i bez ukośnika na końcu; `www` to osobny origin.
+function witrynyKlienta(klient) {
+  const hosty = Object.values(klient.hosty || {}).map((h) => `https://${h}`);
+  return [...(klient.witryny || []), ...hosty];
+}
+
 const ALLOWED_ORIGINS = [
-  "https://p0rk1.github.io",              // widget publiczny — GitHub Pages
   // Hosty wszystkich klientów. Adresy `stare` celowo NIE wchodzą: mają dalej
   // przyjmować żądania, ale nie są miejscem, z którego ktokolwiek osadza widget.
   ...[...HOSTY_INDEX.entries()].filter(([, t]) => !t.stary).map(([host]) => `https://${host}`),
+  // Witryny wszystkich klientów. Ta lista obsługuje endpointy, przy których
+  // klienta jeszcze nie znamy; tam, gdzie znamy, obowiązuje węższa lista
+  // `witrynyKlienta()` — patrz `corsHeaders()`.
+  ...Object.values(KLIENCI).flatMap((k) => k.witryny || []),
 ];
 
 // Host PRACOWNICZY — aplikacja asystenta budowy, cały host za Access.
@@ -392,11 +429,14 @@ function odpowiedzBrakKonfiguracji(url, env, request) {
 
 // Blok `:root` motywu. Nazwy zmiennych zostają te same, co przed zmianą,
 // więc wszystkie reguły CSS w plikach interfejsu działają bez przeróbek.
-function motywCss(klient) {
+// TOKENY MOTYWU — same deklaracje, bez selektora.
+// Wydzielone 27.08.2026, bo widget osadzany potrzebuje ich na `:host`, a nie
+// na `:root`: wewnątrz drzewa cienia `:root` nie pasuje do niczego. Jeden
+// zestaw wartości, dwa miejsca podstawienia — palety nie ma gdzie zdublować.
+function zmienneMotywu(klient) {
   const m = klient.motyw;
   const k = m.kolory;
-  return `:root{
-  --void:${k.void};--deck:${k.deck};--panel:${k.panel};
+  return `--void:${k.void};--deck:${k.deck};--panel:${k.panel};
   --line:${k.line};--line-soft:${k.lineSoft};
   --chalk:${k.chalk};--mute:${k.mute};--dim:${k.dim};
   --hi:${k.hi};--blue:${k.blue};--ok:${k.ok};--warn:${k.warn};--danger:${k.danger};
@@ -418,7 +458,12 @@ function motywCss(klient) {
   /* Wysokość paska demo. Zero, dopóki paska nie ma — a jest tylko przy DEMO=1,
      i wtedy sam podnosi tę wartość własnym <style>. Dzięki temu interfejsy
      rezerwują na niego miejsce, zamiast dawać mu się położyć na treści. */
-  --pasek-demo:0px;
+  --pasek-demo:0px;`;
+}
+
+function motywCss(klient) {
+  return `:root{
+${zmienneMotywu(klient)}
 }
 
 /* Miejsce pod pasek demo — raz dla wszystkich trzech interfejsów.
@@ -445,6 +490,50 @@ function linkFontow(klient) {
   return `<link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="${klient.motyw.fontyUrl}" rel="stylesheet">`;
+}
+
+// KONFIGURACJA WIDGETU OSADZANEGO.
+// Wszystko, co skrypt w przeglądarce gościa wie o kliencie, przechodzi tędy
+// i tylko tędy. W `widget-embed.js` nie ma ani jednego koloru, ani jednego
+// polskiego tekstu marki i ani jednej nazwy firmy — ta sama reguła, która od
+// 24.08.2026 obowiązuje pliki interfejsów, tyle że wyegzekwowana dalej,
+// bo ten plik ląduje na cudzej stronie.
+//
+// ENDPOINT SKŁADA SIĘ Z HOSTA PUBLICZNEGO KLIENTA, nie z adresu, spod którego
+// przyszło żądanie. Dzięki temu skrypt pobrany przez pomyłkę ze starego adresu
+// `workers.dev` i tak rozmawia z właściwym hostem — i dzięki temu widget
+// przestał zależeć od `workers.dev` w ogóle.
+function konfiguracjaWidgetu(klient) {
+  const w = klient.ui.widget || {};
+  return {
+    klient: klient.id,
+    endpoint: `https://${klient.hosty.publiczny}/`,
+    zmienne: zmienneMotywu(klient),
+    fontyUrl: klient.motyw.fontyUrl,
+    maxHistorii: 6,
+    tytul: w.tytul,
+    podtytul: w.podtytul,
+    etykietaDymka: w.etykietaDymka,
+    powitanie: w.powitanie,
+    placeholder: w.placeholder,
+    stopka: w.stopka,
+    pytania: w.pytania || [],
+    etykietaZrodla: w.etykietaZrodla,
+    etykietaLuki: w.etykietaLuki,
+    etykietaPominiec: w.etykietaPominiec,
+    bladSieci: w.bladSieci,
+    bladOgolny: w.bladOgolny,
+  };
+}
+
+// Podstawienie jest JEDNO i jawne — nie `renderHtml()`, bo tamten podmienia
+// każde `{{cokolwiek}}` z `klient.ui`, a to jest JavaScript lecący na cudzą
+// stronę: chcemy dokładnie wiedzieć, co się w nim znajdzie.
+// `<` uciekamy mimo typu `application/javascript`: gdyby ktoś kiedyś wkleił
+// ten skrypt do HTML-a, ciąg `</script>` w danych zamknąłby tag.
+function renderWidget(klient) {
+  const json = JSON.stringify(konfiguracjaWidgetu(klient)).replace(/</g, "\u003c");
+  return WIDGET_EMBED_JS.replace("{{konfig}}", () => json);
 }
 
 // Kafle szybkiego startu. Numer w monospace zamiast emoji — ten sam język,
@@ -524,9 +613,18 @@ function przelacznikDemo(env, klient, rola) {
     `demo · ${klient.ui.nazwaKrotka} · przełącz na ${linki}</div>`;
 }
 
-function corsHeaders(request) {
+// CORS. Gdy klient jest znany (a jest zawsze, gdy host jest jego hostem),
+// lista zwęża się do JEGO witryn — strona jednego klienta nie odpytuje widgetu
+// drugiego. Bez tego zawężenia wystarczyłby jeden wpis w `witryny`, żeby każda
+// zarejestrowana domena rozmawiała z każdym hostem publicznym.
+//
+// Origin spoza listy dostaje pierwszą pozycję z listy, czyli NIE swój adres —
+// przeglądarka odrzuci taką odpowiedź. To jest zamierzone: odmowa ma wyjść
+// po stronie przeglądarki, a nie zamienić się w ciche zezwolenie.
+function corsHeaders(request, klient = null) {
   const origin = request?.headers?.get("Origin") || "";
-  const dozwolony = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+  const lista = klient ? witrynyKlienta(klient) : ALLOWED_ORIGINS;
+  const dozwolony = lista.includes(origin) ? origin : lista[0];
   return {
     "Access-Control-Allow-Origin": dozwolony,
     "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
@@ -1763,7 +1861,7 @@ export default {
     const klient = rozpoznajKlienta(url);
 
     if (request.method === "OPTIONS") {
-      return new Response(null, { headers: corsHeaders(request) });
+      return new Response(null, { headers: corsHeaders(request, klient) });
     }
 
     if (url.pathname === "/reindex" && request.method === "GET") {
@@ -1998,6 +2096,31 @@ export default {
       }
     }
 
+    // SKRYPT OSADZAJĄCY — jedyna rzecz, jaką klient wkleja na swojej stronie.
+    // Stoi na HOŚCIE PUBLICZNYM, bo to jego adres trafia do `src` w snippecie,
+    // i to on wybiera klienta. Host pracowniczy i właścicielski go nie serwują:
+    // tam nie ma czego osadzać, a wystawienie skryptu spod adresu za Access
+    // dałoby snippet, którego gość strony klienta i tak by nie pobrał.
+    if (url.pathname === "/widget.js" && request.method === "GET") {
+      if (!klient || rolaHosta(url) !== "publiczny") {
+        return new Response("// Widget nie jest serwowany spod tego adresu.\n", {
+          status: 404,
+          headers: { "Content-Type": "application/javascript; charset=utf-8", ...corsHeaders(request) },
+        });
+      }
+      return new Response(renderWidget(klient), {
+        headers: {
+          "Content-Type": "application/javascript; charset=utf-8",
+          // Pięć minut. Kompromis: bez bufora każde wejście na stronę klienta
+          // to trafienie w Workera, a z buforem godzinnym zmiana motywu albo
+          // tekstu wisiałaby godzinę. Przy zmianie treści widgetu pamiętaj,
+          // że przez ten czas gość może dostać poprzednią wersję.
+          "Cache-Control": "public, max-age=300",
+          ...corsHeaders(request),
+        },
+      });
+    }
+
     if (url.pathname === "/purge" && request.method === "GET") {
       if (!isAdmin(url, env)) {
         return new Response("Brak dostępu.", { status: 403, headers: corsHeaders(request) });
@@ -2167,7 +2290,7 @@ async function handleAsk(request, env, klient, rodzaje, askedFrom, identity = nu
     question = (body.question || "").toString().trim();
     history = sanitizeHistory(body.history);
   } catch {
-    return jsonResponse({ error: "Nieprawidłowe zapytanie" }, corsHeaders(request), 400);
+    return jsonResponse({ error: "Nieprawidłowe zapytanie" }, corsHeaders(request, klient), 400);
   }
 
   if (!question || question.length > MAX_QUESTION_LENGTH) {
@@ -2175,7 +2298,7 @@ async function handleAsk(request, env, klient, rodzaje, askedFrom, identity = nu
       answer: question ? `Twoja wiadomość jest za długa (limit ${MAX_QUESTION_LENGTH} znaków). Spróbuj podzielić ją na kilka krótszych pytań.` : "Pytanie nie może być puste.",
       source: null,
       gap: false,
-    }, corsHeaders(request), 400);
+    }, corsHeaders(request, klient), 400);
   }
 
   // Kategoria eskalacji zależy WYŁĄCZNIE od pytania i od tego, z którego
@@ -2200,7 +2323,7 @@ async function handleAsk(request, env, klient, rodzaje, askedFrom, identity = nu
     const key = `rl:${ip}:${bucket}`;
     const current = parseInt((await env.RATE_LIMIT_KV.get(key)) || "0", 10);
     if (current >= RATE_LIMIT_PER_HOUR) {
-      return jsonResponse({ answer: "Zbyt wiele zapytań z tego adresu. Spróbuj za chwilę.", source: null, gap: false }, corsHeaders(request), 429);
+      return jsonResponse({ answer: "Zbyt wiele zapytań z tego adresu. Spróbuj za chwilę.", source: null, gap: false }, corsHeaders(request, klient), 429);
     }
     await env.RATE_LIMIT_KV.put(key, String(current + 1), { expirationTtl: 3600 });
   }
@@ -2218,7 +2341,7 @@ async function handleAsk(request, env, klient, rodzaje, askedFrom, identity = nu
 
     if (filtered.length === 0) {
       await logQuestion(env, question, true, null, askedFrom, null, eskalacja, klient.id);
-      return jsonResponse({ answer: zlozZEskalacja(klient.prompt.fallback, ramka), source: null, gap: true, ...poleEskalacji }, corsHeaders(request));
+      return jsonResponse({ answer: zlozZEskalacja(klient.prompt.fallback, ramka), source: null, gap: true, ...poleEskalacji }, corsHeaders(request, klient));
     }
 
     // Tryb promptu, jak przestrzenie, przychodzi wyłącznie z routingu.
@@ -2236,7 +2359,7 @@ async function handleAsk(request, env, klient, rodzaje, askedFrom, identity = nu
     // wyjaśnienie odmowy, zamieniał całą odpowiedź w nagi fallback.
     if (!rawAnswer || tylkoOdmowa(rawAnswer)) {
       await logQuestion(env, question, true, null, askedFrom, null, eskalacja, klient.id);
-      return jsonResponse({ answer: zlozZEskalacja(klient.prompt.fallback, ramka), source: null, gap: true, ...poleEskalacji }, corsHeaders(request));
+      return jsonResponse({ answer: zlozZEskalacja(klient.prompt.fallback, ramka), source: null, gap: true, ...poleEskalacji }, corsHeaders(request, klient));
     }
 
     // Odmowa dopisana OBOK treści jest usuwana, żeby odpowiedź nie zawierała
@@ -2251,7 +2374,7 @@ async function handleAsk(request, env, klient, rodzaje, askedFrom, identity = nu
       // (stan sprzed 20.08.2026) wycinało z metryk dokładnie ten przypadek,
       // dla którego licznik powstał.
       await logQuestion(env, question, true, null, askedFrom, verdict.cicho, eskalacja, klient.id);
-      return jsonResponse({ answer: zlozZEskalacja(verdict.fallback, ramka), source: null, gap: true, ...poleEskalacji }, corsHeaders(request));
+      return jsonResponse({ answer: zlozZEskalacja(verdict.fallback, ramka), source: null, gap: true, ...poleEskalacji }, corsHeaders(request, klient));
     }
 
     await logQuestion(env, question, false, verdict.source, askedFrom, verdict.cicho, eskalacja, klient.id);
@@ -2267,9 +2390,9 @@ async function handleAsk(request, env, klient, rodzaje, askedFrom, identity = nu
       // Publiczna odpowiedź zachowuje dotychczasowy kształt — pole dochodzi
       // tylko wtedy, gdy pytający jest zalogowany.
       ...(identity ? { zalogowany: { email: identity.email, domena: identity.domena } } : {}),
-    }, corsHeaders(request));
+    }, corsHeaders(request, klient));
   } catch (e) {
-    return jsonResponse({ answer: `Błąd: ${e.message}. Sprawdź bindingi AI i VECTORIZE.`, source: null, gap: false }, corsHeaders(request), 502);
+    return jsonResponse({ answer: `Błąd: ${e.message}. Sprawdź bindingi AI i VECTORIZE.`, source: null, gap: false }, corsHeaders(request, klient), 502);
   }
 }
 
@@ -2294,7 +2417,9 @@ export {
   // w interfejsie surowego `{{placeholdera}}` ani cudzej nazwy.
   renderHtml,
   // Skladanie motywu i tresci interfejsu z pol klienta.
-  motywCss, linkFontow, kafleHtml, eskalacjeJson,
+  motywCss, zmienneMotywu, linkFontow, kafleHtml, eskalacjeJson,
+  // Widget osadzany: konfiguracja i gotowy skrypt.
+  konfiguracjaWidgetu, renderWidget, witrynyKlienta, corsHeaders, ALLOWED_ORIGINS,
   buildSystemPrompt,
 };
 

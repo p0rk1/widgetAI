@@ -59,6 +59,7 @@ każdej sesji, a historia decyzji jest potrzebna kilka razy w miesiącu.
 | 24.08 | **Filtr wejściowy: NIE BUDOWAĆ** — wulgaryzmy i pytania spoza dziedziny, rozstrzygnięte pomiarem | `DECYZJE.md` → Filtr wejściowy |
 | 24.08 | **Długość odpowiedzi pracowniczych zmierzona — diagnoza niepotwierdzona**, prompt nietknięty | `DECYZJE.md` → Długość odpowiedzi |
 | 25.08 | Logo KnowBase jako zasób repo, serwowane z Pages; krycia podniesione po pomiarze kontrastu | `ZERO-TRUST.md` → Krok 11 |
+| 27.08 | **Skrypt osadzający**: `GET /widget.js`, Shadow DOM, dwa warianty, `witryny` w CORS; `index.html` bez własnej kopii czatu | `DECYZJE.md` → Skrypt osadzający |
 | 26.08 | **Wrogi test obietnic kancelarii — warstwa myliła się w DRUGĄ stronę**: 10/14 fałszywych alarmów na zdaniach odsyłających. Naprawione, dziura BudMaksu domknięta przy okazji | `DECYZJE.md` → Wrogi test obietnic kancelarii |
 
 **Gdzie jesteśmy:** treści nie brakuje nigdzie, a z pięciu problemów z pomiaru
@@ -109,8 +110,9 @@ wpisać. Runbook z podziałem pracy klient/my i rachunkiem dla sprzedaży:
 sprawdza podpis, `iss`, `aud` i ważność, nie dostawcę.
 
 **Trzy rzeczy, które łatwo popsuć nieświadomie:**
-1. Wyłączenie `workers_dev` zerwie widget i panel — mają stary adres wpisany
-   na sztywno w `WORKER_URL`
+1. Wyłączenie `workers_dev` zerwie **panel** — ma stary adres wpisany na sztywno
+   w `WORKER_URL` w `panel.html`. **Widget przestał od tego zależeć 27.08.2026**:
+   endpoint składa się z hosta publicznego klienta
 2. Binding albo trasa, których nie ma w `wrangler.toml`, znikają przy deployu
 3. `/reindex` po każdej zmianie treści — i odczekać, zapis do Vectorize jest
    asynchroniczny
@@ -137,7 +139,8 @@ sprawdza podpis, `iss`, `aud` i ważność, nie dostawcę.
 | `content-internal.js` | `INTERNAL_CHUNKS` — 44 fragmenty wewnętrzne | importowane przez `worker.js` |
 | `app-internal.js` | `APP_INTERNAL_HTML` — aplikacja asystenta budowy PWA | importowane przez `worker.js` dla `GET /app` |
 | `panel-internal.js` | `PANEL_INTERNAL_HTML` — szablon panelu wewnętrznego | importowane przez `worker.js` dla `GET /panel` |
-| `index.html` | Strona firmy z osadzonym widgetem | GitHub Pages |
+| `widget-embed.js` | `WIDGET_EMBED_JS` — szablon skryptu osadzanego, serwowany pod `GET /widget.js`. **Leci na stronę klienta**: zero kolorów, zero nazw firm, zero odwróconych apostrofów | importowane przez `worker.js` |
+| `index.html` | Strona firmy demonstracyjnej. **Od 27.08.2026 osadza widget snippetem**, nie własną kopią kodu | GitHub Pages |
 | `panel.js` | `PANEL_HTML` — panel właściciela, serwowany na hoście właściciela pod `GET /` | importowane przez `worker.js` |
 | `panel.html` | **Już nie panel** — wskazówka z nowym adresem, bo ze statycznej strony nie da się uwierzytelnić przez Access | GitHub Pages |
 | `panel-internal.html` | Panel analityczny procedur i szkoleń (bot wewnętrzny) | repo / serwowane przez Worker |
@@ -146,6 +149,7 @@ sprawdza podpis, `iss`, `aud` i ważność, nie dostawcę.
 | `wrangler.toml` | Konfiguracja deployu — bindingi, zmienne Access, data kompatybilności | repo |
 | `DECYZJE.md` | Uzasadnienia, wyniki pomiarów, ślepe uliczki | repo, czytane na żądanie |
 | `ZERO-TRUST.md` | Instrukcja konfiguracji logowania do trybu wewnętrznego | repo |
+| `OSADZENIE.md` | Osadzenie widgetu u klienta: linijka do wklejenia, co robi klient, co robimy my | repo, do wysłania klientowi |
 | `test-access.mjs` | Test weryfikacji tokenu Access (`node test-access.mjs`) | repo |
 | `test-eskalacja.mjs` | Test warstwy eskalacji (`node test-eskalacja.mjs`) | repo |
 | `test-weryfikacja.mjs` | Test deduplikacji, progów i cytatu dosłownego | repo |
@@ -153,6 +157,7 @@ sprawdza podpis, `iss`, `aud` i ważność, nie dostawcę.
 | `test-klienci.mjs` | Test wymiaru klienta: host, przestrzenie, obowiązkowość klienta, szablony | repo |
 | `test-eskalacja-prawna.mjs` | Test słownika eskalacji kancelarii — **98 przypadków** (`node test-eskalacja-prawna.mjs`) | repo |
 | `test-obietnice-prawne.mjs` | Wrogi test warstwy obietnic kancelarii — **62 przypadki**, w tym 30 zdań, których warstwa wyciąć NIE MOŻE | repo |
+| `test-widget.mjs` | Skrypt osadzający — **59 przypadków**: izolacja, motyw, CORS między klientami, asercja `data-client` | repo |
 | `test-motyw.mjs` | Test motywu i treści interfejsu: brak surowych `{{pól}}`, brak słownictwa cudzej branży, różność motywów | repo |
 | `sonda-klienta.mjs` | Zbiorczy przebieg diagnostyczny klienta (`node sonda-klienta.mjs <sekret> <klient> [zakres]`) — odtwarza ścieżkę produkcyjną, osobno liczy eskalacje i ramki bezpieczeństwa | repo, wyniki do katalogu tymczasowego |
 | `sonda-powtorka.mjs` | To samo pytanie N razy — odróżnia wahanie modelu od skutku zmiany (`node sonda-powtorka.mjs <sekret> <klient> <space> <N> "pytanie"`) | repo |
@@ -363,6 +368,76 @@ i kroju, **nie edycja plików interfejsu**.
 
 **Test:** `node test-motyw.mjs` — 135 przypadków. Uruchamiać po każdej zmianie
 w motywie, w `ui` i w plikach interfejsu.
+
+## Widget osadzany — skrypt na stronie klienta, od 27.08.2026
+
+Klient wkleja **jedną linijkę**; `GET /widget.js` na jego HOŚCIE PUBLICZNYM oddaje
+skrypt złożony z szablonu `widget-embed.js` i konfiguracji z pól klienta.
+Instrukcja dla klienta i krok wdrożeniowy: `OSADZENIE.md`.
+
+```html
+<script src="https://budmax.know-base.app/widget.js" data-client="budmax" async></script>
+```
+
+| Atrybut | Wartości | Domyślnie |
+|---|---|---|
+| `data-client` | id klienta | — (**asercja**, nie wybór) |
+| `data-kb-mode` | `bubble` / `inline` | `bubble` |
+| `data-kb-position` | `right` / `left` | `right` |
+| `data-kb-target` | selektor CSS | `[data-knowbase]` |
+| `data-kb-fonts` | `on` / `off` | `on` |
+
+**Reguły, których nie wolno rozluźnić:**
+- **Klienta wybiera ADRES w `src`, nie `data-client`.** Atrybut jest porównywany
+  z konfiguracją wstrzykniętą przez Workera i przy niezgodności zatrzymuje widget.
+  Gdyby wybierał, byłby nazwą klienta przychodzącą z żądania — czyli dokładnie
+  tym, co odrzucono 22.08.2026.
+- **`:host{all:initial}` NIE JEST OZDOBĄ.** Shadow DOM zatrzymuje selektory, ale
+  **nie zatrzymuje dziedziczenia**: `font-family`, `color`, `line-height`,
+  `letter-spacing` i `visibility` ze strony klienta przechodzą przez granicę
+  cienia. Bez tej reguły obietnica izolacji jest nieprawdziwa dla najczęstszego
+  przypadku — starej strony z `body{font:12px Arial}`.
+- **Dymek wisi na `<body>`, nie w miejscu tagu skryptu.** `position:fixed`
+  wewnątrz przodka z `transform`, `filter` albo `perspective` przestaje być
+  względne do okna.
+- **Arkusz Google Fonts idzie do `<head>` strony klienta** — `@font-face`
+  zadeklarowany wewnątrz drzewa cienia nie jest rejestrowany. To **jedyny**
+  wyjątek od izolacji, oznaczony i wyłączalny przez `data-kb-fonts="off"`.
+- **Brak Shadow DOM v1 = widget się NIE montuje**, z ostrzeżeniem w konsoli.
+  Wariant „zamontuj bez cienia" jest gorszy od nieuruchomienia się: widget
+  wyglądałby losowo na cudzej stronie, a my byśmy o tym nie wiedzieli.
+- **W `widget-embed.js` nie ma ŻADNEJ wartości barwnej ani nazwy firmy.** Motyw
+  przychodzi z `zmienneMotywu(klient)` — tych samych tokenów, co `:root`
+  w interfejsach, tyle że podstawianych na `:host`. Palety nie wolno zdublować.
+- **W treści szablonu nie ma odwróconych apostrofów, także w komentarzach.**
+  Czwarty przypadek w projekcie; `node --check` przeszedł, `import` wywalił.
+  Pilnuje tego sekcja 3 w `test-widget.mjs`.
+- **Skrypt stoi WYŁĄCZNIE na hoście publicznym.** Na pracowniczym i właścicielskim
+  `/widget.js` zwraca 404 — snippet prowadzący pod adres za Access byłby
+  nie do pobrania przez gościa strony klienta.
+- **Strona klienta rozmawia z widgetem wyłącznie przez `window.KnowBase`**
+  (`ask`, `open`, `close`). Sięganie do wnętrza drzewa cienia oznacza własną
+  kopię czatu — czyli to, co ta zmiana usunęła z `index.html`.
+- **Skrypt ma `Cache-Control: max-age=300`.** Zmiana motywu albo tekstu rozchodzi
+  się do gości strony klienta **do pięciu minut** — sonda zaraz po wdrożeniu
+  potrafi pokazać stan sprzed niego.
+
+**`witryny` — krok powtarzany przy KAŻDYM wdrożeniu.** Pole w `KLIENCI`: originy,
+z których wolno wywołać widget tego klienta. Zmierzone 27.08.2026: bez tego
+`ALLOWED_ORIGINS` **nie obsłużyłby** domeny klienta — jego strona dostałaby
+w odpowiedzi cudzy adres i przeglądarka zablokowałaby odpowiedź, a widget
+pokazałby się i milczał.
+- **ORIGIN, nie adres strony**: `https://firma.pl`, bez ścieżki i bez ukośnika.
+  Pilnuje tego asercja przy starcie modułu, więc błąd wychodzi przy `--dry-run`.
+- **`www` to osobny origin** — jeśli strona odpowiada pod oboma, oba muszą być.
+- `ALLOWED_ORIGINS` składa się z tych tablic **samo**; nie ma tam czego dopisywać.
+- **`corsHeaders(request, klient)` zwęża listę do witryn TEGO klienta**, gdy
+  klient jest znany. Bez zawężenia jeden wpis w `witryny` pozwoliłby każdej
+  zarejestrowanej domenie rozmawiać z każdym hostem publicznym.
+
+**Test:** `node test-widget.mjs` — 59 przypadków. **Nie obejmuje zachowania
+w przeglądarce** — sprawdza reguły, nie render. Pierwsze osadzenie u prawdziwego
+klienta trzeba obejrzeć okiem.
 
 ## Separacja przestrzeni wiedzy
 
@@ -982,6 +1057,11 @@ też poprawne parafrazy.
   słabym wskaźnikiem dla fragmentu o GRANICY KOMPETENCJI** — taki fragment
   z definicji konkuruje z całą resztą dokumentacji. Liczy się, czy wszedł do
   zestawu, nie czy odskoczył
+- **Asercja, której nikt nie widział, jak pada, jest hipotezą** — znalezione
+  27.08.2026. Sprawdzenie pokrycia `ui.nazwyEskalacji`, opisane tu od 24.08.2026
+  jako działające, leżało **za `throw`** w tej samej gałęzi `if` i nie wykonało
+  się ani razu. Naprawione. Przy dopisywaniu następnej asercji trzeba ją raz
+  celowo złamać i zobaczyć komunikat
 - **Kolizja „zarzutów" w kancelarii — znaleziona 24.08.2026, nienaprawiona.**
   „Postawili klientowi zarzuty dziś rano" trafia do `termin_procesowy`, nie do
   `zatrzymania`: „zarzut" jest homonimem (zarzuty karne kontra zarzuty od nakazu
@@ -1119,8 +1199,13 @@ Kolejność jest celowa — uzasadnienie jest częścią decyzji, nie ozdobnikie
    - **Etap 4 (po stronie właściciela): trasy i Access dla kancelarii** — trzy
      wpisy w `[[routes]]` i dwie aplikacje Access. Dopiero wtedy demo da się
      pokazać na żywo i zmierzyć przez `POST /`, a nie przez `/debug`.
-3. **Skrypt osadzający** — Shadow DOM, jedna linijka `<script>` do wklejenia na
-   dowolnej stronie klienta, izolacja stylów w obie strony.
+3. ~~**Skrypt osadzający**~~ — ✅ **zrobione 27.08.2026.** Shadow DOM z `all:initial`,
+   dwa warianty osadzenia, motyw i teksty z pól klienta, `witryny` w CORS.
+   `index.html` osadza widget tym samym snippetem, co prawdziwy klient — nie ma
+   już własnej kopii czatu, więc demo i produkt nie mają się jak rozjechać.
+   **Zostało do sprawdzenia okiem przy pierwszym prawdziwym kliencie:** render
+   w przeglądarce na jego stronie (test sprawdza reguły, nie wygląd).
+   `DECYZJE.md` → „Skrypt osadzający".
 4. **Multi-tenant** — dopiero przy 2-3 płacących klientach: D1 z tabelą klientów,
    namespaces w Vectorize per klient.
 
@@ -1158,7 +1243,8 @@ Kolejność jest celowa — uzasadnienie jest częścią decyzji, nie ozdobnikie
   przy zmianach w warstwach weryfikacji `node test-weryfikacja.mjs`,
   przy zmianach w tablicy klientów, hostach lub szablonach `node test-klienci.mjs`,
   a przy zmianach w słowniku kancelarii `node test-eskalacja-prawna.mjs`,
-  przy zmianach w warstwie obietnic `node test-obietnice-prawne.mjs`
+  przy zmianach w warstwie obietnic `node test-obietnice-prawne.mjs`,
+  a przy zmianach w widgecie osadzanym, w `witryny` lub w CORS `node test-widget.mjs`
 - **`node --check` nie łapie wszystkiego — zmierzone 22.08.2026.** Dosłowny znak
   nowej linii wstawiony do szablonu promptu (niedomknięty literał) **przeszedł
   przez `node --check` bez zastrzeżeń**, a wywalił się dopiero przy `import`.

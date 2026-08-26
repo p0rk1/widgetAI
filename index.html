@@ -136,99 +136,13 @@ body::before{
   padding:4px 8px;background:rgba(10,13,17,.6);backdrop-filter:blur(4px);
 }
 
-/* ══ CHAT ══ */
-.chat-sec{padding:88px 0 96px;border-top:1px solid var(--line-soft);overflow:visible}
-.chat-shell{
-  max-width:var(--chat-closed);margin:0 auto;
-  transition:max-width .62s var(--sp);
-  position:relative;
-}
-.chat-shell.open{max-width:var(--chat-open)}
-.chat-glow{
-  position:absolute;inset:-40px -10px;pointer-events:none;opacity:0;
-  background:radial-gradient(ellipse 70% 100% at 50% 0%,rgba(255,106,31,.13),transparent 68%);
-  filter:blur(28px);transition:opacity .7s var(--sp);
-}
-.chat-shell.open .chat-glow{opacity:1}
-.chat{
-  background:linear-gradient(180deg,var(--panel),var(--deck));
-  border:1px solid var(--line);position:relative;overflow:hidden;
-  transition:border-color .5s var(--sp),box-shadow .6s var(--sp);
-}
-.chat-shell.open .chat{border-color:#2E3A44;box-shadow:0 30px 90px -20px rgba(0,0,0,.7)}
-.chat-scan{height:1px;background:linear-gradient(90deg,transparent,var(--hi),transparent);opacity:.45;
-  background-size:200% 100%;animation:scan 6s linear infinite}
-@keyframes scan{0%{background-position:200% 0}100%{background-position:-200% 0}}
-
-.chat-bar{width:100%;display:flex;align-items:center;gap:14px;padding:20px 22px;background:none;border:none;cursor:pointer;text-align:left;color:inherit}
-.orb{width:34px;height:34px;flex-shrink:0;position:relative;display:grid;place-items:center}
-.orb-core{width:9px;height:9px;background:var(--hi);border-radius:50%;position:relative;z-index:2}
-.orb-ring{position:absolute;inset:0;border:1px solid rgba(255,106,31,.3);border-radius:50%;animation:pulse 2.8s ease-in-out infinite}
-.orb-ring:nth-child(2){animation-delay:1.4s;inset:5px}
-@keyframes pulse{0%,100%{transform:scale(1);opacity:.5}50%{transform:scale(1.22);opacity:.14}}
-.chat-bar-txt b{font-family:'Archivo';font-weight:600;font-size:14.5px;display:block;letter-spacing:-.01em}
-.chat-bar-txt span{color:var(--dim);font-size:12px;display:block;margin-top:3px}
-.chev{margin-left:auto;color:var(--dim);transition:transform .5s var(--sp),color .3s;flex-shrink:0}
-.chat-shell.open .chev{transform:rotate(180deg);color:var(--hi)}
-
-.chat-body{max-height:0;overflow:hidden;transition:max-height .62s var(--sp)}
-.chat-shell.open .chat-body{max-height:620px}
-.log{padding:6px 22px 4px;max-height:440px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--line) transparent}
-.log::-webkit-scrollbar{width:5px}
-.log::-webkit-scrollbar-thumb{background:var(--line);border-radius:99px}
-
-.row{display:flex;gap:11px;margin-bottom:15px;animation:rise .45s var(--sp) both}
-@keyframes rise{from{opacity:0;transform:translateY(9px)}to{opacity:1;transform:none}}
-.row.me{justify-content:flex-end}
-.av{width:22px;height:22px;flex-shrink:0;margin-top:3px;display:grid;place-items:center;border:1px solid rgba(255,106,31,.3)}
-.av i{width:6px;height:6px;background:var(--hi);border-radius:50%;display:block}
-.bub{max-width:78%;padding:12px 15px;font-size:14px;line-height:1.62;white-space:pre-wrap}
-.bub.me{background:#232C34;color:var(--chalk);border:1px solid #2C3841}
-.bub.ai{background:rgba(255,255,255,.022);border:1px solid var(--line-soft);color:#DCE1E6}
-.bub.no{background:rgba(255,184,77,.05);border:1px solid rgba(255,184,77,.22);color:#F0D5A8}
-.bub.type-on::after{content:"";display:inline-block;width:6px;height:14px;background:var(--hi);margin-left:3px;vertical-align:-2px;animation:blink .85s step-end infinite}
-@keyframes blink{50%{opacity:0}}
-
-.tags{margin-left:33px;display:flex;gap:6px;flex-wrap:wrap;margin-bottom:15px}
-.tag{font-family:'JetBrains Mono';font-size:10px;padding:4px 9px;letter-spacing:.03em;display:inline-flex;align-items:center;gap:5px;animation:rise .4s var(--sp) both}
-.tag.src{background:rgba(76,201,240,.07);border:1px solid rgba(76,201,240,.22);color:var(--blue)}
-.tag.no{background:rgba(255,184,77,.07);border:1px solid rgba(255,184,77,.24);color:var(--warn)}
-.tag.cut{background:rgba(255,255,255,.03);border:1px solid var(--line);color:var(--dim)}
-
-.dots{display:flex;gap:4px;padding:13px 15px;background:rgba(255,255,255,.022);border:1px solid var(--line-soft);width:fit-content;margin-left:33px;margin-bottom:15px}
-.dots i{width:5px;height:5px;background:var(--hi);border-radius:50%;opacity:.35;animation:hop 1.3s ease-in-out infinite}
-.dots i:nth-child(2){animation-delay:.16s}.dots i:nth-child(3){animation-delay:.32s}
-@keyframes hop{0%,65%,100%{transform:translateY(0);opacity:.3}32%{transform:translateY(-5px);opacity:1}}
-
-.chips{display:flex;gap:7px;flex-wrap:wrap;padding:0 22px 4px}
-.chip{
-  font-size:12px;padding:7px 13px;background:transparent;border:1px solid var(--line);
-  color:var(--mute);cursor:pointer;transition:all .28s var(--sp);font-family:inherit;
-}
-.chip:hover{border-color:var(--hi);color:var(--hi);transform:translateY(-2px)}
-.chip:active{transform:translateY(0) scale(.96)}
-
-.compose{display:flex;gap:9px;padding:14px 22px 18px;align-items:flex-end}
-.compose textarea{
-  flex:1;background:rgba(255,255,255,.025);border:1px solid var(--line);color:var(--chalk);
-  padding:11px 14px;font-family:inherit;font-size:14px;line-height:1.5;resize:none;
-  max-height:130px;transition:border-color .25s,background .25s;
-}
-.compose textarea:focus{outline:none;border-color:var(--hi);background:rgba(255,106,31,.04)}
-.compose textarea::placeholder{color:var(--dim)}
-.send{
-  width:42px;height:42px;background:var(--hi);border:none;color:#0A0D11;cursor:pointer;
-  display:grid;place-items:center;flex-shrink:0;transition:transform .18s var(--sp),opacity .2s;
-}
-.send:hover:not(:disabled){transform:translateY(-2px)}
-.send:active:not(:disabled){transform:scale(.93)}
-.send:disabled{opacity:.28;cursor:default}
-
-.chat-foot{display:flex;align-items:center;gap:9px;padding:11px 22px;border-top:1px solid var(--line-soft);background:rgba(0,0,0,.18)}
-.chat-foot span{font-family:'JetBrains Mono';font-size:10px;color:var(--dim);letter-spacing:.04em}
-.chat-foot .dotgrn{width:5px;height:5px;background:var(--ok);border-radius:50%;box-shadow:0 0 8px var(--ok)}
-.clr{margin-left:auto;background:none;border:none;color:var(--dim);font-family:'JetBrains Mono';font-size:10px;cursor:pointer;transition:color .2s;letter-spacing:.04em}
-.clr:hover{color:var(--hi)}
+/* ══ ASYSTENT ══ */
+/* Style czatu ZNIKNELY 27.08.2026. Widget przyszedl tu snippetem, tak samo
+   jak u prawdziwego klienta, i mieszka w wlasnym drzewie cienia — jego CSS
+   nie moze byc na tej stronie, bo i tak by go nie dosiegl. Zostaje sama
+   ramka sekcji. */
+.chat-sec{padding:88px 0 96px;border-top:1px solid var(--line-soft)}
+.kb-slot{max-width:760px;margin:0 auto}
 
 /* footer */
 .foot{border-top:1px solid var(--line-soft);padding:44px 0 54px}
@@ -316,38 +230,13 @@ body::before{
       <span class="sec-idx">/ 03</span>
       <h2>Asystent</h2>
     </div>
-  </div>
-  <div class="wrap" style="max-width:none;padding-left:28px;padding-right:28px">
-    <div class="chat-shell rv" id="shell">
-      <div class="chat-glow"></div>
-      <div class="chat">
-        <div class="chat-scan"></div>
-        <button class="chat-bar" id="bar" aria-expanded="false">
-          <span class="orb"><span class="orb-ring"></span><span class="orb-ring"></span><span class="orb-core"></span></span>
-          <span class="chat-bar-txt">
-            <b>Zapytaj o cokolwiek</b>
-            <span>Odpowiada wyłącznie na podstawie naszej dokumentacji</span>
-          </span>
-          <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="6 9 12 15 18 9"/></svg>
-        </button>
-
-        <div class="chat-body" id="body">
-          <div class="log" id="log"></div>
-          <div class="chips" id="chips"></div>
-          <div class="compose">
-            <textarea id="ta" rows="1" placeholder="Napisz pytanie…"></textarea>
-            <button class="send" id="send" disabled aria-label="Wyślij">
-              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-            </button>
-          </div>
-          <div class="chat-foot">
-            <span class="dotgrn"></span>
-            <span>ODPOWIEDZI WERYFIKOWANE ŹRÓDŁOWO</span>
-            <button class="clr" id="clr" hidden>WYCZYŚĆ</button>
-          </div>
-        </div>
-      </div>
-    </div>
+    <!-- MIEJSCE NA WIDGET.
+         Pusty <div> i nic wiecej: widget montuje sie w nim ze skryptu na dole
+         strony, we wlasnym drzewie cienia. Ta strona NIE MA juz wlasnej kopii
+         czatu — od 27.08.2026 osadza go tak samo, jak zrobi to kazdy klient.
+         Gdyby miala wlasna kopie, demo i produkt rozjechalyby sie przy
+         pierwszej zmianie po jednej ze stron. -->
+    <div class="kb-slot rv" data-knowbase></div>
   </div>
 </section>
 
@@ -361,17 +250,8 @@ body::before{
 </footer>
 
 <script>
-const WORKER_URL="https://knowbase-budmax.rezi7608.workers.dev";
-const MAX_HISTORY=6;
-const CHIPS=["Ile trwa budowa domu?","Czym różni się stan surowy od deweloperskiego?","Jak wygląda płatność?","Rękojmia a gwarancja?","Montujecie fotowoltaikę?"];
-
-const shell=document.getElementById('shell'),bar=document.getElementById('bar'),body=document.getElementById('body'),
-      log=document.getElementById('log'),ta=document.getElementById('ta'),send=document.getElementById('send'),
-      clr=document.getElementById('clr'),chipsEl=document.getElementById('chips'),nav=document.getElementById('nav');
-let open=false,busy=false,history=[];
+const nav=document.getElementById('nav');
 const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-CHIPS.forEach(c=>{const b=document.createElement('button');b.className='chip';b.textContent=c;b.onclick=()=>ask(c);chipsEl.appendChild(b)});
 
 /* nav blur on scroll */
 addEventListener('scroll',()=>nav.classList.toggle('stuck',scrollY>18),{passive:true});
@@ -393,79 +273,28 @@ const cio=new IntersectionObserver(es=>es.forEach(e=>{
 }),{threshold:.5});
 document.querySelectorAll('[data-count]').forEach(el=>cio.observe(el));
 
-/* chat open/close */
-function setOpen(v){open=v;shell.classList.toggle('open',v);bar.setAttribute('aria-expanded',v)}
-bar.onclick=()=>{setOpen(!open);if(open)setTimeout(()=>ta.focus(),350)};
-function openChat(q){setOpen(true);shell.scrollIntoView({behavior:'smooth',block:'center'});setTimeout(()=>{ta.focus();if(q)ask(q)},480)}
-
-ta.addEventListener('input',()=>{ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,130)+'px';send.disabled=!ta.value.trim()||busy});
-ta.addEventListener('keydown',e=>{
-  if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();ask(ta.value)}
-  if(e.key==='Escape'){setOpen(false);ta.blur()}
-});
-send.onclick=()=>ask(ta.value);
-clr.onclick=()=>{log.innerHTML='';history=[];clr.hidden=true;ta.focus()};
-
-const esc=s=>{const d=document.createElement('div');d.textContent=s;return d.innerHTML};
-const toBottom=()=>log.scrollTop=log.scrollHeight;
-
-function addMe(t){
-  const r=document.createElement('div');r.className='row me';
-  const b=document.createElement('div');b.className='bub me';b.textContent=t;
-  r.appendChild(b);log.appendChild(r);toBottom();
-}
-function addDots(){
-  const d=document.createElement('div');d.className='dots';d.innerHTML='<i></i><i></i><i></i>';
-  log.appendChild(d);toBottom();return d;
-}
-function addAi(){
-  const r=document.createElement('div');r.className='row';
-  r.innerHTML='<span class="av"><i></i></span>';
-  const b=document.createElement('div');b.className='bub ai type-on';
-  r.appendChild(b);log.appendChild(r);return b;
-}
-function addTags(list){
-  const w=document.createElement('div');w.className='tags';
-  list.forEach(([cls,txt],i)=>{const t=document.createElement('span');t.className='tag '+cls;
-    t.style.animationDelay=i*70+'ms';t.textContent=txt;w.appendChild(t)});
-  log.appendChild(w);toBottom();
-}
-function type(el,txt){
-  return new Promise(res=>{
-    if(reduce){el.textContent=txt;el.classList.remove('type-on');return res()}
-    let i=0;const step=()=>{
-      i+=Math.random()<.3?2:1;
-      el.textContent=txt.slice(0,i);toBottom();
-      if(i<txt.length)setTimeout(step,9);else{el.classList.remove('type-on');res()}
-    };step();
-  });
-}
-
-async function ask(q){
-  q=(q||'').trim();if(!q||busy)return;
-  setOpen(true);busy=true;send.disabled=true;
-  ta.value='';ta.style.height='auto';
-  addMe(q);clr.hidden=false;
-  const dots=addDots();
-  try{
-    const r=await fetch(WORKER_URL,{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({question:q,history:history.slice(-MAX_HISTORY)})});
-    const d=await r.json();
-    dots.remove();
-    const b=addAi();
-    if(d.gap)b.classList.replace('ai','no');
-    await type(b,d.answer||'Coś poszło nie tak. Spróbuj ponownie.');
-    const tags=[];
-    if(d.source)tags.push(['src','◈ '+d.source]);
-    if(d.gap)tags.push(['no','△ brak w dokumentacji']);
-    if(d.trimmed>0)tags.push(['cut','✂ pominięto '+d.trimmed]);
-    if(tags.length)addTags(tags);
-    if(!d.error){history.push({role:'user',content:q});history.push({role:'assistant',content:d.answer})}
-  }catch(e){
-    dots.remove();const b=addAi();b.classList.replace('ai','no');
-    await type(b,'Brak połączenia z asystentem. Spróbuj ponownie za chwilę.');
-  }finally{busy=false;send.disabled=!ta.value.trim();ta.focus()}
+/* PRZYCISKI KIERUJACE DO ASYSTENTA.
+   Strona nie zna wnetrza widgetu — rozmawia z nim wylacznie przez
+   window.KnowBase, ktore widget sam wystawia. Gdyby siegala glebiej,
+   bylaby zalezna od jego budowy i psulaby sie przy kazdej jego zmianie. */
+function openChat(q){
+  document.getElementById('asystent').scrollIntoView({behavior:'smooth',block:'center'});
+  setTimeout(()=>{ if(window.KnowBase&&window.KnowBase.ask) window.KnowBase.ask(q); },520);
 }
 </script>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     WIDGET KNOWBASE — dokladnie ten sam snippet, ktory dostaje klient.
+     Ta strona jest witryna klienta demonstracyjnego BudMax: jej origin
+     (https://p0rk1.github.io) jest wpisany w polu `witryny` w klienci.js,
+     tak samo jak bedzie wpisana domena kazdej prawdziwej firmy.
+     Klienta wybiera ADRES w src, nie atrybut data-client — ten jest
+     asercja i lapie snippet skopiowany od innego klienta.
+     ══════════════════════════════════════════════════════════════════ -->
+<script src="https://budmax.know-base.app/widget.js"
+        data-client="budmax"
+        data-kb-mode="inline"
+        data-kb-target="[data-knowbase]"
+        async></script>
 </body>
 </html>

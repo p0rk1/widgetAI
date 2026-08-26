@@ -3414,3 +3414,145 @@ Zmierzono jednak koszt ewentualnego „ujednolicenia": po zdjęciu ogonków
 **przestałoby działać 7 z 17** wzorców, które dziś łapią — po cichu, bez błędu.
 Liczba jest wpisana do testu jako druga linia INFO, żeby była znana **zanim**
 ktoś wpadnie na pomysł spójności z eskalacją.
+
+
+## Skrypt osadzający — widget na stronie klienta (27.08.2026)
+
+Trzeci punkt z „Następnych kroków". Do tej sesji widget istniał wyłącznie jako
+kod wklejony w `index.html` na GitHub Pages: demo dało się pokazać tylko na
+naszej domenie, a przy wdrożeniu nie było czego dać klientowi — musiałby
+hostować całą stronę.
+
+### Co powstało
+
+`GET /widget.js` na **hoście publicznym** klienta oddaje gotowy skrypt złożony
+z szablonu `widget-embed.js` i konfiguracji z pól klienta. Klient wkleja jedną
+linijkę. Pełna instrukcja z podziałem na jego i naszą stronę: `OSADZENIE.md`.
+
+### Klient wynika z ADRESU SKRYPTU, a `data-client` jest asercją
+
+Zamówienie brzmiało: „klient rozpoznawany atrybutem `data-client`". Tak
+zbudowany atrybut byłby dokładnie tym, co ta architektura odrzuciła 22.08.2026 —
+nazwą klienta przychodzącą z żądania. Jest zresztą **zbędny**: snippet i tak
+zawiera adres klienta w `src`, bo skądś trzeba pobrać skrypt.
+
+Rozwiązanie: `src` wybiera klienta (host → klient, ta sama ścieżka co wszędzie),
+a `data-client` jest **porównywany** z konfiguracją wstrzykniętą przez Workera.
+Niezgodność zatrzymuje widget i wypisuje powód w konsoli. Atrybut z zamówienia
+został, ale przestał być drogą wpływu — łapie za to najczęstszą pomyłkę
+wdrożeniową: snippet skopiowany od innego klienta z poprawioną nazwą i starym
+adresem.
+
+### Shadow DOM sam nie wystarcza — i to jest sedno izolacji
+
+Shadow DOM zatrzymuje selektory strony klienta, ale **nie zatrzymuje
+dziedziczenia**. `font-family`, `color`, `line-height`, `letter-spacing`,
+`text-transform` i `visibility` ustawione na `body` przechodzą przez granicę
+cienia bez przeszkód — czyli dokładnie to, co robi stara strona z
+`body{font:12px Arial;line-height:1.1}`. Obietnica „style klienta nie przenikną"
+byłaby bez `all:initial` na `:host` nieprawdziwa dla najczęstszego przypadku.
+
+Trzy pozostałe rzeczy, które psuły się po cichu i są w kodzie zabezpieczone:
+- **`position:fixed` wewnątrz przodka z `transform`** przestaje być względne do
+  okna. Dymek wisi więc na `<body>`, a nie w miejscu tagu skryptu — stare strony
+  nagminnie mają `transform` na karuzelach i animacjach wejścia.
+- **`box-sizing` nie jest dziedziczony**, więc reguła `*{box-sizing:border-box}`
+  ze strony klienta do cienia nie wchodzi. Widget ustawia własną.
+- **`@font-face` zadeklarowany wewnątrz drzewa cienia nie jest rejestrowany.**
+  Arkusz Google Fonts musi wisieć w `<head>` strony klienta i jest to **jedyny
+  wyjątek** od izolacji — świadomy, oznaczony i wyłączalny (`data-kb-fonts="off"`).
+
+**Próg możliwości zamiast wariantu zapasowego.** Bez Shadow DOM v1 widget się nie
+montuje i mówi o tym w konsoli. Wariant „zamontuj bez cienia" byłby gorszy od
+nieuruchomienia się: widget wyglądałby losowo na cudzej stronie, a my nie
+mielibyśmy o tym pojęcia.
+
+### Motyw: tokeny wydzielone, palety nie zdublowano
+
+`motywCss()` emitowała `:root{…}`, a wewnątrz drzewa cienia `:root` nie pasuje do
+niczego. Rozwiązaniem NIE była druga kopia palety w skrypcie, tylko wydzielenie
+`zmienneMotywu(klient)` — samych deklaracji, bez selektora. `motywCss()` opakowuje
+je w `:root`, widget w `:host`. Jeden zestaw wartości, dwa miejsca podstawienia.
+Pilnuje tego test: `cfg.zmienne === zmienneMotywu(k)` plus sprawdzenie, że koloru
+akcentu **nie ma** w pliku szablonu.
+
+W `widget-embed.js` nie ma ani jednej wartości barwnej — ta sama reguła, która od
+24.08.2026 obowiązuje pliki interfejsów, tyle że wyegzekwowana ostrzej, bo ten
+plik ląduje na cudzej stronie.
+
+### CORS: `ALLOWED_ORIGINS` NIE obsłużyłby domeny klienta
+
+Zamówione sprawdzenie dało wynik negatywny i wymusiło zmianę. Stan przed:
+lista zawierała `https://p0rk1.github.io` i hosty klientów. Domena klienta
+(`https://firma.pl`) nie miała jak się tam znaleźć, więc jego własna strona
+dostałaby w odpowiedzi `Access-Control-Allow-Origin` wskazujący **cudzy** adres
+i przeglądarka zablokowałaby odpowiedź. Widget pokazałby się i milczał.
+
+Zmiana ma dwie części:
+1. **Pole `witryny` w `KLIENCI`** — originy, z których wolno wywołać widget tego
+   klienta. To jest ten jeden wpis powtarzany przy każdym wdrożeniu.
+   `ALLOWED_ORIGINS` składa się z tych tablic samo.
+2. **`corsHeaders(request, klient)` zwęża listę do witryn TEGO klienta**, gdy
+   klient jest znany — a jest zawsze, gdy żądanie trafia na jego host. Bez tego
+   zawężenia wystarczyłby jeden wpis w `witryny`, żeby każda zarejestrowana
+   domena rozmawiała z każdym hostem publicznym. Sprawdza to test: witryna
+   BudMaksu nie dostaje zgody na hoście kancelarii.
+
+**Asercja na kształt originu przy starcie modułu.** `https://firma.pl/` albo
+`https://firma.pl/kontakt` nigdy nie zrówna się z nagłówkiem `Origin`, a błąd
+wyszedłby dopiero jako milcząco zablokowane żądanie u klienta. Teraz wywala
+`wrangler deploy --dry-run`.
+
+### `index.html` przestał mieć własną kopię czatu
+
+Warunek postawiony w zamówieniu i spełniony w całości: strona demonstracyjna
+osadza widget **tym samym snippetem**, co prawdziwy klient, a jej origin jest
+wpisany w `witryny` BudMaksu jak każda inna witryna klienta. Usunięto ~90 linii
+CSS czatu i ~80 linii JavaScriptu; został pusty `<div data-knowbase>` i linijka
+`<script>`.
+
+**Skutek uboczny, którego nie planowano:** widget przestał zależeć od
+`workers.dev`. Endpoint składa się teraz z hosta publicznego klienta, a nie
+z adresu wpisanego na sztywno w `WORKER_URL`. Ostrzeżenie „wyłączenie
+`workers_dev` zerwie widget i panel" dotyczy od dziś **samego panelu**.
+
+**Publiczne API `window.KnowBase`** (`ask`, `open`, `close`) powstało dlatego, że
+strona ma dwa przyciski wołające asystenta z gotowym pytaniem. Bez tego strona
+musiałaby sięgać do wnętrza drzewa cienia — czyli trzymać własną kopię czatu,
+dokładnie to, co ta zmiana usuwa.
+
+### Przy okazji: asercja `ui.nazwyEskalacji` była MARTWYM KODEM
+
+Znalezione przy dopisywaniu asercji widgetu. Pętla walidująca klientów miała
+nawias zamykający `if` postawiony dopiero na końcu bloku, więc sprawdzenie
+pokrycia kategorii eskalacji wykonywało się **wyłącznie wtedy, gdy zdanie
+odmowne było błędne** — czyli po `throw`, czyli nigdy.
+
+`CLAUDE.md` twierdził od 24.08.2026, że „pilnuje tego asercja przy starcie
+modułu". Nie pilnowała. Naprawione; obie asercje działają, obecni klienci
+przechodzą (sprawdzone celowym złamaniem obu).
+
+**Wniosek do zapamiętania:** asercja, której nikt nigdy nie widział, jak pada,
+jest hipotezą, a nie zabezpieczeniem. Przy dopisywaniu następnej warto ją raz
+celowo złamać.
+
+### Odwrócony apostrof w komentarzu — czwarty przypadek w projekcie
+
+`widget-embed.js` jest szablonem w `String.raw`, a w jego komentarzach stały
+odwrócone apostrofy wokół nazw. Każdy zamykał literał. **`node --check` przeszedł
+bez zastrzeżeń**, bo sprawdza plik jako skrypt; wywaliło się dopiero przy
+`import`. Dokładnie ten kształt błędu, który opisuje reguła z 24.08.2026 —
+a mimo to powtórzony, bo reguła była zapisana przy plikach interfejsu, a nie
+jako własność każdego szablonu. Test `test-widget.mjs` pilnuje tego sekcją 3.
+
+### Test
+
+`node test-widget.mjs` — **59 przypadków**: izolacja, brak kolorów i odwróconych
+apostrofów w szablonie, tożsamość tokenów motywu, brak słownictwa cudzej branży
+w tekstach, endpoint, asercja `data-client`, oba warianty osadzenia, CORS między
+klientami, fonty, pojedynczy montaż.
+
+**Czego ten test NIE obejmuje: zachowania w przeglądarce.** Nie sprawdza, czy
+Shadow DOM faktycznie odciął style cudzej strony — to wymaga silnika
+renderującego. Sprawdza reguły, których złamanie by to zepsuło. Pierwsze
+osadzenie u prawdziwego klienta trzeba obejrzeć okiem.

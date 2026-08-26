@@ -1066,7 +1066,29 @@ function isUnsupportablePromise(s, tryb = PROMPT_PUBLICZNY, klient = null) {
   const bezwyjatku = klient ? (klient.obietniceBezwyjatku || []) : [];
   if (tryb !== PROMPT_WEWNETRZNY && bezwyjatku.some((p) => p.test(t))) return true;
 
-  const isNegationOrDeferral = /\b(nie |bez |brak |nie mam|potwierdzi biuro|potwierdzi (nasze )?biuro|skontaktuj|kontakt z biurem|ustali biuro|zależy od indywidualn)/.test(t);
+  // WZMOCNIENIA NIE SĄ ZAPRZECZENIAMI — od 26.08.2026, obie branże.
+  //
+  // Wyjątek niżej szuka podciągu „nie " albo „bez ". Tymczasem polszczyzna ma
+  // idiomy, w których te same cząstki WZMACNIAJĄ twierdzenie zamiast je znosić:
+  // „bez wątpienia", „bez dwóch zdań", „nie ma wątpliwości", „nie dłużej".
+  // Zdanie „Ma Pani bardzo dobre szanse, bez wątpienia" jest obietnicą MOCNIEJSZĄ
+  // niż to samo zdanie bez wtrącenia, a przechodziło właśnie przez nie.
+  //
+  // Idiomy są usuwane z tekstu podawanego DO TESTU WYJĄTKU — i tylko tam. Same
+  // wzorce obietnic pracują dalej na pełnym zdaniu, więc nic się nie gubi.
+  // To jest zdejmowanie OBEJŚCIA, nie poszerzanie wykrywania.
+  //
+  // Zmierzone zestawem wrogim 26.08.2026: u kancelarii domyka 3 przecieki,
+  // u BudMaksu „Bez problemu zdążymy przed zimą" — defekt opisany w CLAUDE.md
+  // jako świadomie nietknięty, bo dotąd wymagał własnych wzorców z lookbehindem.
+  // Zdania odmowne są nietknięte: „Nie wygramy tej sprawy bez kompletu
+  // dokumentów" nie zawiera idiomu, więc „nie " zostaje i zdanie przechodzi.
+  const bezWzmocnien = t.replace(
+    /bez wątpienia|bez dwóch zdań|bez (żadnych )?(większych |większego )?(problemów|problemu|trudu|wysiłku)|bez obaw|nie ma (tu )?(żadnych )?wątpliwości|nie ma dwóch zdań|nie dłużej|nie mniej niż|nie więcej niż/g,
+    " ",
+  );
+
+  const isNegationOrDeferral = /\b(nie |bez |brak |nie mam|potwierdzi biuro|potwierdzi (nasze )?biuro|skontaktuj|kontakt z biurem|ustali biuro|zależy od indywidualn)/.test(bezWzmocnien);
   if (isNegationOrDeferral) return false;
 
   // Obowiązują w obu trybach: dokumentacja nie zna grafiku ekip, więc ani

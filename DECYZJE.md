@@ -3263,3 +3263,154 @@ zarzuty w prokuraturze" nie szło nigdzie). Naprawa wymaga rozstrzygnięcia,
 czym jest „zarzut" w tej branży, a nie poprawki formy — czyli własnego pomiaru.
 Obie ramki są pilne i obie kierują do adwokata prowadzącego, więc koszt jest
 w treści komunikatu, nie w bezpieczeństwie.
+
+## Wrogi test obietnic kancelarii — warstwa myliła się w drugą stronę (26.08.2026)
+
+Ostatni otwarty punkt z drugiej branży. Zapis brzmiał: „0 wyzwoleń na 46 zdaniach
+nie jest dowodem, że wzorce działają" — bo pomiar na 40 realnych pytaniach nigdy
+nie zmusił modelu do obietnicy. Warstwa stoi na powierzchni klienckiej i ma łapać
+rzecz najgroźniejszą w tej branży: zapewnienie o wyniku sprawy, o terminie
+rozstrzygnięcia i o kwalifikacji prawnej czyjejś sytuacji.
+
+### Jak zbudowano zestaw, żeby nie odtworzyć założeń autora
+
+Test z 22.08.2026 (32 przypadki, komplet zielony) napisał autor wzorców, tego
+samego dnia co wzorce. Taki test sprawdza, że wzorzec łapie zdanie, pod które
+został napisany — i nic ponadto. Nowy zestaw budowano **z dwóch źródeł, do
+których nie należy lista wzorców**: z `zakazyBranzowe` w prompcie kancelarii
+(cztery zakazy mówią wprost, czego bot nie może powiedzieć) oraz z rejestru,
+jakim adwokat uspokaja klienta. Dopiero po zmierzeniu wyniku otwarto plik ze
+wzorcami, żeby rozdzielić przyczyny przecieków.
+
+31 zdań wrogich (wynik, termin, kwalifikacja, uspokajanie) i 30 zdań, których
+warstwa **wyciąć nie może**: odesłania do adwokata, reguły procedury, opisy
+instytucji, zdania organizacyjne.
+
+### Wynik pierwszego przebiegu — i dlaczego ważniejsza była druga liczba
+
+| Oś | Wynik |
+|---|---|
+| przecieki (obietnica przeszła) | **29 / 31** |
+| fałszywe alarmy (zdanie neutralne wycięte) | **10 / 14** na zdaniach odsyłających, 2/16 na pozostałych |
+
+Pierwsza liczba wygląda gorzej, ale to druga zamówiła naprawy. Wycinane były
+zdania takie jak „Na konsultacji adwokat wyjaśni, **co przysługuje Panu** w tej
+sytuacji" i „Sąd zasądzi koszty zgodnie z zasadą odpowiedzialności za wynik
+procesu" — czyli **dokładnie te odpowiedzi, dla których napisano fragmenty
+`k18`–`k20`**. Warstwa powstała po to, żeby bot nie udzielał porady prawnej,
+a w praktyce kasowała zdania mówiące klientowi, że porady mu nie udzieli.
+Defekt był niewidoczny w pomiarze z 22.08, bo tam liczono wyzwolenia, a nie
+straty.
+
+### Rozdzielenie przyczyn przecieków — to nie jest jedno zjawisko
+
+| Przyczyna | Ile | Czy da się naprawić |
+|---|---|---|
+| wzorzec PASUJE, ale wyjątek dla zaprzeczeń go wyłącza | **3** | tak, strukturalnie |
+| **żaden** wzorzec nie pasuje — nowe sformułowanie | **26** | nie, zbiór jest nieskończony |
+
+To rozdzielenie jest całą wartością tego pomiaru. Pierwsza grupa to defekt
+mechanizmu i została naprawiona. Druga to znany, wpisany do `CLAUDE.md` limit
+wykrywania wzorcami — dopisanie 26 wzorców oznaczałoby napisanie ich przez tego
+samego autora, który właśnie zobaczył te zdania, czyli powtórzenie błędu z 22.08
+o jedną warstwę wyżej, przy warstwie, która **już wycinała poprawne odpowiedzi**.
+
+### Naprawa 1 (silnik): wzmocnienie to nie zaprzeczenie
+
+Wyjątek dla zaprzeczeń jest testem podciągu — szuka „nie " albo „bez ".
+Polszczyzna ma idiomy, w których te same cząstki **wzmacniają** twierdzenie:
+
+> „Ma Pani bardzo dobre szanse, **bez wątpienia**."
+> „To jest sprawa do wygrania, **bez dwóch zdań**."
+> „Sprawa zakończy się w ciągu pół roku, **nie dłużej**."
+
+Wzorzec pasował do każdego z tych zdań i był wyłączany przez wtrącenie, które
+obietnicę **wzmacnia**. Naprawa: idiomy są usuwane z tekstu podawanego **do testu
+wyjątku** i tylko tam — wzorce obietnic pracują dalej na pełnym zdaniu.
+To zdejmowanie obejścia, nie poszerzanie wykrywania.
+
+Rzecz jest własnością **języka, nie branży**, więc siedzi w `isUnsupportablePromise()`,
+a nie w tablicy klienta — i dlatego domyka też defekt BudMaksu opisany w
+`CLAUDE.md` jako świadomie nietknięty: **„Bez problemu zdążymy przed zimą" jest
+od dziś łapane.** Wcześniej naprawa wymagałaby własnych wzorców z lookbehindem;
+po tej zmianie nie wymaga żadnych. Zdania odmowne są nietknięte — „Nie wygramy
+tej sprawy bez kompletu dokumentów" nie zawiera idiomu, więc „nie " zostaje.
+
+**Odrzucono: przeniesienie wzorców `szanse` do `obietniceBezwyjatku`.** To była
+pierwsza kandydatka (tak naprawiono BudMaksa), ale `(?<!nie )dobre szanse` wycięłoby
+„Nie mogę powiedzieć, **czy ma Pan dobre szanse**" — zdanie odmowne, dla którego
+ta warstwa istnieje. Wzorzec odporny na wyjątek jest narzędziem ostrym i nie wolno
+go używać tam, gdzie problemem jest sam wyjątek.
+
+### Naprawa 2 (wzorce kancelarii): warunek zamiast gołej frazy
+
+Trzy wzorce wyzwalały się na samym czasowniku, bez tego, co czyni z niego
+obietnicę. Kształt reguły jest ten sam, co „rdzeń dwuznaczny wyzwala dopiero
+ze swoim dopełnieniem" w eskalacji budowlanej.
+
+| Wzorzec | Warunek dopisany | Co przestało być wycinane |
+|---|---|---|
+| `sąd zasądzi/przyzna/orzeknie` | adresat w oknie 40 znaków (`panu\|pani\|pana`) | „Sąd zasądzi koszty zgodnie z zasadą…" — to zdanie z procedury |
+| `wyrok zapadnie` | horyzont kalendarzowy (`jeszcze\|przed\|w ciągu\|do końca…`) | „Wyrok zapadnie po zamknięciu rozprawy" — to definicja, nie prognoza |
+| alternacja kwalifikacyjna | `(?<!co )(?<!czy )` | „…wyjaśni, **co** przysługuje Panu", „To, **czy** należy się Pani zachowek" |
+
+Trzeci warunek jest **gramatyczny, nie leksykalny**: pytanie zależne jest
+sprawozdaniem z tego, czego bot nie rozstrzyga. Dlatego nie jest listą fraz
+i nie trzeba go rozbudowywać przy każdym nowym sformułowaniu.
+
+Przy okazji usunięto z tego wzorca martwy ogon `.{0,40}(przedawni)?` — cała grupa
+była opcjonalna, więc wyrażenie znaczyło dokładnie tyle samo bez niej.
+
+Czwarta zmiana dotyczy uspokajania: `proszę się nie martwić` **o dokumenty,
+formalności albo papiery** przestało wyzwalać, bo dotyczy organizacji, a nie
+wyniku sprawy. Wszędzie indziej wyzwalacz zostaje szeroki — uspokajanie co do
+sprawy jest w tej branży formą zapewnienia o rozstrzygnięciu.
+
+Dopisano też warianty odmiany istniejących wzorców, które model realnie produkuje
+(„nie ma Pan czym się martwić", „nie ma powodu do obaw", „to czysta formalność").
+To poszerzenie odmiany, nie nowa rodzina wzorców — granica jest świadoma.
+
+### Wynik po naprawach
+
+| Oś | Przed | Po |
+|---|---|---|
+| przecieki strukturalne (wzorzec pasuje, wyjątek go zjada) | 3 | **0** |
+| fałszywe alarmy na zdaniach odsyłających | 10/14 | **0/14** |
+| fałszywe alarmy na pozostałych neutralnych | 2/16 | **0/16** |
+| przecieki łącznie na zestawie wrogim | 29/31 | **23/31** |
+| BudMax: „Bez problemu zdążymy przed zimą" | przechodziło | **łapane** |
+
+Test: `node test-obietnice-prawne.mjs` — **62 przypadki** (było 32).
+
+### Werdykt o wartości tej warstwy — i czego NIE robić
+
+Warstwa obietnic kancelarii **nie jest siecią o dużym oczku, tylko o małym
+zasięgu**: łapie kilkanaście kanonicznych sformułowań i przepuszcza wszystko,
+co model powie inaczej. Zmierzone: **0 na 12** sformułowań spoza wzorców
+(„Ma Pan mocną pozycję procesową", „Odzyskamy te pieniądze", „To roszczenie jest
+już przedawnione"). Licznik został wpisany do testu jako linia INFO, bez asercji —
+żeby ten zasięg był widoczny przy każdym uruchomieniu, a nie żeby test padał.
+
+**Prawdziwą obroną przed poradą prawną jest prompt (`zakazyBranzowe`) i treść
+`k18`–`k20`, nie ta warstwa.** Pomiar na 40 realnych pytaniach dał zero porad
+prawnych właśnie dlatego, a nie dzięki wzorcom — warstwa nie wyzwoliła się wtedy
+ani razu. Wzorce są tanim zabezpieczeniem na wypadek, gdyby prompt przestał
+działać, i tak trzeba je wyceniać.
+
+**Nie dopisywać wzorców pod pojedyncze zdania z tego zestawu.** Każdy nowy
+wzorzec na tej warstwie kosztuje ryzykiem fałszywego alarmu, a właśnie zmierzono,
+że fałszywy alarm jest tu droższy od przecieku: przeciek zostawia zdanie, które
+prompt i tak zwykle wyprodukuje poprawnie, a fałszywy alarm kasuje odpowiedź,
+którą napisano specjalnie na najtrudniejsze pytanie.
+
+### Trzecia oś: ogonki — ryzyko utajone, nie defekt
+
+Wzorce obietnic pracują na tekście **z ogonkami** (`toLowerCase`), odwrotnie niż
+wzorce eskalacji (`bezOgonkow`). Dziś jest to poprawne i nie wymaga zmiany:
+warstwa ogląda **wyjście modelu**, a model pisze z ogonkami — to nie jest pytanie
+wystukane z telefonu na budowie, które uzasadnia normalizację w eskalacji.
+
+Zmierzono jednak koszt ewentualnego „ujednolicenia": po zdjęciu ogonków
+**przestałoby działać 7 z 17** wzorców, które dziś łapią — po cichu, bez błędu.
+Liczba jest wpisana do testu jako druga linia INFO, żeby była znana **zanim**
+ktoś wpadnie na pomysł spójności z eskalacją.

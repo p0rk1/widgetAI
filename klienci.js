@@ -254,12 +254,32 @@ Zanim odpowiesz, sprawdź, czy fragment, z którego korzystasz, dotyczy DOKŁADN
     // toLowerCase, nie bezOgonkow) — inaczej niż wzorce eskalacji.
     obietnicePubliczne: [
       // wynik sprawy
-      /(szanse na wygran|dobre szanse|duże szanse|realne szanse|sprawa jest (wygrana|do wygrania)|wygramy|wygra pan|wygra pani|na pewno wygra|sąd przyzna|sąd zasądzi|sąd orzeknie)/,
+      /(szanse na wygran|dobre szanse|duże szanse|realne szanse|sprawa jest (wygrana|do wygrania)|wygramy|wygra pan|wygra pani|na pewno wygra)/,
+      // Rozstrzygnięcie sądu wyzwala DOPIERO ZE WSKAZANIEM ADRESATA — zmierzone
+      // 26.08.2026. „Sąd zasądzi koszty zgodnie z zasadą odpowiedzialności za
+      // wynik procesu" to opis procedury i musi przejść; obietnicą staje się
+      // dopiero „sąd zasądzi NA PANA RZECZ". To ten sam kształt reguły, co
+      // rdzeń dwuznaczny z dopełnieniem w eskalacji budowlanej.
+      /sąd (przyzna|zasądzi|orzeknie).{0,40}(panu|pani|pana)/,
       /(gwarantujemy|zapewniamy|obiecujemy).{0,25}(wygran|sukces|skuteczn|korzystn|uniewinnien)/,
       // termin rozstrzygnięcia
-      /(sprawa potrwa|zakończy się w ciągu|sąd rozstrzygnie w|wyrok zapadnie|potrwa (około|maksymalnie|nie dłużej)|sprawa zakończy się do)/,
+      /(sprawa potrwa|zakończy się w ciągu|sąd rozstrzygnie w|potrwa (około|maksymalnie|nie dłużej)|sprawa zakończy się do)/,
+      // „Wyrok zapadnie po zamknięciu rozprawy" to zdanie z kodeksu postępowania
+      // i musi przejść. Obietnicą jest dopiero wyrok umieszczony W KALENDARZU.
+      // Lista określeń czasu jest tu wyliczona świadomie: zbiór horyzontów jest
+      // skończony, tak jak lista części ciała w eskalacji — w odróżnieniu od
+      // zbioru sformułowań obietnicy, którego wyliczyć się nie da.
+      /wyrok zapadnie (jeszcze|już|najpóźniej|około|przed|w ciągu|do końca|w tym|w przyszłym|za |na )/,
       // kwalifikacja i interpretacja pod pytającego
-      /(przysługuje panu|przysługuje pani|należy się panu|należy się pani|ma pan prawo do|ma pani prawo do|grozi panu|grozi pani|zostanie pan skazan|to jest przestępstw|pana roszczenie|pani roszczenie).{0,40}(przedawni)?/,
+      // Poprzedzenie przez „co" albo „czy" znosi wyzwolenie — zmierzone
+      // 26.08.2026 na 14 zdaniach odsyłających: 6 z nich warstwa wycinała,
+      // a są to DOKŁADNIE te odpowiedzi, dla których napisano k18–k20
+      // („Na konsultacji adwokat wyjaśni, co przysługuje Panu"). Pytanie
+      // zależne jest sprawozdaniem z tego, czego bot NIE rozstrzyga —
+      // to warunek gramatyczny, nie lista fraz.
+      // Usunięty ogon `.{0,40}(przedawni)?` był martwy: cała grupa opcjonalna,
+      // więc wyrażenie znaczyło tyle samo bez niej.
+      /(?<!co )(?<!czy )(przysługuje panu|przysługuje pani|należy się panu|należy się pani|ma pan prawo do|ma pani prawo do|grozi panu|grozi pani|zostanie pan skazan|to jest przestępstw|pana roszczenie|pani roszczenie)/,
       /(może pan bezpiecznie|może pani bezpiecznie)/,
       // „sprawa do wygrania" bez wyrazu „jest" — zmierzone, model tak pisze.
       /sprawa (jest )?do wygrania/,
@@ -274,7 +294,16 @@ Zanim odpowiesz, sprawdź, czy fragment, z którego korzystasz, dotyczy DOKŁADN
     obietniceBezwyjatku: [
       /(?<!nie )(wygramy|wygra pan|wygra pani|wygrasz)/,
       /(?<!nie )(gwarantujemy|zapewniamy)\s+(wygran|sukces|korzystn|uniewinnien|skuteczn)/,
-      /(proszę się nie martwić|nie ma się czym martwić|nic (panu|pani) nie grozi|to zwykła formalność)/,
+      // „Proszę się nie martwić o dokumenty, sekretariat prześle listę" dotyczy
+      // organizacji, nie wyniku sprawy — zmierzone 26.08.2026. Wyzwalacz zostaje
+      // szeroki wszędzie indziej, bo uspokajanie CO DO SPRAWY jest w tej branży
+      // formą zapewnienia o rozstrzygnięciu.
+      // Warianty odmiany DOPISANE 26.08.2026 po pomiarze — to poszerzenie
+      // istniejących wzorców o formy, które model faktycznie produkuje
+      // („nie ma Pan czym się martwić", „to czysta formalność"), a nie nowa
+      // rodzina wzorców. Nowych rodzin świadomie NIE dopisano: patrz werdykt
+      // w DECYZJE.md → „Wrogi test obietnic kancelarii".
+      /(proszę się nie martwić(?!( o)? (dokument|formalno|papier))|nie ma (się czym|(pan |pani )?czym się) martwić|nie ma powodu do obaw|nic (panu|pani) nie grozi|to (zwykła|czysta|tylko) formalność)/,
     ],
 
     prompt: {

@@ -58,6 +58,8 @@ każdej sesji, a historia decyzji jest potrzebna kilka razy w miesiącu.
 | 24.08 | **Pierwsza osoba w eskalacji naprawiona** — reguła końcówki osobowej, ramka 5/12 → 12/12 | `DECYZJE.md` → Pierwsza osoba w eskalacji |
 | 24.08 | **Filtr wejściowy: NIE BUDOWAĆ** — wulgaryzmy i pytania spoza dziedziny, rozstrzygnięte pomiarem | `DECYZJE.md` → Filtr wejściowy |
 | 24.08 | **Długość odpowiedzi pracowniczych zmierzona — diagnoza niepotwierdzona**, prompt nietknięty | `DECYZJE.md` → Długość odpowiedzi |
+| 25.08 | Logo KnowBase jako zasób repo, serwowane z Pages; krycia podniesione po pomiarze kontrastu | `ZERO-TRUST.md` → Krok 11 |
+| 26.08 | **Wrogi test obietnic kancelarii — warstwa myliła się w DRUGĄ stronę**: 10/14 fałszywych alarmów na zdaniach odsyłających. Naprawione, dziura BudMaksu domknięta przy okazji | `DECYZJE.md` → Wrogi test obietnic kancelarii |
 
 **Gdzie jesteśmy:** treści nie brakuje nigdzie, a z pięciu problemów z pomiaru
 **trzy są naprawione** (próg zależny od długości zdania z cytatem dosłownym,
@@ -145,7 +147,7 @@ wystarcza do testów i jednego użytkownika, nie wystarcza dla zespołu klienta.
 | `test-stats-internal.mjs`| Test statystyk wewnętrznych i zliczania eskalacji | repo |
 | `test-klienci.mjs` | Test wymiaru klienta: host, przestrzenie, obowiązkowość klienta, szablony | repo |
 | `test-eskalacja-prawna.mjs` | Test słownika eskalacji kancelarii — **98 przypadków** (`node test-eskalacja-prawna.mjs`) | repo |
-| `test-obietnice-prawne.mjs` | Wrogi test warstwy obietnic kancelarii | repo |
+| `test-obietnice-prawne.mjs` | Wrogi test warstwy obietnic kancelarii — **62 przypadki**, w tym 30 zdań, których warstwa wyciąć NIE MOŻE | repo |
 | `test-motyw.mjs` | Test motywu i treści interfejsu: brak surowych `{{pól}}`, brak słownictwa cudzej branży, różność motywów | repo |
 | `sonda-klienta.mjs` | Zbiorczy przebieg diagnostyczny klienta (`node sonda-klienta.mjs <sekret> <klient> [zakres]`) — odtwarza ścieżkę produkcyjną, osobno liczy eskalacje i ramki bezpieczeństwa | repo, wyniki do katalogu tymczasowego |
 | `sonda-powtorka.mjs` | To samo pytanie N razy — odróżnia wahanie modelu od skutku zmiany (`node sonda-powtorka.mjs <sekret> <klient> <space> <N> "pytanie"`) | repo |
@@ -685,10 +687,30 @@ Kolejno w `verifyClaims()` i funkcjach pomocniczych:
   wrogim — „Tę sprawę wygramy **bez** większych problemów" i „Proszę się **nie**
   martwić, to zwykła formalność" przechodziły. Wzorce z tej listy sprawdzane są
   PRZED wyjątkiem i każdy niesie własne `(?<!nie )`, więc „nie wygramy" i „nie
-  gwarantujemy" nadal przechodzą. **Ta sama dziura istnieje u BudMaksu** —
-  „Bez problemu zdążymy przed zimą" nie jest łapane — i została **świadomie
-  nieruszona**, bo jego warstwa jest skalibrowana, a naprawa wymaga własnych
-  wzorców z lookbehindem
+  gwarantujemy" nadal przechodzą. ~~**Ta sama dziura istnieje u BudMaksu** —
+  „Bez problemu zdążymy przed zimą" nie jest łapane~~ — **zamknięte 26.08.2026
+  bez dopisywania mu wzorców**, patrz reguła o wzmocnieniach niżej
+- **WZMOCNIENIE NIE JEST ZAPRZECZENIEM** (od 26.08.2026, silnik, obie branże).
+  „bez wątpienia", „bez dwóch zdań", „nie ma wątpliwości", „nie dłużej" to
+  idiomy **wzmacniające** twierdzenie, a wyłączały całą warstwę przez wyjątek
+  dla zaprzeczeń. Są usuwane z tekstu podawanego **do testu wyjątku** i tylko
+  tam — wzorce obietnic pracują dalej na pełnym zdaniu. To zdejmowanie
+  OBEJŚCIA, nie poszerzanie wykrywania, i dlatego stoi w silniku: idiom jest
+  własnością języka, nie branży. Zdania odmowne nietknięte („Nie wygramy tej
+  sprawy bez kompletu dokumentów" nie zawiera idiomu). **Nie naprawiać tego
+  przenoszeniem wzorców do `obietniceBezwyjatku`** — `(?<!nie )dobre szanse`
+  wycięłoby „Nie mogę powiedzieć, czy ma Pan dobre szanse", czyli zdanie, dla
+  którego ta warstwa istnieje
+- **FAŁSZYWY ALARM JEST TU DROŻSZY OD PRZECIEKU — zmierzone 26.08.2026.**
+  Warstwa obietnic kancelarii wycinała **10 z 14** zdań odsyłających do
+  adwokata („Na konsultacji adwokat wyjaśni, co przysługuje Panu", „Sąd zasądzi
+  koszty zgodnie z zasadą…") — czyli dokładnie odpowiedzi, dla których napisano
+  `k18`–`k20`. Wyzwalacz wymaga dziś **warunku, nie samej frazy**: adresata przy
+  rozstrzygnięciu sądu, horyzontu kalendarzowego przy wyroku i braku „co"/„czy"
+  przed alternacją kwalifikacyjną (pytanie zależne jest sprawozdaniem, nie
+  twierdzeniem). **Nie dopisywać wzorców pod pojedyncze przecieki** — zasięg
+  warstwy to 0 na 12 sformułowań spoza listy, a prawdziwą obroną jest prompt
+  (`zakazyBranzowe`) i treść `k18`–`k20`
 - **`isUnsupportablePromise(s, tryb)`** — **zna tryb od 19.08.2026.** W obu trybach
   wycina deklaracje wolnych terminów i obietnice zdążenia. Wzorce rabatowe i cenowe
   działają **tylko publicznie**: pracownikowi „przysługuje ci rabat do 3 procent"
@@ -1081,8 +1103,12 @@ Kolejność jest celowa — uzasadnienie jest częścią decyzji, nie ozdobnikie
        p17 był ściśniętą grupą bez lidera już przed `k25` (odskok 0.024).
        Naprawa `k26`: luki **6/6 → 0/6**, lider 0.671, odskok 0.195, zero
        wycięć. `DECYZJE.md` → „p17 — rozstrzygnięcie"
-     - **Wrogie sprawdzenie `obietnicePubliczne` kancelarii** — 0 wyzwoleń na
-       46 zdaniach nie jest dowodem, że działają
+     - ~~**Wrogie sprawdzenie `obietnicePubliczne` kancelarii**~~ — ✅ **ZAMKNIĘTE
+       26.08.2026.** Zestaw wrogi (31 zdań konstruowanych z `zakazyBranzowe`,
+       30 zdań neutralnych) pokazał, że warstwa myliła się **w drugą stronę niż
+       zakładano**: fałszywych alarmów 10/14 na zdaniach odsyłających, przecieków
+       strukturalnych 3. Jedne i drugie naprawione, przecieki leksykalne (26)
+       **świadomie nienaprawione**. `DECYZJE.md` → „Wrogi test obietnic kancelarii"
      - **Eskalacja: w16 i naruszenie ochrony danych** — obie znane drogi naprawy
        w16 są gorsze niż defekt, patrz „Ślepe uliczki"
    - **Etap 4 (po stronie właściciela): trasy i Access dla kancelarii** — trzy
@@ -1126,7 +1152,8 @@ Kolejność jest celowa — uzasadnienie jest częścią decyzji, nie ozdobnikie
   `node test-access.mjs`, przy zmianach w eskalacji `node test-eskalacja.mjs`,
   przy zmianach w warstwach weryfikacji `node test-weryfikacja.mjs`,
   przy zmianach w tablicy klientów, hostach lub szablonach `node test-klienci.mjs`,
-  a przy zmianach w słowniku kancelarii `node test-eskalacja-prawna.mjs`
+  a przy zmianach w słowniku kancelarii `node test-eskalacja-prawna.mjs`,
+  przy zmianach w warstwie obietnic `node test-obietnice-prawne.mjs`
 - **`node --check` nie łapie wszystkiego — zmierzone 22.08.2026.** Dosłowny znak
   nowej linii wstawiony do szablonu promptu (niedomknięty literał) **przeszedł
   przez `node --check` bez zastrzeżeń**, a wywalił się dopiero przy `import`.

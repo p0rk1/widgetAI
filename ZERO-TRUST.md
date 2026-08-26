@@ -10,10 +10,15 @@ Aplikacja Access istnieje, `ACCESS_TEAM_DOMAIN` i `ACCESS_AUD` są w `wrangler.t
 Worker wdrożony (wersja `e2544cf1-61ee-468b-ab08-c70447056701`). **`/internal` nie
 zwraca już 503** — patrz „Krok 8" z wynikami z 18.08.2026.
 
-Zrobione: kroki **1, 4, 5, 6, 7, 8**. Zostało: kroki **2 i 3** (Google i Microsoft
-jako metody logowania) — dziś jedyną działającą metodą jest **One-time PIN**,
-czyli kod wysyłany na adres e-mail. To wystarcza do testów i do pojedynczego
-użytkownika, ale nie jest docelowe dla zespołu klienta.
+Zrobione: kroki **1, 4, 5, 6, 7, 8**, oraz **9–11** dla drugiego klienta i logo.
+Jedyną działającą metodą logowania jest **One-time PIN** — kod wysyłany na adres
+e-mail. Wystarcza do testów i do pojedynczego użytkownika, nie wystarcza dla
+zespołu klienta.
+
+**Kroki 2 i 3 zastąpił krok 12 (27.08.2026).** Podpięcie Google Workspace i Entra ID
+**odłożono świadomie do pierwszego klienta z własnym katalogiem** — obu dostawców
+rejestruje się przeciwko konkretnemu tenantowi, a BudMax i kancelaria są fikcyjne
+i żadnego nie mają. Runbook jest gotowy i czeka na wejścia od klienta.
 
 Reszta pliku jest instrukcją do powtórzenia przy kolejnym kliencie — kroki
 odhaczone opisują, co i gdzie faktycznie kliknięto.
@@ -131,7 +136,12 @@ bo inaczej adresy przekierowania u Google i Microsoftu trzeba przeklikać drugi 
 
 ---
 
-## Krok 2. Podepnij Google Workspace — ⬜ do zrobienia
+## Krok 2. Podepnij Google Workspace — ⬜ ZASTĄPIONE przez krok 12
+
+> **Nie klikaj z tego kroku — od 27.08.2026 obowiązuje krok 12.** Tam jest
+> to samo plus podział pracy między Ciebie a administratora klienta, moment
+> wyłączenia *Accept all available identity providers* i rachunek dla sprzedaży.
+> Tu zostaje sam zarys, bo do niego odsyłają starsze zapisy.
 
 > **Stan na 18.08.2026:** nie zrobione. Aplikacja przepuszcza wszystkie dostępne
 > metody logowania, a jedyną skonfigurowaną jest wbudowany **One-time PIN** —
@@ -168,7 +178,9 @@ Teraz po stronie Cloudflare:
 
 ---
 
-## Krok 3. Podepnij Microsoft Entra ID — ⬜ do zrobienia
+## Krok 3. Podepnij Microsoft Entra ID — ⬜ ZASTĄPIONE przez krok 12
+
+> **Nie klikaj z tego kroku** — patrz krok 12, sekcja 12.3b.
 
 Najpierw po stronie Microsoftu:
 
@@ -818,3 +830,253 @@ Wariant jeszcze mocniejszy (0.55 / 0.77) **odrzucono**: trzy najciemniejsze pola
 zbiegają się tam do 5.51 / 7.29 / 8.58, a potrójne przecięcie jest praktycznie
 nieodróżnialne od jednolitego `#26456B` — czyli znika dokładnie to, co ten znak
 ma pokazywać.
+
+---
+
+## Krok 12. Dostawcy tożsamości u klienta — ⬜ odłożone świadomie, runbook gotowy
+
+Zastępuje kroki **2 i 3**, które opisywały samo klikanie. Tu jest to samo plus
+rozdzielenie ról, moment wyłączenia „wszystkich dostawców" i rachunek dla
+sprzedaży.
+
+### 12.0. Werdykt: tego kroku NIE DA SIĘ zrobić w próżni
+
+Nie jest to kwestia priorytetu, tylko wejść. **Google Workspace i Entra ID
+rejestruje się PRZECIWKO konkretnemu katalogowi:**
+
+| Dostawca | Czego wymaga na wejściu | Skąd to się bierze |
+|---|---|---|
+| Google Workspace | domena Workspace + Client ID/secret z projektu w **tej** organizacji | konto Workspace klienta |
+| Microsoft Entra ID | **Directory (tenant) ID** + Client ID/secret z rejestracji w **tym** tenancie | tenant klienta |
+
+BudMax i kancelaria są fikcyjne i **nie mają katalogów**. Nie ma tenanta, w którym
+dałoby się zrobić App registration, ani Workspace, którego domenę dałoby się
+wpisać. Konfiguracja „na zapas" nie ma tu żadnej treści do wpisania.
+
+**Decyzja: krok czeka na pierwszego klienta z katalogiem.** Co robi się teraz,
+to ten runbook i rachunek z 12.8 — czyli rzecz potrzebna przy **sprzedaży**,
+nie przy wdrożeniu.
+
+> **Jedno jest testowalne w próżni i warto to zrobić — patrz 12.1.** Nie jest to
+> Workspace ani Entra, tylko dowód, że ścieżka przez zewnętrznego dostawcę OIDC
+> działa u nas end-to-end, zanim patrzy na to klient.
+
+**Czego ten krok NIE zmienia: kodu.** `verifyAccessJwt()` sprawdza podpis, `iss`,
+`aud` i ważność — **nie sprawdza, który dostawca wystawił tożsamość** i nie ma
+gdzie tego sprawdzać. Podpięcie Workspace albo Entry jest zmianą wyłącznie
+w dashboardzie. Żadnego `wrangler deploy`, żadnego reindeksu, AUD-y bez zmian.
+
+### 12.1. Próba generalna na własnym koncie — opcjonalna, 15 minut, bez klienta
+
+Zwykły **Google** (nie Workspace) to konsumencki OAuth: wymaga tylko Client ID
+i sekretu z **Twojego** projektu w Google Cloud, bez żadnego katalogu firmy.
+Nie nadaje się na produkcję u klienta — **uwierzytelni każde konto Google
+na świecie**, a granicą zostaje sama reguła dostępu — ale dowodzi rzeczy, których
+One-time PIN nie dowodzi:
+
+- że adres przekierowania jest poprawny i Access domyka pętlę OAuth,
+- że token z zewnętrznego dostawcy przechodzi przez `verifyAccessJwt()` tak samo
+  jak z PIN-u,
+- że przełącznik dostawców per aplikacja (12.4) faktycznie odcina PIN.
+
+Zrób to na aplikacji **BudMax — tryb wewnętrzny** i zostaw PIN włączony obok.
+Jeśli nie chcesz dokładać ruchomych części przed pilotażem — pomiń, nie blokuje.
+
+### 12.2. Podział pracy: co robi klient, co Ty
+
+**To jest sedno tego kroku dla sprzedaży.** Większość roboty leży po stronie
+klienta i bez jego administratora nie da się jej wykonać ani obejść.
+
+| # | Czynność | Kto | Gdzie |
+|---|---|---|---|
+| 1 | Rejestracja aplikacji / klienta OAuth w katalogu firmy | **admin klienta** | Google Cloud Console albo Entra admin center |
+| 2 | Wpisanie adresu przekierowania (wartość z 12.3) | **admin klienta** | jw. |
+| 3 | Nadanie uprawnień i **admin consent** (tylko Entra) | **admin klienta** | Entra |
+| 4 | Przekazanie Ci Client ID, Client secret, tenant ID / domeny | **admin klienta** | kanałem bezpiecznym |
+| 5 | Dodanie metody logowania w Zero Trust | **Ty** | Settings → Authentication |
+| 6 | `Test` przy metodzie logowania | **Ty** | jw. |
+| 7 | Zawężenie dostawców w dwóch aplikacjach klienta | **Ty** | Access → Applications |
+| 8 | Zmiana reguły z pojedynczego adresu na domenę firmy | **Ty** | jw., Policies |
+| 9 | Logowanie kontrolne kontem pracownika | **admin klienta** | przeglądarka |
+
+**Client secret jest hasłem do tożsamości firmy.** Nie mailem, nie w załączniku,
+nie w komunikatorze, który archiwizuje. Nie trafia do repo ani do `wrangler.toml`
+— żyje wyłącznie w polu formularza Zero Trust.
+
+### 12.3. Wartość, którą klient wpisuje u siebie — jedna, ta sama dla obu dostawców
+
+```
+https://knowbase.cloudflareaccess.com/cdn-cgi/access/callback
+```
+
+**To jest domena zespołu, nie napis z ekranu logowania.** Gdyby klient wpisał
+`late-darkness-273f.cloudflareaccess.com`, logowanie wywali się na
+`redirect_uri_mismatch`. Rozstrzygnięte i udowodnione w kroku 1 — nie „poprawiać".
+
+Wartość jest **wspólna dla wszystkich klientów**, bo organizacja Zero Trust jest
+jedna. To ta sama granica, co przy ekranie logowania w kroku 11.
+
+### 12.3a. Wariant Google Workspace
+
+**Po stronie klienta** (Google Cloud Console, konto w jego Workspace):
+
+1. Wybierz lub utwórz projekt **w organizacji firmy** — nie na koncie prywatnym.
+2. **APIs & Services → OAuth consent screen** → typ **Internal**. Typ „Internal"
+   jest tym, co wiąże logowanie z katalogiem firmy; „External" tego nie robi.
+3. **Credentials → Create credentials → OAuth client ID** → **Web application**.
+4. **Authorized redirect URIs** → wartość z 12.3, znak w znak.
+5. Przekaż: **Client ID**, **Client secret**, **domena Workspace** (np. `firma.pl`).
+
+**Po Twojej stronie:** Zero Trust → **Settings → Authentication → Login methods
+→ Add new** → **Google Workspace** → wklej trzy wartości → **Test**.
+
+> **Nie proś o synchronizację grup, dopóki jej nie potrzebujesz.** Grupy Workspace
+> wymagają konta usługowego z delegacją ogólnodomenową i uprawnień Admin SDK —
+> to osobna rozmowa z administratorem i osobna zgoda. Reguła po **domenie
+> e-mail** (12.5) daje to samo przy jednym kliencie na jednym zespole.
+
+### 12.3b. Wariant Microsoft Entra ID
+
+**Po stronie klienta** (Entra admin center, konto z prawem rejestracji aplikacji):
+
+1. **Applications → App registrations → New registration**, nazwa `Cloudflare Access`.
+2. Typ konta: **Single tenant**.
+3. **Redirect URI** → platforma **Web** → wartość z 12.3.
+4. Z **Overview** skopiuj **Application (client) ID** i **Directory (tenant) ID**.
+5. **Certificates & secrets → New client secret** → skopiuj **wartość**, nie
+   identyfikator. Widać ją jeden raz. **Zanotuj datę wygaśnięcia** — patrz 12.7.
+6. **API permissions → Microsoft Graph → Delegated**: `openid`, `profile`,
+   `email`, `offline_access`. Grupy (`Directory.Read.All`, *Application*) tylko
+   jeśli świadomie ich chcesz.
+7. **Grant admin consent** — bez tego pierwsze logowanie pracownika stanie na
+   ekranie zgody, którego pracownik nie ma prawa zatwierdzić.
+8. Przekaż: **Client ID**, **Client secret (wartość)**, **Directory (tenant) ID**.
+
+**Po Twojej stronie:** Login methods → **Add new** → **Azure AD / Microsoft
+Entra ID** → wklej trzy wartości → **Test**.
+
+### 12.4. Wyłączenie „Accept all available identity providers" — moment i skutek
+
+**Kiedy:** po tym, jak `Test` przy nowej metodzie przeszedł, i po tym, jak
+**przynajmniej jedna** osoba z firmy zalogowała się nią na żywo (12.2, punkt 9).
+Nie wcześniej. Odwrotna kolejność zamyka klienta przed drzwiami, których nikt
+jeszcze nie otworzył.
+
+**Gdzie:** Access → Applications → aplikacja klienta → sekcja **Identity
+providers** → odznacz *Accept all available identity providers*, zaznacz **tylko**
+dostawcę tego klienta.
+
+**Zrób to w OBU aplikacjach klienta** — pracowniczej i właścicielskiej. Aplikacje
+są dwie i konfiguruje się je osobno.
+
+**Dopóki tego nie zrobisz, integracja jest ozdobna** — One-time PIN stoi obok
+i każdy, kto odbiera pocztę pod adresem pasującym do reguły, wchodzi bez
+przechodzenia przez katalog firmy. Wyłączenie konta w Workspace nie odbiera
+wtedy dostępu do bota.
+
+**Co się stanie z Twoim własnym dostępem:** przełącznik jest **per aplikacja**,
+więc **nic** — o ile nie ruszysz aplikacji demo. Twoje konto jest prywatnym
+kontem Google, nie ma go w katalogu klienta i po zawężeniu **nie wejdziesz do
+aplikacji klienta**. Tak ma być: to konfiguracja jego firmy, a nie Twoja skrzynka
+serwisowa. Gdy będziesz potrzebował tam wejść, poproś o konto w ich katalogu
+albo o czasowe dopisanie do reguły.
+
+> **Blokada dotyczy aplikacji, nie konta Cloudflare.** Do dashboardu Zero Trust
+> logujesz się osobno, jako właściciel konta, i tej drogi ten przełącznik nie
+> dotyka. Każde zawężenie da się cofnąć w tym samym miejscu — to nie jest
+> operacja jednokierunkowa.
+
+### 12.5. Reguła dostępu po podpięciu katalogu
+
+Dopiero teraz `Emails ending in → @firma.pl` znaczy „pracownik firmy",
+a nie „ktokolwiek z taką skrzynką". Do tego momentu **zostaje wariant
+z pojedynczymi adresami** (krok 6).
+
+Aplikacja **właścicielska zostaje na `Emails` z jednym adresem** — także po
+podpięciu katalogu. Katalog nie zmienia tego, że analityka jest dla właściciela,
+a nie dla zespołu.
+
+### 12.6. Odpowiedź na pytanie o zasięg: zespołowe czy per klient — OBA
+
+To jest rozróżnienie, na którym stoi cała ta sekcja.
+
+| Warstwa | Zasięg | Kto ustawia |
+|---|---|---|
+| Lista metod logowania (Settings → Authentication) | **cała organizacja Zero Trust** | Ty, raz na klienta |
+| Wybór dostawców w aplikacji | **per aplikacja** | Ty |
+| Reguła dostępu (Policies) | **per aplikacja** | Ty |
+
+**Więc przy dwóch klientach z różnymi katalogami masz oba katalogi zarejestrowane
+w swojej organizacji — i to jest nieuniknione.** Ale **nie jest prawdą, że reguła
+dostępu zostaje jedyną granicą**: aplikacja klienta A przyjmuje wyłącznie
+dostawcę A, więc pracownik klienta B nie ma jak się na niej **uwierzytelnić**,
+niezależnie od reguły. Granice są dwie i są niezależne:
+
+1. **dostawca w aplikacji** — czy tożsamość w ogóle powstanie,
+2. **reguła dostępu** — czy powstała tożsamość wejdzie.
+
+Warstwa 1 działa dopiero po 12.4. Dopóki stoi „wszystkie dostępne", masz
+faktycznie jedną granicę — i to jest ten sam argument, co w kroku 5.
+
+**Czego to nie rozdziela:** ekranu logowania (jeden na organizację, krok 11)
+ani tego, że katalogi obu klientów są widoczne dla administratora organizacji,
+czyli dla Ciebie. Rozdzielenie tego wymaga **osobnego konta Cloudflare na
+klienta**, nie kolejnej aplikacji — to samo ograniczenie, co przy barwach ekranu
+logowania.
+
+### 12.7. Co utrzymujesz po wdrożeniu
+
+- **Client secret wygasa.** W Entra ma datę ważności ustawianą przy tworzeniu
+  (domyślnie miesiące, nie lata); sekret Google bywa rotowany przez
+  administratora. Wygaśnięcie objawia się jako **logowanie padające dla całej
+  firmy naraz**, bez żadnej zmiany po naszej stronie. Zanotuj datę przy wdrożeniu
+  i przypomnij klientowi miesiąc wcześniej.
+- **Odejście pracownika** odbiera dostęp automatycznie dopiero po 12.4. Wcześniej
+  nie odbiera go wcale, dopóki skrzynka odbiera pocztę.
+- **Sesja trwa 24 godziny** (krok 5). Wyłączenie konta w katalogu nie unieważnia
+  trwającej sesji — przy zwolnieniu dyscyplinarnym trzeba dodatkowo unieważnić
+  sesje użytkownika po stronie Access.
+
+### 12.8. Rachunek dla sprzedaży
+
+Wymaganie wobec klienta brzmi: **administrator Google Workspace albo Microsoft
+365, dostępny na jedną sesję przy wdrożeniu.**
+
+| Pozycja | Nakład |
+|---|---|
+| Praca admina klienta (rejestracja, consent, przekazanie wartości) | **20–30 min jednorazowo** |
+| Logowanie kontrolne pracownika | 2 min |
+| Twoja praca w Zero Trust (wklejenie, test, dwie aplikacje) | **~15 min** |
+| Koszt licencyjny | **zero** — Workspace albo Entra ID klient już ma, Zero Trust do 50 użytkowników jest w planie darmowym |
+| Czas kalendarzowy | zwykle nie technika, tylko **dostępność administratora** |
+
+Firma do 50 osób miewa Workspace albo Microsoft 365 bez własnego działu IT —
+administratorem bywa właściciel albo zewnętrzny informatyk. **Przy sprzedaży
+pytaj o to na pierwszej rozmowie**, bo jest to jedyna rzecz we wdrożeniu, której
+nie możesz zrobić sam.
+
+**Klient bez żadnego katalogu** (poczta na własnym hostingu, adresy prywatne)
+zostaje na **One-time PIN** i trzeba mu powiedzieć wprost, co to znaczy: dostęp
+ma każdy, kto ma dostęp do skrzynki, a odebranie dostępu wymaga zmiany reguły
+w Access, nie wyłączenia konta.
+
+### 12.9. Co z demami — nie ruszaj ich
+
+**BudMax i kancelaria zostają na One-time PIN i na regułach z pojedynczym
+adresem.** Cztery aplikacje demo (dwie na klienta) nie mają katalogu, do którego
+dałoby się je podpiąć.
+
+Ponieważ zawężanie dostawców jest **per aplikacja**, podpięcie Workspace
+pierwszego prawdziwego klienta **nie dotyka dem w żaden sposób** — pojawia się
+tylko nowa pozycja na wspólnej liście metod logowania, a aplikacje demo nadal
+przyjmują „wszystkie dostępne", czyli PIN.
+
+Jedyne, co realnie widać w demach po podpięciu obcego dostawcy, to **dodatkowy
+przycisk na ekranie logowania** („Zaloguj przez Google/Microsoft") — bo ekran
+jest wspólny dla organizacji. Kliknięcie go kontem spoza reguły kończy się
+odmową dostępu, nie wejściem. Kosmetyka, nie dziura — ale wiedz o tym, zanim
+zobaczysz to na prezentacji.
+
+**Jedna rzecz do sprawdzenia przed pierwszym pilotażem, niezależna od tego kroku:**
+czy polityka aplikacji `BudMax — panel właściciela` i `Kancelaria — panel
+właściciela` dopuszcza **jeden adres**, a nie całą domenę. To wisi od 21.08.2026.

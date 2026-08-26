@@ -99,9 +99,14 @@ sprawdzenie po stronie właściciela: **czy polityka tej aplikacji dopuszcza jed
 adres e-mail, a nie całą domenę firmy** — `Emails ending in @budmax.pl` wpuściłoby
 każdego pracownika i odtworzyło problem, który ta zmiana usunęła.
 
-**Zostało po stronie właściciela, nie kodu:** kroki 2 i 3 z `ZERO-TRUST.md`
-(Google i Microsoft jako metody logowania). Dziś działa wyłącznie One-time PIN —
-wystarcza do testów i jednego użytkownika, nie wystarcza dla zespołu klienta.
+**Zostało po stronie właściciela, nie kodu:** dostawcy tożsamości (Google
+Workspace, Entra ID). Dziś działa wyłącznie One-time PIN — wystarcza do testów
+i jednego użytkownika, nie wystarcza dla zespołu klienta. **Odłożone świadomie
+do pierwszego klienta z własnym katalogiem (27.08.2026)** — obu dostawców
+rejestruje się przeciwko konkretnemu tenantowi, więc w próżni nie ma czego
+wpisać. Runbook z podziałem pracy klient/my i rachunkiem dla sprzedaży:
+`ZERO-TRUST.md` → krok 12. **Kodu ta zmiana nie dotknie** — `verifyAccessJwt()`
+sprawdza podpis, `iss`, `aud` i ważność, nie dostawcę.
 
 **Trzy rzeczy, które łatwo popsuć nieświadomie:**
 1. Wyłączenie `workers_dev` zerwie widget i panel — mają stary adres wpisany
